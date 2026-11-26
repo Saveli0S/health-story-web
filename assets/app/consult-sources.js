@@ -15,7 +15,7 @@ function consultSourceGroups(){
       const r=reportInfo(f);
       return item('lab',f.id,r.name,preventionDate(r.date)+' · '+r.rows.map(row=>row.name).join(', '),recordTags('lab',f.id),r.date);
     })],
-    ['Динамика показателей',indicatorGroups().map(g=>item('indicator',g.key,g.name+' · '+g.unit,'Все даты этого показателя',combined(g.points.map(p=>recordTags('lab',p.source)))))],
+    ['Динамика показателей',indicatorGroups().map(g=>item('indicator',g.key,g.name+' · '+seriesDescription(g),[...new Set(g.points.map(p=>p.raw.name))].join(', '),combined(g.points.map(p=>recordTags('lab',p.source)))))],
     ['Заключения',current().files.filter(f=>f.category==='Заключения'&&f.clinicalText).map(f=>item('document',f.id,f.name,preventionDate(f.date)+' · Сверенный текст',recordTags('file',f.id),f.date))],
     ['Прививки и профилактика',current().prevention.map(p=>item('prevent',p.id,p.title,preventionKinds[p.kind]+' · '+scheduleLabel(p),recordTags('prevent',p.id)))]
   ];

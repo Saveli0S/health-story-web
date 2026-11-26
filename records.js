@@ -123,7 +123,8 @@ for(const p of people){
   }
   for(const [name,id] of episodes)if(!profile.episodes.some(e=>e.id===id))profile.episodes.push({id,name});
   for(const d of profile.addedDoctors)p.doctors[d.id]=d.values;
-  p.visits=[...profile.addedVisits,...p.visits].sort((a,b)=>b[1].localeCompare(a[1]));
+  const savedVisitIds=new Set(profile.addedVisits.map(v=>v[0]));
+  p.visits=[...profile.addedVisits,...p.visits.filter(v=>!savedVisitIds.has(v[0]))].sort((a,b)=>b[1].localeCompare(a[1]));
 }
 // Stable fixture IDs also populate demo profiles saved by earlier versions.
 const demoPrevention=[
@@ -205,23 +206,16 @@ function saveState() {
 }
 function field(id) {return current().fields.find(f=>f.id===id)?.value || ''}
 function cleanClinicalText(value){
-  const known=[...people.map(p=>p.name),...Object.values(person.doctors).map(d=>d[0])];
-  const labels=new Set();
-  for(const name of known){
-    const parts=name.trim().split(/\s+/);
-    if(name.trim().length>1)labels.add(name.trim());
-    if(parts.length===2&&parts.every(part=>part.length>1&&!part.includes('.'))){
-      labels.add(parts[1]+' '+parts[0]);
-      if(parts[1].length>=3)labels.add(parts[1]);
-    }
-  }
-  const alternatives=[...labels].sort((a,b)=>b.length-a.length).map(s=>s.replace(/[|\\{}()[\]^$+*?.]/g,'\\$&'));
-  let text=String(value);
-  if(alternatives.length){
-    const names=new RegExp('(^|[^\\p{L}])(?:'+alternatives.join('|')+')(?=$|[^\\p{L}])','giu');
-    text=text.replace(names,'$1[имя скрыто]');
-  }
-  return text.replace(/[\w.+-]+@[\w.-]+\.\w+/g,'[почта скрыта]').replace(/(?:\+\d|\(\d{2,3}\))[\d()\s-]{8,}\d/g,'[телефон скрыт]');
+  const names=[...people.map(p=>p.name),...Object.values(person.doctors).map(d=>d[0])];
+  return anonymizeClinicalText(value,names);
+}
+function reviewOutboundText(box,status){
+  const safe=cleanClinicalText(box.value);
+  if(safe===box.value)return true;
+  box.value=safe;
+  status.textContent='Личные сведения скрыты. Проверьте обновлённый текст и подтвердите ещё раз.';
+  box.focus();
+  return false;
 }
 function yearsAt(date) {
   const birth=field('birthday');

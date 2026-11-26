@@ -49,11 +49,11 @@ function uncertainLines(tsv,page){
     const [level,,block,paragraph,line,,,,,,confidence,...parts]=row.split('\t');
     const word=parts.join(' ').trim();if(level!=='5'||!word)continue;
     const key=[block,paragraph,line].join('/'),entry=lines.get(key)||{words:[],unclear:false};
-    entry.words.push(word);
+    entry.words.push({text:word,confidence:Number(confidence)});
     if(Number(confidence)>=0&&Number(confidence)<65&&/[\p{L}\d]/u.test(word))entry.unclear=true;
     lines.set(key,entry);
   }
-  return [...lines.values()].filter(l=>l.unclear).map(l=>({page,text:l.words.join(' ')}));
+  return [...lines.values()].filter(l=>l.unclear).map(l=>({page,text:l.words.map(w=>w.text).join(' '),words:l.words}));
 }
 async function recognizeDocument(blob,pdf,progress,issues=[]){
   if(isTextFile(blob))return (await blob.text()).trim();
@@ -111,26 +111,4 @@ async function recognizeDocument(blob,pdf,progress,issues=[]){
     }
     return pages.join('\n\n');
   }finally{if(worker)await worker.terminate();if(documentPdf)await documentPdf.destroy()}
-}
-function proposedMedicines(raw){
-  const lines=raw.split(/\r?\n/).map(line=>line.trim()).filter(Boolean), meds=[];
-  const dose=/\d+(?:[.,]\d+)?(?:\s*\/\s*\d+(?:[.,]\d+)?)?\s*(?:мкг|мг|мл|ме|ед|г|%|mcg|mg|ml|iu)(?![\p{L}])(?:\s*\/\s*(?:доза|дозу|дозы|мл|табл\.?|ml))?/iu;
-  const forms=/(?:назальный спрей|спрей|таблетк[аиуы]?|табл\.?|раствор|сироп|капсул[аы]?|крем|мазь|капли|гель)/iu;
-  const regimen=/^(?:по\s|принимать|наносить|закапывать|внутрь|\d+\s*(?:раз|табл|капс))/iu;
-  for(let i=0;i<lines.length;i++){
-    const line=lines[i],match=line.match(dose);if(regimen.test(line))continue;
-    if(!match){
-      const uncertain=line.match(/^(?:[•–—-]\s*|\d+[.)]\s*)?(.+?)\s+([?？�]+|неразборчиво)\s*(мкг|мг|мл|г|%)(?:\s|$)/iu);
-      if(uncertain)meds.push({id:uid(),name:uncertain[1],strength:uncertain[2]+' '+uncertain[3],form:line.match(forms)?.[0]||'',instructions:regimen.test(lines[i+1]||'')?lines[i+1]:''});
-      continue;
-    }
-    const prefix=line.slice(0,match.index).replace(/^\s*(?:[•–—-]|\d+[.)])\s*/,'');
-    const form=line.match(forms)?.[0]||'';
-    const name=prefix.replace(forms,'').replace(/^[\s·,:;–—-]+|[\s·,:;–—-]+$/g,'').trim();
-    if(!name||name.length>90)continue;
-    const tail=line.slice(match.index+match[0].length).replace(/^[\s,;·–—-]+/,'');
-    const instructions=[tail,regimen.test(lines[i+1]||'')?lines[i+1]:''].filter(Boolean).join(' ');
-    meds.push({id:uid(),name,strength:match[0],form,instructions});
-  }
-  return meds;
 }

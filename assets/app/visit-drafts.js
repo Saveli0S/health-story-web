@@ -4,7 +4,7 @@ const importingDrafts=new Map();
 function keepVisitFields(form,photo){
   const draft=current().visitDrafts.find(d=>d.id===photo?.draftId);if(!draft)return;
   const inputs={};
-  for(const k of ['episode','episodeName','date','title','note','doctor','doctorName','specialty','recommendation'])inputs[k]=form.elements[k].value;
+  for(const k of ['episode','episodeName','date','title','note','doctor','doctorName','specialty','clinic','recommendation'])inputs[k]=form.elements[k].value;
   if(form.querySelector('#rx-rows'))draft.manualMeds=medicineValues(form);
   draft.fields=inputs;draft.position=form.sourcePosition?.();saveState();
 }
@@ -17,6 +17,34 @@ function resumeVisit(id){
     '<div class="actions">'+act('readDraft','Распознать на устройстве',id,'button primary')+
     act('manualDraft','Заполнить вручную',id,'button secondary')+(!routerKey?act('providers','Подключить ИИ-провайдера','','text-button'):'')+'</div>');
 }
+const visitImportRevision=2;
+const visitHeaderFields=['episodeName','date','title','note','doctorName','specialty','clinic'];
+function reparseVisitDocument(d){
+  const text=d.transcription??d.raw??'';
+  d.header=parseVisitHeader(text);
+  d.proposed=proposedMedicines(text,d.issues||[]);
+  d.visitImportRevision=visitImportRevision;
+}
+function applyVisitTranscript(){
+  if(readOnly)return;
+  const photo=routes.at(-1)?.photo,docs=current().visitDrafts;
+  const draft=docs.find(d=>d.id===photo?.draftId),main=docs.find(d=>d.id===photo?.main);
+  const form=document.querySelector('#visit-form'),input=document.querySelector('#visit-transcript');
+  if(!draft||!main||!form||!input)return;
+  const before={...main},previousFields=draft.fields;
+  const text=input.value.trim();if(!text)return;
+  const fields=Object.fromEntries(new FormData(form));
+  main.transcription=text;reparseVisitDocument(main);
+  // Only the fields listed on the button are replaced. Preserve the user's episode & doctor choices.
+  for(const key of visitHeaderFields)fields[key]=main.header[key];
+  draft.fields=fields;
+  if(!saveState()){
+    Object.keys(main).forEach(k=>delete main[k]);Object.assign(main,before);draft.fields=previousFields;
+    form.querySelector('.error').textContent='Не удалось сохранить сверенный текст.';return;
+  }
+  Object.assign(photo,{header:{...main.header},transcription:text,proposed:main.proposed});
+  showNewVisit(routes.at(-1).id,photo);
+}
 async function readDraftGroup(docs,patient,report){
   for(const [i,d] of docs.entries()){
     if(d.state==='read')continue;
@@ -26,8 +54,8 @@ async function readDraftGroup(docs,patient,report){
       const file=new File([blob],d.name,{type:d.type});
       raw=await recognizeDocument(file,isPdf(file),msg=>report((i+1)+' / '+docs.length+' · '+d.name+' · '+msg),issues);
     }catch{/* An unreadable original stays available for manual verification. */}
-    Object.assign(d,{raw,issues,readError:raw?'':'Не удалось разобрать текст.',header:parseVisitHeader(raw),proposed:proposedMedicines(raw),
-      kind:suggestImportKind(d.name,raw),state:'read'});
+    Object.assign(d,{raw,issues,readError:raw?'':'Не удалось разобрать текст.',header:parseVisitHeader(raw),proposed:proposedMedicines(raw,issues),
+      kind:suggestImportKind(d.name,raw),state:'read',visitImportRevision});
     if(!saveState())throw Error();
   }
 }
@@ -40,6 +68,9 @@ async function openImportDraft(id,mode){
   try{
     if(mode==='local'&&!importingDrafts.has(id))importingDrafts.set(id,readDraftGroup(docs,patient,msg=>status.textContent=msg).finally(()=>importingDrafts.delete(id)));
     if(importingDrafts.has(id))await importingDrafts.get(id);
+    const old=docs.filter(d=>d.state==='read'&&d.raw&&d.visitImportRevision!==visitImportRevision);
+    for(const d of old)reparseVisitDocument(d);
+    if(old.length&&!saveState())throw Error();
     const main=docs.find(d=>d.header?.title||d.header?.doctorName)||draft;
     const blob=await fileBlob(patient+'/'+main.id);if(!blob)throw Error();
     if(route!==routes.at(-1)||patient!==person.id||!panel.open)return;

@@ -59,7 +59,7 @@ function newConsult(initial){
   for(const source of prior?(prior.sources||[]):initial&&!demo?[initial]:[]){
     if(!source.startsWith('indicator:')){seed.add(source);continue}
     const id=source.slice(10),exact=indicators.find(g=>g.key===id);
-    const priorMatches=indicators.filter(g=>norm(g.name)+'|'+norm(g.unit)===id);
+    const priorMatches=indicators.filter(g=>g.points.some(p=>indicatorKey(p.raw.name,p.raw.unit)===id||norm(p.raw.name)+'|'+norm(p.raw.unit)===id));
     const match=exact||(priorMatches.length===1?priorMatches[0]:null);
     if(match)seed.add('indicator:'+match.key);
   }
@@ -131,9 +131,17 @@ function consultContext(selected){
   const indicators=new Set(selected.filter(key=>key.startsWith('indicator:')).map(key=>key.slice(10)));
   for(const lab of labs()){
     const info=reportInfo(lab);
-    const rows=labIds.has(lab.id)?info.rows:info.rows.filter(r=>indicators.has(indicatorKey(r.name,r.unit)));
-    if(!rows.length)continue;
-    (data.анализы??=[]).push({дата:info.date,исследование:info.name,результаты:rows.map(r=>({показатель:r.name,результат:r.value,единица:r.unit,диапазон:r.range}))});
+    const results=[];
+    for(const row of info.rows){
+      const point=labSeriesPoint(row,info.name,lab.id);
+      const selectedTrend=indicators.has(point.key);
+      if(!labIds.has(lab.id)&&!selectedTrend)continue;
+      const result={показатель:row.name,результат:row.value,единица:row.unit,диапазон:row.range,биоматериал:point.specimen||'Не указан'};
+      if(selectedTrend)result.дляСравнения={показатель:point.name,результат:point.value,единица:point.unit};
+      results.push(result);
+    }
+    if(!results.length)continue;
+    (data.анализы??=[]).push({дата:info.date,исследование:info.name,результаты:results});
     addRef('lab',lab.id,info.name+' · '+dateLabel(info.date));
   }
   data.анализы?.sort((a,b)=>a.дата.localeCompare(b.дата));
@@ -158,7 +166,7 @@ function consultRecord(id){
     openPanel(person.name,'История консультации',info+refs+(r.answer?'<section class="panel-section"><h3>Ответ · '+esc(r.provider)+'</h3><div class="manual-answer">'+esc(r.answer)+'</div></section>':'<p>Ответ пока не добавлен.</p>')+
       '<details><summary>Запрос и версия промпта</summary><pre>'+esc(r.prompt)+'</pre><p>'+esc(r.template.text)+'</p></details>'+(readOnly?'':act('consult','Повторить с актуальными данными','again:'+id,'button secondary')));return;
   }
-  openPanel(person.name,'Проверить и передать запрос',info+refs+`<form class="edit-form" id="consult-answer" data-id="${esc(id)}"><label>Точный текст для провайдера<textarea name="prompt" rows="7" required ${r.sentAt?'readonly':''}>${esc(r.prompt)}</textarea></label>
+  openPanel(person.name,'Проверить и передать запрос',info+refs+`<form class="edit-form" id="consult-answer" data-id="${esc(id)}"><label>Точный текст для провайдера<textarea name="prompt" rows="7" required ${r.sentAt?'readonly':''}>${esc(r.sentAt?r.prompt:cleanClinicalText(r.prompt))}</textarea></label>
     <p class="hint">Проверьте свободный текст на личные сведения. Файлы и имена владельцев карточек в запрос не включаются автоматически.</p>
     <div class="actions left">${act('askProvider',routerKey?'Подтвердить и отправить в OpenRouter':'Подключить OpenRouter',id,'button primary','spark')}${act('consultCopy','Скопировать для ChatGPT',id,'button secondary')}${external('https://chatgpt.com/','Открыть ChatGPT')}</div>
     <p class="hint" role="status" id="provider-result">${esc(r.lastError||'')}</p>
@@ -169,6 +177,7 @@ function saveConsultAnswer(f,provider='ChatGPT · ручной перенос'){
   const r=current().consultations.find(r=>r.id===f.dataset.id);
   const answer=f.elements.answer.value.trim(),prompt=f.elements.prompt.value.trim();
   if(!r||r.answer||!answer||!prompt){f.querySelector('[role=status]').textContent='Заполните запрос и ответ.';return}
+  if(!r.sentAt&&!reviewOutboundText(f.elements.prompt,f.querySelector('[role=status]')))return;
   const old={...r};Object.assign(r,{answer,prompt,provider,answeredAt:new Date().toISOString(),replyDraft:''});
   if(!saveState()){Object.assign(r,old);f.querySelector('[role=status]').textContent='Не удалось сохранить ответ.';return}
   render();consultRecord(r.id);

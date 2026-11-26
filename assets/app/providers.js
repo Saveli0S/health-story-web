@@ -41,6 +41,7 @@ async function finishProvider(f){
 async function askProvider(id){
   const f=document.querySelector('#consult-answer'),r=current().consultations.find(r=>r.id===id);
   if(!r||!f||readOnly||r.answer||providerJobs.has(id))return;
+  if(!reviewOutboundText(f.elements.prompt,f.querySelector('[role=status]')))return;
   r.prompt=f.elements.prompt.value.trim();if(!r.prompt||!saveState())return;
   if(!routerKey){go('providers');return}
   const msg=f.querySelector('[role=status]'),profile=current(),prompt=r.prompt;
@@ -62,7 +63,7 @@ async function askProvider(id){
 }
 async function copyConsult(f){
   const box=f.elements.prompt,msg=f.querySelector('[role=status]'),r=current().consultations.find(r=>r.id===f.dataset.id);
-  if(!r||!box.value.trim())return;
+  if(!r||!box.value.trim()||!reviewOutboundText(box,msg))return;
   const recordCopy=()=>{r.prompt=box.value;r.sentAt=new Date().toISOString();r.provider='ChatGPT · ручной перенос';box.readOnly=true;saveState()};
 
   try{if(!navigator.clipboard?.writeText)throw Error();await navigator.clipboard.writeText(box.value);recordCopy();msg.textContent='Запрос скопирован.'}
@@ -70,6 +71,7 @@ async function copyConsult(f){
 }
 
 async function requestFreeModel(prompt){
+  if(cleanClinicalText(prompt)!==prompt)throw Error('Требуется повторная сверка текста перед отправкой.');
   const result=await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',credentials:'omit',referrerPolicy:'no-referrer',
       headers:{Authorization:'Bearer '+routerKey,'Content-Type':'application/json'},
       body:JSON.stringify({model:'openrouter/free',messages:[{role:'user',content:prompt}],provider:{data_collection:'deny'}}),signal:AbortSignal.timeout(120000)});
@@ -86,7 +88,7 @@ function directTreatmentForm(id){
   if(!reviewReady(id)||readOnly)return;
   const data=makePayload(id),template=promptLibrary().find(t=>t.id==='treatment')||builtinPrompts[0];
   const snapshot=JSON.stringify(data),old=current().prompts[id];
-  const text=old?.snapshot===snapshot&&old.templateVersion===template.version?old.text:cleanClinicalText(template.text)+'\n\n'+JSON.stringify(data,null,2);
+  const text=old?.snapshot===snapshot&&old.templateVersion===template.version?cleanClinicalText(old.text):cleanClinicalText(template.text)+'\n\n'+JSON.stringify(data,null,2);
   current().prompts[id]={snapshot,text,templateVersion:template.version,answer:old?.answer||''};saveState();
   openPanel('Разбор лечения · OpenRouter','Проверить запрос',`<form class="edit-form" id="direct-treatment" data-id="${esc(id)}"><p class="hint">Данные выбранного визита и профиль. Проверьте свободный текст перед передачей.</p><label>Точный текст<textarea required name="prompt" rows="9">${esc(text)}</textarea></label><button class="button primary">Подтвердить и отправить</button><p role="status"></p>${act('manual','Перенести в свой ChatGPT',id,'button secondary')}</form>`);
 }
@@ -94,7 +96,9 @@ async function sendTreatment(f){
   if(!f||readOnly||!routerKey||!reviewReady(f.dataset.id))return;
   const id=f.dataset.id,profile=current(),job='visit:'+person.id+':'+id,prompt=f.elements.prompt.value.trim();
   if(!prompt||providerJobs.has(job))return;
-  const payload=makePayload(id),version=profile.prompts[id].templateVersion,msg=f.querySelector('[role=status]');
+  const msg=f.querySelector('[role=status]');
+  if(!reviewOutboundText(f.elements.prompt,msg))return;
+  const payload=makePayload(id),version=profile.prompts[id].templateVersion;
   profile.prompts[id].text=prompt;if(!saveState())return;
   providerJobs.add(job);f.querySelectorAll('button,textarea').forEach(el=>el.disabled=true);msg.textContent='Ожидаем разбор…';
   try{

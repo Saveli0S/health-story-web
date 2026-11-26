@@ -8,6 +8,9 @@ const syncMerge=(()=>{
   const keyOf=(v,k)=>k==='addedVisits'&&Array.isArray(v)?v[0]:v?.id;
   const safe=k=>!['__proto__','prototype','constructor'].includes(k);
   const variant=(value,author,time)=>({...(value===undefined?{removed:true}:{value}),author,time});
+  // Visit tuples from older devices can omit the medication list and the clinic.
+  // The empty list at slot 8 also acts as padding when a clinic is recorded at 9.
+  function visitField(row,i){return i===8 && row.length===8 ? [] : row[i]}
   function merge(base,local,remote,authors){
     const conflicts=[];
     function walk(b,l,r,path,field){
@@ -33,8 +36,12 @@ const syncMerge=(()=>{
           }
           return out;
         }
-        if(field==='visitRow'&&l.length===b.length&&r.length===b.length)
-          return l.map((v,i)=>walk(b[i],v,r[i],[...path,i],String(i)));
+        if(field==='visitRow'){
+          const length=Math.max(l.length,r.length,b.length);
+          const result=Array.from({length},(_,i)=>walk(visitField(b,i),visitField(l,i),visitField(r,i),[...path,i],String(i)));
+          while(result.length && result.at(-1)===undefined)result.pop();
+          return result;
+        }
       }
       function mark(side){
         for(let i=path.length;i>=0;i--){
@@ -85,7 +92,8 @@ const syncMerge=(()=>{
         const a=new Map(base.map(v=>[keyOf(v,field),v])),b=new Map(next.map(v=>[keyOf(v,field),v]));
         return [...new Set([...a.keys(),...b.keys()])].flatMap(id=>changes(a.get(id),b.get(id),[...path,{id,field}],field==='addedVisits'?'visitRow':''));
       }
-      if(field==='visitRow'&&next.length===base.length)return next.flatMap((v,i)=>changes(base[i],v,[...path,i],String(i)));
+      if(field==='visitRow')return Array.from({length:Math.max(base.length,next.length)},(_,i)=>
+        changes(visitField(base,i),visitField(next,i),[...path,i],String(i))).flat();
     }
     return [JSON.stringify(path)];
   }

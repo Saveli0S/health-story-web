@@ -19,8 +19,8 @@ function recordsListing(){
     else if(analysisMode==='reports'){
       const rows=filterRows(searchIndex().filter(r=>r.type==='lab'&&(labFilter==='Все'||labCategory(r.id)===labFilter)),sectionQuery);
       content=rows.map(r=>resultRow('lab',r.id,r.title,r.meta,'lab')).join('');
-    }else content=indicatorGroups().filter(g=>norm(g.name+' '+g.points.map(p=>reportInfo(labs().find(l=>l.id===p.source)).name+' '+tagLabels('lab',p.source)).join(' ')).includes(norm(sectionQuery)))
-      .map(g=>resultRow('trend',g.key,g.name,g.unit+' · результатов '+g.points.length,'trend')).join('');
+    }else content=indicatorGroups().filter(g=>norm(g.name+' '+g.specimen+' '+g.points.map(p=>p.raw.name+' '+reportInfo(labs().find(l=>l.id===p.source)).name+' '+tagLabels('lab',p.source)).join(' ')).includes(norm(sectionQuery)))
+      .map(g=>resultRow('trend',g.key,g.name,seriesDescription(g)+' · результатов '+g.points.length,'trend')).join('');
   }
   if(section==='files')content=filterRows(searchIndex().filter(r=>r.type==='file'&&(documentFilter==='Все'||allFiles().find(f=>f.id===r.id)?.category===documentFilter)),sectionQuery)
     .map(r=>{const row=resultRow('file',r.id,r.title,r.meta,'clip');return prototypeState.sync?
@@ -97,7 +97,7 @@ function appExtrasChange(el){
   if(el.closest('#visit-form')&&['episode','date'].includes(el.name))refreshPreviousFields(el.form);
   if(el.closest('#consult-answer')){
     const f=el.form,r=current().consultations.find(r=>r.id===f.dataset.id);
-    if(r&&!r.answer){r.prompt=f.elements.prompt.value;r.replyDraft=f.elements.answer.value;saveState()}
+    if(r&&!r.answer){if(!r.sentAt)r.prompt=cleanClinicalText(f.elements.prompt.value);r.replyDraft=f.elements.answer.value;saveState()}
   }
 }
 function appExtrasSubmit(f){

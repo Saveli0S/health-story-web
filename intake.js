@@ -31,6 +31,7 @@ function showNewVisit(episodeId,photo){
     <label>Дата визита<input required type="date" name="date" max="${todayLocal()}" value="${photo?esc(d.date):todayLocal()}"></label></div>
     <label>Врач<select name="doctor"><option value="new">Добавить врача</option>${doctors.map(([id,doc])=>'<option value="'+esc(id)+'" '+(id===doctorId?'selected':'')+'>'+esc(doctorLabel(id))+'</option>').join('')}</select></label>
     <div class="intake-pair" data-new-doctor><label>Специальность <small>по желанию</small><input name="specialty" maxlength="80" value="${esc(d.specialty)}"></label><label>ФИО врача<input name="doctorName" maxlength="100" value="${esc(d.doctorName)}"></label></div>
+    <label>Клиника <small>по желанию</small><input name="clinic" maxlength="160" value="${esc(d.clinic)}"></label>
     <label>Сведения о визите <small>по желанию</small><textarea name="note" maxlength="2000" placeholder="Причина обращения, диагноз или выводы врача">${esc(d.note)}</textarea></label>
     <label>Рекомендации врача <small>по желанию</small><textarea name="recommendation" maxlength="3600" placeholder="Что рекомендовал врач, когда пройти контроль"></textarea></label>
     <div id="previous-therapy"></div>${manual?'<div id="rx-rows"></div>'+act('appendMed','Добавить препарат вручную','','button secondary','plus'):''}
@@ -41,6 +42,7 @@ function showNewVisit(episodeId,photo){
     const form=document.querySelector('#visit-form');restoreVisitFields(form,photo);
     setupSourceView(photo.file,form,photo.file,current().visitDrafts.find(d=>d.id===photo.draftId)?.position);
     setupBatchPreview(form,photo,current().visitDrafts.find(d=>d.id===photo.draftId)?.position);
+    showUncertainText(form,photo.issues||[]);
     clarifyFields(form,[['date','Какую дату визита указал врач?'],['title','Как называется визит?'],['episodeName','Какой эпизод или диагноз указан?'],['doctorName','Как зовут врача?']]);
   }
   const visitForm=document.querySelector('#visit-form'),inputs=visitForm.elements;
@@ -62,15 +64,16 @@ async function submitVisit(f,next){
   if(f.dataset.saving)return;
   const val=k=>f.elements[k].value.trim(), profile=current(),route=routes.at(-1),photo=route.photo,patient=person.id;
   const episode=val('episode')==='new'?{id:uid(),name:val('episodeName')}:profile.episodes.find(e=>e.id===val('episode'));
-  const doctor=val('doctor')==='new'?{id:uid(),values:[val('doctorName'),val('specialty'),'']}:null;
+  const doctor=val('doctor')==='new'?{id:uid(),values:[val('doctorName'),val('specialty'),val('clinic')]}:null;
   if(!episode?.name||!val('title')||(doctor&&!doctor.values[0])){f.querySelector('.error').textContent='Заполните название эпизода, визита и имя врача.';return}
   if(photo&&[val('title'),val('episode')==='new'?val('episodeName'):'',doctor?.values[0]||''].some(needsClarification)){f.querySelector('.error').textContent='Уточните отмеченные поля визита по оригиналу.';return}
   const visit=[uid(),val('date'),val('title'),doctor?.id||val('doctor'),episode.name,val('note'),'scope',episode.id];
   let decisions;try{decisions=readTherapyChanges(f,visit)}catch(e){f.querySelector('.error').textContent=e.message;return}
   const meds=medicineValues(f);
-  if(meds.some(m=>!m.name||!m.strength||!m.instructions||[m.name,m.strength,m.instructions].some(needsClarification))){
+  if(meds.some(m=>!m.name||!m.strength||!m.instructions||[m.name,m.strength,m.instructions].some(unclearRxField))){
     f.querySelector('.error').textContent='Уточните название, дозировку и схему каждого препарата.';return;
   }
+  if(val('clinic')){visit[8]=[];visit[9]=val('clinic')}
   if(meds.length)visit[8]=meds.map(m=>({...m,period:emptyPeriod()}));
   const archived=photo&&profile.visitDrafts.find(d=>d.id===photo.draftId);
   if(photo&&!archived){f.querySelector('.error').textContent='Откройте исходный черновик из профиля.';return}
@@ -81,7 +84,7 @@ async function submitVisit(f,next){
   const rows=originals.map(d=>{
     const kind=d.kind||'Назначения',row={id:d.id,blobId:d.blobId,visit:visit[0],category:kind,name:d.name,type:d.type,date:visit[1]};
     if(d.issues?.length)row.issues=d.issues;
-    if(['Назначения','Рекомендации'].includes(kind))Object.assign(row,{intake:true,raw:d.raw||'',proposed:kind==='Рекомендации'?[]:d.proposed||[],readError:d.readError,checked:false,meds:[]});
+    if(['Назначения','Рекомендации'].includes(kind))Object.assign(row,{intake:true,raw:d.raw||'',transcription:d.transcription,visitImportRevision:d.visitImportRevision,proposed:kind==='Рекомендации'?[]:d.proposed||[],readError:d.readError,checked:false,meds:[]});
     if(kind==='Лаборатория'&&d.raw){row.labRaw=d.raw;row.labDraft=parseLabText(d.raw,d.name)}
     return row;
   });
@@ -179,7 +182,8 @@ async function readIntakeFile(row,blob,job){
       }
     },issues);
     row.issues=issues;
-    row.proposed=row.category==='Рекомендации'?[]:proposedMedicines(row.raw);
+    row.visitImportRevision=visitImportRevision;
+    row.proposed=row.category==='Рекомендации'?[]:proposedMedicines(row.raw,issues);
     row.readError=row.raw?'':'Текст не удалось прочитать. Сверьте оригинал и введите назначение вручную.';
   }catch{
     row.readError='Не удалось прочитать документ. Можно повторить распознавание или внести назначение вручную.';
@@ -213,19 +217,33 @@ function medicineInputs(m){
     <label>Схема приёма<input name="instructions" maxlength="400" value="${esc(m.instructions)}" placeholder="Разовая доза, частота, длительность" required></label>
     ${act('dropMed','Убрать строку','','inline-action')}</fieldset>`;
 }
+function refreshRxDraft(id){
+  const f=current().files.find(row=>row.id===id);
+  const form=document.querySelector('#verify-form');if(readOnly||!form||!f||f.checked||f.category!=='Назначения')return;
+  const fresh=proposedMedicines(f.transcription??f.raw??'',f.issues||[]);
+  form.querySelector('#rx-rows').innerHTML=fresh.map(medicineInputs).join('');
+  form.elements.none.checked=false;
+  form.refreshClarifications?.();
+}
 function showVerification(id){
   const f=current().files.find(file=>file.id===id);if(!f||jobs.has(id))return;
-  const meds=f.checked?f.meds:(f.draft?.meds||f.proposed||[]);
+  const clinical=f.transcription??f.raw??'';
+  const auto=!f.checked&&!f.lastConfirmed&&f.visitImportRevision!==visitImportRevision&&f.category==='Назначения'&&clinical;
+  const meds=f.checked?f.meds:(f.draft?.meds??(auto?proposedMedicines(clinical,f.issues||[]):f.proposed)??[]);
   const rec=f.category==='Рекомендации';
+  const historical=historyMedicationLines(clinical);
   openPanel(visitById(f.visit)[2],rec?'Сверить рекомендации врача':'Сверка назначения',workflowSteps(2)+`<p class="dialog-sub">${esc(f.name)}. ${rec?'Сверьте текст указаний врача по оригиналу.':'Сверьте название, дозировку и схему.'} Неразборчивую запись можно отложить до уточнения у врача.</p>
 
     <details ${meds.length?'':'open'}><summary>Распознанный текст</summary><pre class="source-text">${esc(f.raw||'Текст отсутствует.')}</pre></details>
     ${f.readError?'<p class="fact-note">'+esc(f.readError)+'</p>':''}
     ${!f.checked&&(!f.raw||f.readError)?act('retryRead','Повторить распознавание',id,'text-button'):''}
+    ${historical.length?'<details><summary>Анамнез и отмены в оригинале</summary><pre class="source-text">'+esc(historical.join('\n'))+'</pre></details>':''}
+    ${f.transcription?'<details><summary>Внесённый после сверки текст</summary><pre class="source-text">'+esc(f.transcription)+'</pre></details>':''}
     <form class="edit-form" id="verify-form" data-id="${esc(id)}">
-    <label>Рекомендации врача<textarea name="recommendation" maxlength="3600" ${rec?'required':''}>${esc(f.draft?.recommendation??f.recommendation??(recommendationText(f.raw||'')||(rec?f.raw:'')))}</textarea></label>
+    <label>Рекомендации врача<textarea name="recommendation" maxlength="3600" ${rec?'required':''}>${esc(f.draft?.recommendation??f.recommendation??(recommendationText(clinical)||(rec?clinical:'')))}</textarea></label>
     <div ${rec?'hidden':''}><div id="rx-rows">${meds.map(medicineInputs).join('')}</div>
     ${act('appendMed','Добавить препарат','','button secondary','plus')}
+    ${auto&&f.draft?act('refreshRxDraft','Заменить список препаратов по исходному тексту',f.id,'text-button'):''}
     <label class="unknown"><input type="checkbox" name="none" ${rec||(f.checked&&!meds.length)||f.draft?.none?'checked':''}>В документе нет лекарственных назначений</label></div>
     <label>Другие сведения для разбора <small>по желанию</small><textarea name="context" maxlength="1800" placeholder="Только нужные сведения из документа, без имён и контактов">${esc(f.draft?.context??f.context)}</textarea></label>
     <label class="unknown"><input type="checkbox" name="verified" required>Я сверил(а) сведения с оригиналом</label><p role="alert" class="error"></p>
@@ -263,6 +281,7 @@ async function previewOriginal(f,container,original){
 }
 function emptyPeriod(){return {start:'',planned:'',end:'',unknown:false,closed:false}}
 function needsClarification(value){return /[?？�]|неразборчив|неизвестн|уточнить|не\s*указан/i.test(value)}
+function unclearRxField(value){return needsClarification(value)||!/[\p{L}\d]/u.test(value)}
 function medicineValues(form){
   return [...form.querySelectorAll('[data-med]')].map(row=>{
     const result={id:row.dataset.med};
@@ -282,7 +301,7 @@ function storeVerification(form,defer=false){
     if(values.none===Boolean(values.meds.length)||values.meds.some(m=>!m.name||!m.strength||!m.instructions)){
       form.querySelector('.error').textContent='Заполните назначение для каждой строки или оставьте список пустым и отметьте отсутствие препаратов.';return;
     }
-    if([values.recommendation,...values.meds.flatMap(m=>[m.name,m.strength,m.instructions])].some(needsClarification)){
+    if(needsClarification(values.recommendation)||values.meds.some(m=>[m.name,m.strength,m.instructions].some(unclearRxField))){
       form.querySelector('.error').textContent='Сведения требуют уточнения. Исправьте отмеченные поля по оригиналу или выберите «Уточнить позже».';return;
     }
     file.meds=values.meds.map(m=>({...m,period:file.meds.find(old=>old.id===m.id)?.period||emptyPeriod()}));

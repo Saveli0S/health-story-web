@@ -17,53 +17,14 @@ function switchVisitMode(mode,episodeId){
   routes[routes.length-1]=next;displayRoute();
   const restored=document.querySelector('#visit-form'),saved=drafts[name];
   if(!restored||!saved)return;
-  for(const key of ['episode','episodeName','date','title','note','doctor','doctorName','specialty','recommendation']){
+  for(const key of ['episode','episodeName','date','title','note','doctor','doctorName','specialty','clinic','recommendation']){
     if(Object.hasOwn(saved.fields,key))restored.elements[key].value=saved.fields[key];
   }
   const rows=restored.querySelector('#rx-rows');if(rows)rows.innerHTML=saved.meds.map(medicineInputs).join('');
   toggleVisitInputs();
 }
-function parseVisitHeader(raw){
-  const lines=raw.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-  function labelled(pattern){
-    for(let i=0;i<lines.length;i++){
-      const match=lines[i].match(pattern);
-      if(match)return (match[1]||lines[i+1]||'').trim();
-    }
-    return '';
-  }
-  const episodeName=labelled(/^(?:эпизод(?: болезни)?|(?:основной |предварительный |клинический )?диагноз)(?:\s*[:·–—-]\s*(.*)|\s*)$/iu);
-  const specialtyLine=lines.map(line=>line.match(/^((?:[а-яё-]+олог|терапевт|педиатр|хирург|врач общей практики|лор))\s*(?:[·:–—-]\s*|\s+)([\p{L}][\p{L}.'’\s-]+)$/iu)).find(Boolean);
-  const doctorName=labelled(/^(?:(?:лечащий )?врач(?:\s+при[её]ма)?|фио врача)\s*(?:[:·–—-]\s*(.*)|\s*)$/iu)||specialtyLine?.[2]||'';
-  const specialty=labelled(/^специальность\s*[:·–—-]\s*(.*)$/iu)||specialtyLine?.[1]||'';
-  const title=labelled(/^(?:название визита|тип при[её]ма|вид посещения|визит)\s*[:·–—-]\s*(.*)$/iu)||
-    lines.find(l=>/^(?:первичный |повторный )?(?:при[её]м|консультация|осмотр)\s+\p{L}/iu.test(l))||'';
-  const note=labelled(/^(?:заключение(?: врача)?|жалобы|сведения о визите)(?:\s*[:·–—-]\s*(.*)|\s*)$/iu);
-  const visitDate=labelled(/^дата(?: визита| при[её]ма| осмотра| консультации| посещения)?\s*[:·–—-]\s*(.*)$/iu);
-  const candidate=visitDate?[visitDate]:lines.filter(l=>!/рожд|д\.\s*р\.|начал|окончан|повторный визит|контроль через/iu.test(l));
-  const dates=new Set();
-  for(const line of candidate){
-    for(const m of line.matchAll(/(?<!\d)(?:(\d{4})-(\d\d)-(\d\d)|(\d{1,2})[./](\d{1,2})[./](\d{4}))(?!\d)/g)){
-      const iso=m[1]?m[0]:[m[6],m[5].padStart(2,'0'),m[4].padStart(2,'0')].join('-');
-      const date=new Date(iso+'T12:00:00Z');
-      if(Number.isFinite(date.valueOf())&&date.toISOString().slice(0,10)===iso&&iso<=todayLocal())dates.add(iso);
-    }
-  }
-  return {episodeName,doctorName,specialty,title,note,date:dates.size===1?[...dates][0]:''};
-}
 const importAccept='image/*,application/pdf,.pdf,text/plain,.txt';
 const importKinds=['Назначения','Рекомендации','Лаборатория','Снимки','Заключения','Другое'];
-function recommendationText(raw){
-  const block=[];
-  for(const line of raw.split(/\r?\n/)){
-    const match=line.match(/^\s*(?:рекомендации(?: врача)?|рекомендовано)(?=\s|[:.—–-]|$)\s*[:.—–-]?\s*(.*)$/iu);
-    if(match){block.push(match[1]);continue}
-    if(!block.length)continue;
-    if(/^\s*(?:назначения|диагноз|жалобы|дата|врач|подпись|обследование|заключение|результаты)(?=[:\s]|$)/iu.test(line))break;
-    block.push(line.trim());
-  }
-  return block.join('\n').trim();
-}
 function suggestImportKind(name,raw=''){
   const blood=/анализ (?:крови|мочи)|лаборатор|гемоглобин|биохими|\bcbc\b/iu;
   if(/рекомендац/iu.test(name))return 'Рекомендации';
@@ -85,7 +46,11 @@ function visitImportSource(photo){
     docs.map(d=>'<label>'+esc(d.name)+'<select aria-label="'+esc('Назначение файла '+d.name)+'" data-draft-kind="'+esc(d.id)+'">'+kindOptions(d.kind||'Назначения')+'</select></label>').join('')+
     '<p class="hint">Проверьте тип каждого файла. Бланки анализов и рекомендации можно сверить отдельно.</p>' +
     (docs.length===1?'<label class="text-button file-picker">Выбрать другой документ<input type="file" id="replace-visit-source" accept="'+importAccept+'"></label>':'')+
-    (photo.raw?'<details><summary>Распознанный текст основного документа</summary><pre class="source-text">'+esc(photo.raw)+'</pre></details>':'')+'</div>';
+    (photo.raw?'<details><summary>Распознанный текст основного документа</summary><pre class="source-text">'+esc(photo.raw)+'</pre></details>':'')+
+    '<details class="document-transcript"><summary>Исправить распознанный текст</summary>'+
+    '<p class="hint">Сверьте текст с оригиналом. Для неразборчивой дозировки поставьте знак вопроса. При применении будут заново заполнены дата, название, врач, специальность, клиника, диагноз, жалобы и предложенные препараты.</p>'+
+    '<label>Текст основного документа<textarea id="visit-transcript" rows="8" maxlength="60000">'+esc(photo.transcription??photo.raw??'')+'</textarea></label>'+
+    act('applyVisitTranscript','Применить текст и заменить распознанные поля','','button secondary')+'</details>'+'</div>';
 }
 function showPhotoVisit(episodeId){
   const route=routes.at(-1);

@@ -81,11 +81,29 @@ function showFamily(){
   openPanel(family.name,'Профили семьи','<p class="dialog-sub">'+(readOnly?'Детский режим просмотра.':viewer==='admin'?'Доступ администратора.':'Доступ взрослого.')+'</p>'+
   available.map(p=>`<button class="person-row" data-action="select" data-id="${p.id}"><span class="avatar ${p.role==='Ребёнок'?'child':''}">${esc(p.initials)}</span><span><strong>${esc(p.name)}</strong><small>${workingFamily&&p.id===family.adminId?'Администратор':p.role}</small></span>${icon(p===person?'check':'right',true)}</button>`).join('')+familyActions());
 }
+function visitClinic(v){return v[9]??person.doctors[v[3]]?.[2]??''}
+function visitClinicEditor(id){
+  const v=visitById(id);if(!v||readOnly)return;
+  openPanel(v[2],'Клиника визита','<form id="visit-clinic-form" class="edit-form" data-id="'+esc(id)+'"><label>Клиника<input name="clinic" maxlength="160" value="'+esc(visitClinic(v))+'"></label><p role="alert" class="error"></p><button class="button primary">Сохранить</button></form>');
+}
+function saveVisitClinic(form){
+  const id=form.dataset.id,v=visitById(id);if(!v||readOnly)return;
+  const rows=current().addedVisits,idx=rows.findIndex(r=>r[0]===id),updated=v.slice();
+  updated[8]??=[];updated[9]=form.elements.clinic.value.trim();
+  if(idx>=0)rows[idx]=updated;else rows.push(updated);
+  if(!saveState()){
+    if(idx>=0)rows[idx]=v;else rows.pop();
+    form.querySelector('.error').textContent='Не удалось сохранить клинику.';return;
+  }
+  person.visits[person.visits.findIndex(r=>r[0]===id)]=updated;
+  render();goBack();
+}
 function showVisit(id){
   const v=visitById(id),meds=prescribedForReview(id),files=allFiles().filter(f=>f.visit===id),linked=labs().filter(l=>l.visit===id);
   const reviews=current().reviews.filter(r=>r.visit===id).slice().reverse(),notes=current().notes.filter(n=>n.visit===id);
   openPanel(person.name,v[2],`
     <p class="detail-meta">${icon('calendar')}${dateLabel(v[1],{day:'numeric',month:'long',year:'numeric'})}</p>
+    <p class="detail-meta">${visitClinic(v)?'Клиника · '+esc(visitClinic(v)):''} ${readOnly?'':act('editVisitClinic',visitClinic(v)?'Изменить клинику':'Указать клинику',id,'text-button')}</p>
     ${tagStrip('visit',id)}<div class="visit-links">${act('episode',v[4],v[7],'chip-link','folder')}${act('doctor',doctorLabel(v[3]),v[3],'chip-link','scope')}</div><p class="visit-summary">${esc(v[5])}</p>
     ${readOnly?'':act('intake',intakeFiles(id).some(f=>!f.checked)?'Продолжить сверку назначений':'Документы и сверка назначений',id,'button secondary','clip')}
     <div class="visit-options">${act('brief','Сводка к приёму',v[7],'chip-link','book')}${readOnly?'':act('consult','Обсудить с ИИ','visit:'+id,'chip-link','spark')}
@@ -109,12 +127,12 @@ function showDoctor(id){
 function addNote(id){
   openPanel('Пометка к визиту',visitById(id)[2],`<form id="note-form" class="edit-form" data-id="${id}"><label>Текст пометки<textarea required name="note" maxlength="800"></textarea></label><p class="hint">Увидят все, кому доступна карточка ${esc(person.name)}.</p><button class="button primary">Сохранить пометку</button></form>`);
 }
-const pages={drive:drivePanel,deviceUpdate:updateDevicePanel,joinDevice:joinDevicePanel,grantDevice:grantDevicePanel,revokeDevice:revokeDevicePanel,newFamily:()=>familyForm(true),newMember:()=>familyForm(false),recommendVisit:recommendationEditor,readDraft:id=>openImportDraft(id,'local'),manualDraft:id=>openImportDraft(id,'manual'),prevent:preventCard,editPrevent:preventionForm,completePrevent,tagLibrary,tagDefinition,removeTag:tagRemoval,recordTags:tagEditor,family:showFamily,medical:showMedical,visit:showVisit,doctor:showDoctor,episode:episodeCard,field:showField,removeField:showDelete,
+const pages={editVisitClinic:visitClinicEditor,drive:drivePanel,deviceUpdate:updateDevicePanel,joinDevice:joinDevicePanel,grantDevice:grantDevicePanel,revokeDevice:revokeDevicePanel,newFamily:()=>familyForm(true),newMember:()=>familyForm(false),recommendVisit:recommendationEditor,readDraft:id=>openImportDraft(id,'local'),manualDraft:id=>openImportDraft(id,'manual'),prevent:preventCard,editPrevent:preventionForm,completePrevent,tagLibrary,tagDefinition,removeTag:tagRemoval,recordTags:tagEditor,family:showFamily,medical:showMedical,visit:showVisit,doctor:showDoctor,episode:episodeCard,field:showField,removeField:showDelete,
   search:showSearch,lab:labCard,trend:indicatorView,file:showFile,upload:selectUpload,period:showPeriod,finish:showFinish,consent:showConsent,
   review:showReview,manual:showManual,directTreatment:directTreatmentForm,therapy:therapyEditor,brief:visitBrief,measure:measureForm,measureChart,measurePoint,consult:newConsult,consultRecord,
   providers,prompts:promptManager,template:templateForm,resetTemplate:id=>changeTemplate(id,true,false),deleteTemplate:id=>changeTemplate(id,false,false),
   devices:familyDevices,archive:archivePanel,exportBackup:exportForm,importBackup:importForm,linkDocument,verifyLab,resumeVisit,analogs:showAnalogs,addNote,newEpisode:showNewEpisode,newVisit:showNewVisit,photoVisit:showPhotoVisit,intake:showIntake,verifyFile:showVerification};
-const restricted=new Set(['recommendVisit','readDraft','manualDraft','queueTreatment','editPrevent','completePrevent','tagDefinition','removeTag','recordTags','confirmTagRemoval','resumeVisit','directTreatment','therapy','verifyLab','linkDocument','measure','consult','providers','prompts','template','resetTemplate','deleteTemplate','exportBackup','importBackup','field','removeField','confirmDelete','finish','period','upload','analyze','consent','run','addNote','manual','copyPrompt','newEpisode','newVisit','photoVisit','visitMode','sampleVisit','intake','verifyFile','sampleRx','retryRead','appendMed','dropMed','deferVerify','intakeAnalyze']);
+const restricted=new Set(['applyVisitTranscript','refreshRxDraft','editVisitClinic','recommendVisit','readDraft','manualDraft','queueTreatment','editPrevent','completePrevent','tagDefinition','removeTag','recordTags','confirmTagRemoval','resumeVisit','directTreatment','therapy','verifyLab','linkDocument','measure','consult','providers','prompts','template','resetTemplate','deleteTemplate','exportBackup','importBackup','field','removeField','confirmDelete','finish','period','upload','analyze','consent','run','addNote','manual','copyPrompt','newEpisode','newVisit','photoVisit','visitMode','sampleVisit','intake','verifyFile','sampleRx','retryRead','appendMed','dropMed','deferVerify','intakeAnalyze']);
 function displayRoute(){clearFileURL();const r=routes.at(-1);pages[r.name](r.id)}
 function go(name,id=''){routes.push({name,id});displayRoute()}
 function replaceRoute(name,id){routes.pop();go(name,id)}
@@ -145,6 +163,8 @@ document.addEventListener('click',e=>{
     }
     case 'visitMode':switchVisitMode(button.dataset.mode,id);break;
     case 'retryRead':retryRecognition(id);break;
+    case 'applyVisitTranscript':applyVisitTranscript();break;
+    case 'refreshRxDraft':refreshRxDraft(id);break;
     case 'appendMed':{
       document.querySelector('#rx-rows').insertAdjacentHTML('beforeend',medicineInputs({}));
       const none=document.querySelector('#verify-form [name=none]');if(none)none.checked=false;
@@ -184,7 +204,7 @@ document.addEventListener('change',e=>{
   appExtrasChange(el);
   if(el.closest('#manual-form')){
     const f=el.form,saved=current().prompts[f.dataset.id];
-    if(saved){saved.text=f.elements.prompt.value;saved.answer=f.elements.answer.value;saveState()}
+    if(saved){saved.text=cleanClinicalText(f.elements.prompt.value);saved.answer=f.elements.answer.value;saveState()}
   }
   if(el.id==='visit-source'){preparePhotoVisit(el.files);return}
   if(el.id==='replace-visit-source'&&el.files[0]){replaceImportOriginal(el,el.files[0]);return}
@@ -208,6 +228,7 @@ document.addEventListener('submit',e=>{
     case 'device-revoke':revokeDevice(f);break;
     case 'family-form':saveFamilyForm(f);break;
     case 'episode-form':submitEpisode(f);break;
+    case 'visit-clinic-form':saveVisitClinic(f);break;
     case 'visit-form':submitVisit(f,e.submitter?.value);break;
     case 'verify-form':storeVerification(f);break;
     case 'period-form':savePeriod(f);break;

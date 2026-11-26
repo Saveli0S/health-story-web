@@ -87,7 +87,11 @@ function makePayload(id) {
     измененияСхемы:current().changes.filter(c=>c.visit===id).map(c=>({решение:c.kind,ранее:c.before,назначено:c.replacement?[c.replacement.name,c.replacement.strength,c.replacement.instructions]:null})),
     сведенияИзДокументов:visitConclusions(id),рекомендацииВрача:confirmedRecommendations(id).map(r=>r.text),
     вариантыВрача:c?.meds.some(m=>m.fixture)?['Флутиказон · отдельно указан в демонстрационном листе назначений']:[],
-    анализы:labs().filter(l=>l.visit===id).flatMap(l=>labResults(l.id).map(r=>r.name+' '+r.values[l.id]+' '+r.unit))};
+    анализы:labs().filter(l=>l.visit===id).flatMap(l=>{
+      const report=reportInfo(l);
+      return report.rows.map(r=>({датаОбразца:report.date,исследование:report.name,
+        показатель:r.name,результат:r.value,единица:r.unit,материал:r.specimen||'Не указан',диапазон:r.range||'Не указан'}));
+    })};
   const history=person.visits.filter(other=>other[7]===v[7]&&other[0]!==id&&other[1]<v[1]);
   if(history.length)data.предыдущиеВизитыЭпизода=history.slice().reverse().map(other=>({
     днейДоВизита:(Date.parse(v[1])-Date.parse(other[1]))/86400000,запись:other[5],
@@ -156,14 +160,35 @@ function pharmacySearch(name,city=true) {
   const u=new URL('https://tabletka.by/search/');u.searchParams.set('request',name);
   if(city)u.searchParams.set('region',pharmacyRegions[prototypeState.city]);return u.href;
 }
+function liveMarket(m,city) {
+  const root=document.querySelector('#live-market');if(!root)return;
+  const run=async(region)=>{
+    root.replaceChildren();root.textContent='Проверяем предложения на tabletka.by…';
+    const label=region==='0'?'Вся Беларусь':city;
+    try {
+      const response=await fetch('https://health-story-sync.xzx89s.workers.dev/pharmacy/search',{method:'POST',credentials:'omit',referrerPolicy:'no-referrer',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:m.name,region}),signal:AbortSignal.timeout(15000)});
+      if(!response.ok)throw Error();
+      const data=await response.json();if(!root.isConnected)return;
+      if(data.region!==region || !Array.isArray(data.packages))throw Error();
+      root.innerHTML='<p>'+esc(label)+' · '+esc(stamp(data.checked))+'</p>'+
+        (data.packages.length?'<p>Сверьте назначение с конкретной упаковкой.</p>'+data.packages.map(p=>{
+          const link=new URL('https://tabletka.by/result/');link.searchParams.set('ls',p.id);if(region!=='0')link.searchParams.set('region',region);
+          return '<div class="market-row"><div><strong>'+esc(p.name)+'</strong><small>'+esc([p.form,p.manufacturer,p.substance].filter(Boolean).join(' · '))+'</small></div><div>'+esc(p.min.toFixed(2)+' – '+p.max.toFixed(2))+' BYN '+external(link.href,'Наличие')+'</div></div>';
+        }).join(''):'<p>В выбранном регионе подтверждённых предложений нет.</p>');
+    }catch{root.textContent='Сейчас получить цены из каталога не удалось. Поиск на tabletka.by доступен по ссылке.'}
+    if(region!=='0' && root.isConnected){const b=document.createElement('button');b.className='text-button';b.textContent='Искать по всей Беларуси';b.onclick=()=>run('0');root.append(b)}
+  };
+  root.querySelector('button').onclick=()=>run(pharmacyRegions[city]);
+}
 function showAnalogs(id) {
   const {med:m,index:i}=medFromKey(id);if(!m)return;
   const info=m,city=prototypeState.city;
   if(!m.fixture){
     const search=[m.name,m.strength,m.form].filter(Boolean).join(' ');
     openPanel('Сравнение препаратов','Аналоги и цены',`<p class="dialog-sub">${esc(search)}</p>
-      <p class="fact-note">Для этого назначения пока нет проверенных аналогов и диапазона цен. Сравните действующее вещество, дозировку, форму, путь введения и тип высвобождения.</p>
-      <div class="panel-section">${external(pharmacySearch(search),'Искать на tabletka.by · '+city)}<br>${external(pharmacySearch(search,false),'Искать по всей Беларуси')}</div>`);return;
+      <p class="fact-note">Для сравнения аналогов проверьте действующее вещество, дозировку, форму, путь введения и тип высвобождения.</p>
+      <div id="live-market"><button class="button secondary">Проверить текущие цены</button><small>Поиск по названию и городу через семейный сервер.</small></div>
+      <div class="panel-section">${external(pharmacySearch(search),'Искать на tabletka.by · '+city)}<br>${external(pharmacySearch(search,false),'Искать по всей Беларуси')}</div>`);liveMarket(m,city);return;
   }
   openPanel('Сравнение препаратов','Аналоги и цены',`<p class="dialog-sub">${esc(m.name)} · ${esc(m.strength)} · ${esc([m.form,m.pack].filter(Boolean).join(' · '))}</p>
     ${!i?`<p class="fact-note">Мометазон, назальный дозированный спрей обычного высвобождения. В примере у всех флаконов 140 доз.</p>
@@ -178,7 +203,7 @@ function showManual(id){
   if(!reviewReady(id))return;
   const input=makePayload(id), snapshot=JSON.stringify(input), saved=current().prompts[id];
   const template=promptLibrary().find(t=>t.id==='treatment')||builtinPrompts[0];
-  const prompt=saved?.snapshot===snapshot&&saved.templateVersion===template.version?saved.text:cleanClinicalText(template.text)+'\n\n'+JSON.stringify(input,null,2);
+  const prompt=saved?.snapshot===snapshot&&saved.templateVersion===template.version?cleanClinicalText(saved.text):cleanClinicalText(template.text)+'\n\n'+JSON.stringify(input,null,2);
   const draft=saved?.snapshot===snapshot?saved.answer||'':'';
   current().prompts[id]={snapshot,text:prompt,answer:draft,templateVersion:template.version};saveState();
   openPanel('Ручной разбор','Разбор в своём ChatGPT',`<form class="edit-form" id="manual-form" data-id="${id}">
@@ -191,6 +216,7 @@ function showManual(id){
 }
 async function copyPrompt(){
   const box=document.querySelector('#manual-form textarea[name=prompt]'),msg=document.querySelector('#copy-status');
+  if(!reviewOutboundText(box,msg))return;
   try{
     if(!navigator.clipboard?.writeText)throw Error();
     await navigator.clipboard.writeText(box.value);msg.textContent='Запрос скопирован.';
@@ -198,7 +224,7 @@ async function copyPrompt(){
 }
 function saveManual(f){
   const data=new FormData(f),answer=data.get('answer').trim(),prompt=data.get('prompt').trim();
-  if(!answer||!prompt)return;
+  if(!answer||!prompt||!reviewOutboundText(f.elements.prompt,f.querySelector('#copy-status')))return;
   const payload=makePayload(f.dataset.id);
   const version={id:uid(),kind:'manual',time:new Date().toISOString(),visit:f.dataset.id,prompt,answer,payload,items:readAnswerItems(answer,payload)};
   const saved=current().prompts[f.dataset.id];if(saved)saved.text=prompt;
