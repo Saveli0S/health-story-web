@@ -243,7 +243,7 @@ function showVerification(id){
     <label>Рекомендации врача<textarea name="recommendation" maxlength="3600" ${rec?'required':''}>${esc(f.draft?.recommendation??f.recommendation??(recommendationText(clinical)||(rec?clinical:'')))}</textarea></label>
     <div ${rec?'hidden':''}><div id="rx-rows">${meds.map(medicineInputs).join('')}</div>
     ${act('appendMed','Добавить препарат','','button secondary','plus')}
-    ${auto&&f.draft?act('refreshRxDraft','Заменить список препаратов по исходному тексту',f.id,'text-button'):''}
+    ${auto&&f.draft?'<p class="hint">В этом черновике сохранены правки по прежней версии разбора. Сверьте список с действующими назначениями на оригинале.</p>'+act('refreshRxDraft','Заменить список препаратов по исходному тексту',f.id,'text-button'):''}
     <label class="unknown"><input type="checkbox" name="none" ${rec||(f.checked&&!meds.length)||f.draft?.none?'checked':''}>В документе нет лекарственных назначений</label></div>
     <label>Другие сведения для разбора <small>по желанию</small><textarea name="context" maxlength="1800" placeholder="Только нужные сведения из документа, без имён и контактов">${esc(f.draft?.context??f.context)}</textarea></label>
     <label class="unknown"><input type="checkbox" name="verified" required>Я сверил(а) сведения с оригиналом</label><p role="alert" class="error"></p>

@@ -87,7 +87,7 @@ function clarifyFields(form,fields,fallback=''){
       const reading=input.closest('fieldset')?.querySelector('[name=reading]')?.value||'';
       const unitRequired=name==='unit'&&/^\s*[<>≤≥+-]?\s*\d/.test(reading);
       const missing=!input.value.trim()&&(input.required||unitRequired);
-      if(missing||needsClarification(input.value)){
+      if(missing||needsClarification(input.value)||(['drug','strength','instructions'].includes(name)&&unclearRxField(input.value))){
         const label=input.closest('fieldset[data-med]')?.querySelector('[name=drug]')?.value;
         issues.push({input,question:question+(label?' ('+label+')':'')});
       }

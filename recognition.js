@@ -53,7 +53,7 @@ function uncertainLines(tsv,page){
     if(Number(confidence)>=0&&Number(confidence)<65&&/[\p{L}\d]/u.test(word))entry.unclear=true;
     lines.set(key,entry);
   }
-  return [...lines.values()].filter(l=>l.unclear).map(l=>({page,text:l.words.map(w=>w.text).join(' '),words:l.words}));
+  return [...lines.values()].filter(l=>l.unclear).map(l=>({page,text:l.words.map(w=>w.text).join(' '),words:l.words.filter(w=>w.confidence>=0&&w.confidence<65)}));
 }
 async function recognizeDocument(blob,pdf,progress,issues=[]){
   if(isTextFile(blob))return (await blob.text()).trim();
