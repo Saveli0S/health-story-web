@@ -49,7 +49,7 @@ function visitRows(visits){
   <span class="dateflag" aria-hidden="true"><strong>${Number(date.slice(-2))}</strong><small>${dateLabel(date,{month:'short'}).slice(0,3)}</small></span>
   <span class="row-main"><strong>${esc(title)}</strong><span class="sub">${esc(doctorLabel(doctor))}</span><span class="row-inner">${icon('folder',true)}${esc(episode)}</span></span>${icon('right',true)}</button>`).join('');
 }
-const sectionIcons={overview:'grid',visits:'calendar',labs:'lab',files:'clip',consults:'spark',settings:'settings'};
+const sectionIcons={overview:'grid',visits:'calendar',labs:'lab',exams:'book',files:'clip',consults:'spark',settings:'settings'};
 function sectionNav(){return `<div class="workspace-tools"><nav class="section-nav" aria-label="Разделы профиля">${Object.entries(sectionNames).filter(([key])=>key!=='settings').map(([key,label])=>`<button data-action="section" data-id="${key}" ${section===key?'aria-current="page"':''}>${icon(sectionIcons[key],true)}${label}</button>`).join('')}</nav>
   <button class="global-search" data-action="search" aria-label="Поиск по профилю">${icon('search')}<span>Поиск по профилю</span></button></div>`;}
 function overview(){
@@ -116,6 +116,7 @@ function showVisit(id){
     <section id="visit-meds" class="panel-section"><h3>Назначения врача</h3><div class="prescription-list">${meds.map((m,i)=>drugBlock(m,i,true,id)).join('')}</div></section>`:'<p class="fact-note">Пока нет сверенных лекарственных назначений.</p>'}
     <section class="panel-section"><h3>Рекомендации врача</h3>${recommendationsSection(id)}</section>
     <section id="visit-labs" class="panel-section"><h3>Лабораторные анализы</h3>${linked.length?linked.map(l=>resultRow('lab',l.id,reportInfo(l).name,dateLabel(reportInfo(l).date),'lab')).join(''):'<p class="hint">Нет связанных бланков.</p>'}</section>
+    <section class="panel-section"><h3>Результаты обследований</h3>${examListing(current().exams.filter(e=>e.visit===id))||'<p class="hint">Нет связанных обследований.</p>'}${readOnly?'':act('newExam','Добавить обследование',id,'text-button','plus')}</section>
     <section id="visit-files" class="panel-section"><h3>Вложения</h3>${files.map(f=>resultRow('file',f.id,f.name,f.category,'clip')).join('')||'<p class="hint">Пока нет файлов.</p>'}${readOnly?'':act('upload','Прикрепить файл',id,'text-button','plus')}</section>
     <section id="visit-notes" class="panel-section"><h3>Пометки к визиту</h3>${notes.map(n=>'<div class="note"><small>'+esc(n.author)+' · '+esc(stamp(n.time))+'</small><p>'+esc(n.text)+'</p></div>').join('')||'<p class="hint">Пометок пока нет.</p>'}
     ${readOnly?'':act('addNote','Добавить пометку',id,'text-button','plus')}</section>`);
@@ -127,12 +128,12 @@ function showDoctor(id){
 function addNote(id){
   openPanel('Пометка к визиту',visitById(id)[2],`<form id="note-form" class="edit-form" data-id="${id}"><label>Текст пометки<textarea required name="note" maxlength="800"></textarea></label><p class="hint">Увидят все, кому доступна карточка ${esc(person.name)}.</p><button class="button primary">Сохранить пометку</button></form>`);
 }
-const pages={editVisitClinic:visitClinicEditor,drive:drivePanel,deviceUpdate:updateDevicePanel,joinDevice:joinDevicePanel,grantDevice:grantDevicePanel,revokeDevice:revokeDevicePanel,newFamily:()=>familyForm(true),newMember:()=>familyForm(false),recommendVisit:recommendationEditor,readDraft:id=>openImportDraft(id,'local'),manualDraft:id=>openImportDraft(id,'manual'),prevent:preventCard,editPrevent:preventionForm,completePrevent,tagLibrary,tagDefinition,removeTag:tagRemoval,recordTags:tagEditor,family:showFamily,medical:showMedical,visit:showVisit,doctor:showDoctor,episode:episodeCard,field:showField,removeField:showDelete,
+const pages={exam:showExam,newExam:visit=>editExam(null,visit),editExam:id=>editExam(id),editVisitClinic:visitClinicEditor,drive:drivePanel,deviceUpdate:updateDevicePanel,joinDevice:joinDevicePanel,grantDevice:grantDevicePanel,revokeDevice:revokeDevicePanel,newFamily:()=>familyForm(true),newMember:()=>familyForm(false),recommendVisit:recommendationEditor,readDraft:id=>openImportDraft(id,'local'),manualDraft:id=>openImportDraft(id,'manual'),prevent:preventCard,editPrevent:preventionForm,completePrevent,tagLibrary,tagDefinition,removeTag:tagRemoval,recordTags:tagEditor,family:showFamily,medical:showMedical,visit:showVisit,doctor:showDoctor,episode:episodeCard,field:showField,removeField:showDelete,
   search:showSearch,lab:labCard,trend:indicatorView,file:showFile,upload:selectUpload,period:showPeriod,finish:showFinish,consent:showConsent,
   review:showReview,manual:showManual,directTreatment:directTreatmentForm,therapy:therapyEditor,brief:visitBrief,measure:measureForm,measureChart,measurePoint,consult:newConsult,consultRecord,
   providers,prompts:promptManager,template:templateForm,resetTemplate:id=>changeTemplate(id,true,false),deleteTemplate:id=>changeTemplate(id,false,false),
   devices:familyDevices,archive:archivePanel,exportBackup:exportForm,importBackup:importForm,linkDocument,verifyLab,resumeVisit,analogs:showAnalogs,addNote,newEpisode:showNewEpisode,newVisit:showNewVisit,photoVisit:showPhotoVisit,intake:showIntake,verifyFile:showVerification};
-const restricted=new Set(['applyVisitTranscript','refreshRxDraft','editVisitClinic','recommendVisit','readDraft','manualDraft','queueTreatment','editPrevent','completePrevent','tagDefinition','removeTag','recordTags','confirmTagRemoval','resumeVisit','directTreatment','therapy','verifyLab','linkDocument','measure','consult','providers','prompts','template','resetTemplate','deleteTemplate','exportBackup','importBackup','field','removeField','confirmDelete','finish','period','upload','analyze','consent','run','addNote','manual','copyPrompt','newEpisode','newVisit','photoVisit','visitMode','sampleVisit','intake','verifyFile','sampleRx','retryRead','appendMed','dropMed','deferVerify','intakeAnalyze']);
+const restricted=new Set(['newExam','editExam','applyVisitTranscript','refreshRxDraft','editVisitClinic','recommendVisit','readDraft','manualDraft','queueTreatment','editPrevent','completePrevent','tagDefinition','removeTag','recordTags','confirmTagRemoval','resumeVisit','directTreatment','therapy','verifyLab','linkDocument','measure','consult','providers','prompts','template','resetTemplate','deleteTemplate','exportBackup','importBackup','field','removeField','confirmDelete','finish','period','upload','analyze','consent','run','addNote','manual','copyPrompt','newEpisode','newVisit','photoVisit','visitMode','sampleVisit','intake','verifyFile','sampleRx','retryRead','appendMed','dropMed','deferVerify','intakeAnalyze']);
 function displayRoute(){clearFileURL();const r=routes.at(-1);pages[r.name](r.id)}
 function go(name,id=''){routes.push({name,id});displayRoute()}
 function replaceRoute(name,id){routes.pop();go(name,id)}
@@ -254,6 +255,7 @@ if(driveSession.returned&&driveAllowed())go('drive');
 else if(params.get('new')==='family'&&viewer==='admin')go('newFamily');
 else if(params.get('visit')&&visitById(params.get('visit')))go('visit',params.get('visit'));
 else if(params.get('brief')&&current().episodes.some(ep=>ep.id===params.get('brief')))go('brief',params.get('brief'));
+else if(!readOnly&&params.get('new')==='exam')go('newExam');
 else if(!readOnly&&params.get('new')==='visit')go(params.get('mode')==='photo'?'photoVisit':'newVisit');
 else if(!readOnly&&params.get('new')==='episode')go('newEpisode');
 else if(!readOnly&&params.get('new')==='consultation')go('consult',params.get('example')==='risk'?'risk-demo':'');

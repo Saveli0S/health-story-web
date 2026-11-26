@@ -10,6 +10,7 @@ function consultSourceGroups(){
       const tags=combined([...group.map(v=>recordTags('visit',v[0])),...reports.filter(f=>ids.has(f.visit)).map(f=>recordTags('lab',f.id))]);
       return item('episode',e.id,e.name,'Все визиты и связанные бланки',tags);
     })],
+    ['Результаты обследований',current().exams.map(e=>item('exam',e.id,examTitle(e),[preventionDate(e.date),...e.parameters.map(p=>p.name)].join(' · '),recordTags('exam',e.id),e.date))],
     ['Отдельные визиты',visits.map(v=>item('visit',v[0],v[2],preventionDate(v[1])+' · '+doctorLabel(v[3]),recordTags('visit',v[0]),v[1]))],
     ['Лабораторные бланки',reports.map(f=>{
       const r=reportInfo(f);

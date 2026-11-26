@@ -80,7 +80,7 @@ const initialTags=[
 function makeState(p) {
   return {fields:fieldSpecs.map(([id,label])=>({id,label,value:p[id]||''})),
     periods:(p.course?.meds || []).map((_,i)=>({start:p.course.start,planned:medicineDetails[i].term,end:'',closed:false,unknown:false})),
-    auto:false,directAuto:false,notes:[],reviews:[],files:[],episodes:[],addedVisits:[],addedDoctors:[],prompts:{},consultations:[],templates:[],measurements:[],changes:[],questions:[],docLinks:[],visitDrafts:[],sampleAliases:{},prevention:[],tagEdits:[],recommendations:[],treatmentQueue:[]};
+    auto:false,directAuto:false,notes:[],reviews:[],files:[],exams:[],episodes:[],addedVisits:[],addedDoctors:[],prompts:{},consultations:[],templates:[],measurements:[],changes:[],questions:[],docLinks:[],visitDrafts:[],sampleAliases:{},prevention:[],tagEdits:[],recommendations:[],treatmentQueue:[]};
 }
 function readJson(key) {
   if(key===familyStateKey){
@@ -100,7 +100,7 @@ if (previous?.profiles) {
   for(const p of people) {
     const data=previous.profiles[p.id], target=prototypeState.profiles[p.id];
     if(!data) continue;
-    for(const key of ['fields','notes','reviews','files','episodes','addedVisits','addedDoctors','consultations','templates','measurements','changes','questions','docLinks','visitDrafts','prevention','tagEdits','recommendations','treatmentQueue']) if(Array.isArray(data[key])) target[key]=data[key];
+    for(const key of ['fields','notes','reviews','files','exams','episodes','addedVisits','addedDoctors','consultations','templates','measurements','changes','questions','docLinks','visitDrafts','prevention','tagEdits','recommendations','treatmentQueue']) if(Array.isArray(data[key])) target[key]=data[key];
     if(Array.isArray(data.savedConflicts))target.savedConflicts=data.savedConflicts;
     if(data.sampleAliases)target.sampleAliases=data.sampleAliases;
     if(data.prompts && typeof data.prompts==='object')target.prompts=data.prompts;

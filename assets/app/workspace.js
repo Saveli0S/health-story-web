@@ -13,6 +13,7 @@ function historyRows(){
 }
 function recordsListing(){
   let content='';
+  if(section==='exams')content=examListing(current().exams,sectionQuery);
   if(section==='visits')content=historyRows();
   if(section==='labs'){
     if(analysisMode==='prevention')content=preventionListing(sectionQuery);
@@ -29,6 +30,7 @@ function recordsListing(){
   return content||'<p class="empty">'+(sectionQuery?'По запросу ничего не найдено.':'Пока нет записей.')+'</p>';
 }
 function recordsPage(){
+  if(section==='exams')return '<section class="section-page"><div class="section-head"><h2>Результаты обследований</h2>'+(readOnly?'':act('newExam','Добавить обследование','','button primary','plus'))+'</div><label class="searchbox section-filter">'+icon('search')+'<input id="section-filter" type="search" aria-label="Поиск обследований" placeholder="Вид, область, параметр или тег" value="'+esc(sectionQuery)+'"></label><div id="listing">'+recordsListing()+'</div></section>';
   const isHistory=section==='visits',isLabs=section==='labs';
   const action=isHistory?act('newVisit','Создать визит','','button primary','plus'):isLabs&&analysisMode==='prevention'?act('editPrevent','Добавить запись','','button primary','plus'):isLabs?act('upload','Загрузить бланк','lab','button primary','plus'):act('upload','Прикрепить файл','','button primary','clip');
   let filters;
@@ -50,7 +52,8 @@ function documentLinks(f){
   const links=current().docLinks.filter(l=>l.id===f.id||l.other===f.id);
   const linked=files.filter(other=>other.id!==f.id&&links.some(l=>l.id===other.id||l.other===other.id));
   const canLink=['Снимки','Заключения'].includes(f.category)&&!readOnly;
-  return (f.clinicalText?'<div class="summary-sheet"><strong>Текст заключения для разбора</strong><p>'+esc(f.clinicalText)+'</p></div>':'')+(linked.length?'<h3>Связанные документы</h3>'+linked.map(other=>resultRow('file',other.id,other.name,other.category,'clip')).join(''):'')+
+  const exams=current().exams.filter(e=>e.attachments.some(a=>a.id===f.id));
+  return exams.map(e=>resultRow('exam',e.id,examTitle(e),'Карточка обследования','book')).join('')+(f.clinicalText?'<div class="summary-sheet"><strong>Текст заключения для разбора</strong><p>'+esc(f.clinicalText)+'</p></div>':'')+(linked.length?'<h3>Связанные документы</h3>'+linked.map(other=>resultRow('file',other.id,other.name,other.category,'clip')).join(''):'')+
     (canLink?act('linkDocument','Связать снимок и заключение',f.id,'text-button','clip'):'');
 }
 function linkDocument(id){

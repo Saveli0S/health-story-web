@@ -92,6 +92,8 @@ function makePayload(id) {
       return report.rows.map(r=>({датаОбразца:report.date,исследование:reportTitleForAI(report,l),
         показатель:r.name,результат:r.value,единица:r.unit,материал:r.specimen||'Не указан',диапазон:r.range||'Не указан'}));
     })};
+  const exams=current().exams.filter(e=>e.visit===id);
+  if(exams.length)data.обследования=exams.map(examClinicalData);
   const history=person.visits.filter(other=>other[7]===v[7]&&other[0]!==id&&other[1]<v[1]);
   if(history.length)data.предыдущиеВизитыЭпизода=history.slice().reverse().map(other=>({
     днейДоВизита:(Date.parse(v[1])-Date.parse(other[1]))/86400000,запись:other[5],

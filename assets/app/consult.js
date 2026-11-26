@@ -86,7 +86,7 @@ function updateConsultTemplate(f){
   f.querySelector('#template-preview').textContent=t?t.text:'';
 }
 function consultContext(selected){
-  const visitIds=new Set(),labIds=new Set(),documentIds=new Set(),data={},refs=[];
+  const visitIds=new Set(),labIds=new Set(),examIds=new Set(),documentIds=new Set(),data={},refs=[];
   const addRef=(kind,id,label)=>{if(!refs.some(r=>r.kind===kind&&r.id===id))refs.push({kind,id,label})};
   for(const key of selected){
     const cut=key.indexOf(':'),type=cut<0?key:key.slice(0,cut),id=key.slice(cut+1);
@@ -113,6 +113,7 @@ function consultContext(selected){
         выполнения:p.history.map(h=>({дата:h.date,заметка:h.note}))});
       addRef('prevent',p.id,p.title);
     }
+    if(type==='exam')examIds.add(id);
     if(type==='document')documentIds.add(id);
     if(type==='visit'&&visitById(id))visitIds.add(id);
     if(type==='lab'&&labs().some(l=>l.id===id))labIds.add(id);
@@ -123,6 +124,9 @@ function consultContext(selected){
       назначения:(courseAt(id)?.meds||[]).map(m=>[m.name,m.strength,m.form,m.instructions].filter(Boolean).join(' · ')),
       рекомендацииВрача:confirmedRecommendations(id).map(r=>r.text),сведенияИзНазначений:intakeFiles(id).filter(f=>f.checked&&f.context).map(f=>f.context),решения:current().changes.filter(c=>c.visit===id).map(decisionText),
       пометки:current().notes.filter(n=>n.visit===id).map(n=>n.text)});
+  }
+  for(const e of current().exams.filter(e=>examIds.has(e.id)||visitIds.has(e.visit))){
+    (data.обследования??=[]).push(examClinicalData(e));addRef('exam',e.id,examTitle(e));
   }
   for(const id of documentIds){
     const f=current().files.find(f=>f.id===id&&f.category==='Заключения'&&f.clinicalText);

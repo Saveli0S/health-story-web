@@ -13,6 +13,7 @@ function recordTagText(kind,id){
   if(kind==='visit'){
     const v=visitById(id);return v?[person.doctors[v[3]]?.[1],v[2]].join(' '):'';
   }
+  if(kind==='exam'){const exam=current().exams.find(e=>e.id===id);return exam?[exam.method,exam.region].join(' '):''}
   if(kind==='prevent'){
     const row=current().prevention.find(p=>p.id===id);return row?[preventionKinds[row.kind],row.title].join(' '):'';
   }

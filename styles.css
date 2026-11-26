@@ -210,3 +210,9 @@ dialog:has(.source-workspace){width:min(1130px,calc(100% - 40px));max-height:94d
 .sync-document{margin-block:8px 16px}.sync-document .sync-thumbnail{max-height:68px}
 #sync-view button,#drive-result button{margin:4px 8px 4px 0}
 #panel code{overflow-wrap:anywhere}
+
+.exam-reading{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:12px}
+.exam-text{white-space:pre-wrap;overflow-wrap:anywhere}
+#exam-form [data-originals] details{margin-block:8px;overflow-wrap:anywhere}
+#exam-form .source-preview{max-height:52vh;overflow:auto}
+#exam-form [hidden]{display:none}

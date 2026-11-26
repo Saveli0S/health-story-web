@@ -59,6 +59,7 @@ function episodeReports(id){return labs().filter(f=>visitById(f.visit)?.[7]===id
 function episodeTimeline(id){
   const events=episodeVisits(id).map(v=>({date:v[1],order:0,html:resultRow('visit',v[0],v[2],doctorLabel(v[3]),'scope')}));
   for(const c of current().changes.filter(c=>c.episode===id))events.push({date:c.date,order:1,html:resultRow('visit',c.visit,decisionText(c),doctorLabel(c.doctor),'pill')});
+  for(const e of current().exams.filter(e=>visitById(e.visit)?.[7]===id))events.push({date:e.date,order:2,html:resultRow('exam',e.id,examTitle(e),e.conclusion,'book')});
   for(const f of episodeReports(id)){const l=reportInfo(f);events.push({date:l.date,order:2,html:resultRow('lab',f.id,l.name,l.laboratory,'lab')})}
   for(const m of current().measurements.filter(m=>m.episode===id))events.push({date:m.time.slice(0,10),order:3,html:resultRow('measureChart',indicatorKey(m.name,m.unit),m.name,m.value+' '+m.unit,'trend')});
   return events.sort((a,b)=>a.date.localeCompare(b.date)||a.order-b.order).map(e=>'<div class="timeline-entry"><small>'+dateLabel(e.date,{day:'numeric',month:'long',year:'numeric'})+'</small>'+e.html+'</div>').join('')||'<p class="hint">Эпизод пока пуст.</p>';
@@ -80,6 +81,7 @@ function visitBrief(id){
     block('Визиты',visits.map(v=>resultRow('visit',v[0],dateLabel(v[1])+' · '+v[2],doctorLabel(v[3]),'scope')).join(''))+
     block('Действующие назначения',active.join(''))+block('Что менялось',changes.map(c=>resultRow('visit',c.visit,decisionText(c),dateLabel(c.date)+' · '+doctorLabel(c.doctor),'pill')).join(''))+
     block('Последние анализы',reports.slice(0,3).map(f=>{const l=reportInfo(f);return resultRow('lab',f.id,l.name+' · '+dateLabel(l.date),l.rows.map(r=>r.name+' '+r.value+' '+r.unit).join(' · '),'lab')}).join(''))+
+    block('Результаты обследований',examListing(current().exams.filter(e=>visitById(e.visit)?.[7]===id)))+
     block('Вопросы врачу',current().questions.filter(q=>q.episode===id).map(q=>'<div class="note"><p>'+esc(q.text)+'</p>'+(readOnly?'':act('editQuestion','Редактировать вопрос',q.id,'text-button','edit'))+'</div>').join(''))+
     (readOnly?'':'<form id="question-form" class="edit-form" data-id="'+esc(id)+'"><label>Новый вопрос<textarea required name="question" maxlength="800"></textarea></label><button class="button secondary">Добавить вопрос</button></form>'));
 }

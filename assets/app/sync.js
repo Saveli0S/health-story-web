@@ -73,7 +73,8 @@ const deviceSync=(()=>{
   async function pin(episode,id,button){
     const owner=person.id,data=readJson(familyStateKey),files=items(data.profiles[owner]);
     const visits=new Set(episode?episodeVisits(id).map(v=>v[0]):[]);
-    const chosen=files.filter(f=>episode?visits.has(f.visit)||f.episode===id:f.id===id);
+    const examFiles=new Set((data.profiles[owner].exams||[]).filter(e=>visits.has(e.visit)).flatMap(e=>e.attachments.map(a=>a.id)));
+    const chosen=files.filter(f=>episode?visits.has(f.visit)||f.episode===id||examFiles.has(f.id):f.id===id);
     button.disabled=true;
     try{for(const [i,item] of chosen.entries()){
       button.textContent='Сохраняем '+(i+1)+' из '+chosen.length;

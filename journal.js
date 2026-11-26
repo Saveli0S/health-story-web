@@ -1,18 +1,19 @@
 'use strict';
 
-const sectionNames={overview:'Обзор',visits:'История',labs:'Анализы',files:'Документы',consults:'ИИ-консультация',settings:'Настройки'};
-const groups={visit:'Визиты',lab:'Анализы',file:'Вложения',med:'Препараты',note:'Пометки',prevent:'Профилактика'};
+const sectionNames={overview:'Обзор',visits:'История',labs:'Анализы',exams:'Результаты обследований',files:'Документы',consults:'ИИ-консультация',settings:'Настройки'};
+const groups={visit:'Визиты',lab:'Анализы',exam:'Обследования',file:'Вложения',med:'Препараты',note:'Пометки',prevent:'Профилактика'};
 function resultRow(action,id,title,meta,mark='folder'){
   return `<button class="result-row" data-action="${action}" data-id="${esc(id)}">${icon(mark)}<span><strong>${esc(title)}</strong><small>${esc(meta)}</small></span>${icon('right',true)}</button>`;
 }
 function searchIndex(){
   const rows=person.visits.map(v=>({type:'visit',id:v[0],title:v[2],meta:dateLabel(v[1])+' · '+doctorLabel(v[3]),terms:v[4]+' '+v[5]+' '+v[1],icon:'calendar'}));
   for(const l of labs()){const report=reportInfo(l);rows.push({type:'lab',id:l.id,title:report.name,meta:[labCategory(l.id),dateLabel(report.date),report.laboratory].filter(Boolean).join(' · '),terms:report.rows.map(r=>r.name).join(' ')+' '+report.date,icon:'lab'})}
+  for(const exam of current().exams)rows.push(examSearchRow(exam));
   for(const f of allFiles()) rows.push({type:'file',id:f.id,title:f.name,meta:f.category+' · '+dateLabel(f.date),terms:[f.file,f.type,f.date].join(' '),icon:'clip'});
   for(const c of allCourses())for(const m of c.meds)rows.push({type:'med',id:c.visit,title:m.name,meta:[m.strength,m.form].filter(Boolean).join(' · '),terms:m.instructions,icon:'pill'});
   for(const n of current().notes)rows.push({type:'note',id:n.visit,title:n.text,meta:n.author+' · '+stamp(n.time),terms:'',icon:'book'});
   for(const row of rows){
-    if(['visit','lab','file'].includes(row.type)){
+    if(['visit','lab','file','exam'].includes(row.type)){
       const kind=row.type==='file'&&allFiles().some(f=>f.id===row.id&&f.category==='Лаборатория')?'lab':row.type;
       row.terms+=' '+tagLabels(kind,row.id);
     }
