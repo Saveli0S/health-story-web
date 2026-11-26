@@ -79,6 +79,7 @@ body:has(dialog[open]){overflow:hidden}.dialog-content>button.close{position:abs
 .form-label{font-size:14px;font-weight:620;display:block;margin-bottom:7px}
 input[type=date]{min-height:42px;border:1px solid #a9b8ad;border-radius:7px;background:#fff;padding:6px 9px;min-width:0;max-width:100%}
 input[type=checkbox]{accent-color:#245b46;width:17px;height:17px}
+.switch-line input[type=checkbox]{flex-shrink:0}
 .finish-med{border-top:1px solid var(--line);padding:12px 0;display:grid;gap:7px}.finish-med label{font-size:14px}.unknown{display:flex;gap:6px;align-items:center;font-size:13px!important;color:var(--muted)}
 .med-overrides{margin-top:16px}.med-overrides summary{cursor:pointer;font-size:14px;color:var(--green);font-weight:580;padding:6px 0}
 .error{color:#90392c;font-size:14px}.history-row{padding:7px 0;color:var(--muted);font-size:13px}
