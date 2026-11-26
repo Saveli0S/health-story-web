@@ -253,7 +253,7 @@ function showVerification(id){
   showUncertainText(form,f.issues);
   clarifyFields(form,[['drug','Как называется препарат?'],['strength','Какая дозировка указана?'],['instructions','Какую схему приёма указал врач?'],['recommendation','Что именно рекомендовал врач?']],!rec&&!meds.length?'Есть ли на оригинале лекарственные назначения? Добавьте пропущенные строки или отметьте отсутствие.':'');
 }
-async function previewOriginal(f,container,original){
+async function previewOriginal(f,container,original,pageNumber=1){
   container.textContent='Открываем оригинал…';
   try{
     const blob=original||await fileBlob(person.id+'/'+f.id);if(!container.isConnected||!panel.open)return;if(!blob)throw Error();
@@ -268,6 +268,7 @@ async function previewOriginal(f,container,original){
     const pdf=await openLocalPdf(blob);
     const select=document.createElement('select');select.setAttribute('aria-label','Страница оригинала');
     for(let i=1;i<=pdf.numPages;i++)select.add(new Option('Страница '+i+' из '+pdf.numPages,i));
+    select.value=String(Math.max(1,Math.min(pdf.numPages,Number(pageNumber)||1)));
     const paper=document.createElement('div');
     const cleanup=()=>{dispose.disconnect();panel.removeEventListener('close',cleanup);pdf.destroy()};
     const dispose=new MutationObserver(()=>{if(!container.isConnected)cleanup()});

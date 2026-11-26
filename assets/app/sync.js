@@ -82,38 +82,138 @@ const deviceSync=(()=>{
     }button.textContent=chosen.length?'Доступно без сети · '+chosen.length:'В эпизоде пока нет вложений'}
     catch{button.disabled=false;button.textContent='Повторить сохранение без сети'}
   }
+  // The server limits each sealed object to 16 MiB. Keep the v1 envelope for every
+  // original that still fits it. Larger files publish their descriptor only after all parts exist.
+  const objectLimit=16*1024*1024, originalLimit=128*1024*1024, partSize=4*1024*1024;
+  const encoder=new TextEncoder(), decoder=new TextDecoder(), magic='HSO2';
+  const hex=bytes=>Array.from(new Uint8Array(bytes),n=>n.toString(16).padStart(2,'0')).join('');
+  const hash=async bytes=>hex(await crypto.subtle.digest('SHA-256',bytes));
+  const partName=(manifest,index)=>'blob-part-'+manifest.token+'-'+index;
+  function describe(bytes){
+    const view=new Uint8Array(bytes),end=view.indexOf(10);
+    if(end<0||end>1024)throw Error('Некорректное вложение.');
+    const header=decoder.decode(view.subarray(0,end));
+    if(header!==magic){
+      const type=JSON.parse(header);
+      if(typeof type!=='string')throw Error('Некорректный тип вложения.');
+      return {blob:new Blob([view.subarray(end+1)],{type})};
+    }
+    if(view.length>4096)throw Error('Некорректный перечень частей вложения.');
+    const m=JSON.parse(decoder.decode(view.subarray(end+1)));
+    if(!Number.isSafeInteger(m.size)||m.size<1||m.size>originalLimit||typeof m.mime!=='string'||m.mime.length>512||
+       typeof m.sha256!=='string'||typeof m.token!=='string'||!/^[0-9a-f]{64}$/.test(m.sha256)||!/^[a-zA-Z0-9_-]{43}$/.test(m.token))throw Error('Некорректный перечень частей вложения.');
+    return {manifest:m};
+  }
+  async function verifyExisting(bytes,blob,digest){
+    const {manifest,blob:old}=describe(bytes);
+    const same=manifest?manifest.mime===blob.type&&manifest.size===blob.size&&manifest.sha256===digest:
+      old.type===blob.type&&old.size===blob.size&&await hash(await old.arrayBuffer())===digest;
+    if(!same)throw Error('У оригинала с таким ID другое содержимое.');
+  }
+  async function saveOriginal(ctx,id,doc,blob){
+    if(blob.size>originalLimit)throw Error('Обмен поддерживает оригиналы до 128 МиБ. Сохраните более крупный файл в отдельном зашифрованном архиве.');
+    const header=encoder.encode(JSON.stringify(blob.type)+'\n'),name='blob-'+doc;
+    if(header.length+blob.size+28<=objectLimit){
+      const bytes=await new Blob([header,blob]).arrayBuffer();
+      try{await put(ctx,id,name,bytes,0)}catch(e){
+        if(e.status!==412)throw e;
+        const old=await getObject(ctx,id,name);if(!old)throw e;
+        await verifyExisting(old.bytes,blob,await hash(await blob.arrayBuffer()));
+      }
+      return;
+    }
+    const digest=await hash(await blob.arrayBuffer()),old=await getObject(ctx,id,name);
+    if(old){await verifyExisting(old.bytes,blob,digest);return}
+    // Document IDs can be reused by an interrupted or concurrent publisher. Bind the
+    // opaque part namespace to both the logical ID and these exact bytes.
+    const token=await derived(ctx.profiles[id].key,['original-parts-1',id,doc,digest].join('/'));
+    const manifest={size:blob.size,mime:blob.type,sha256:digest,token};
+    for(let offset=0,index=0;offset<blob.size;offset+=partSize,index++){
+      const part=partName(manifest,index),bytes=await blob.slice(offset,offset+partSize).arrayBuffer();
+      let found=await getObject(ctx,id,part);
+      if(!found){
+        try{await put(ctx,id,part,bytes,0);continue}catch(e){if(e.status!==412)throw e;found=await getObject(ctx,id,part)}
+      }
+      if(!found||!await sameBytes(bytes,found.bytes))throw Error('У переданной части другое содержимое.');
+    }
+    try{await put(ctx,id,name,encoder.encode(magic+'\n'+JSON.stringify(manifest)),0)}catch(e){
+      if(e.status!==412)throw e;
+      const raced=await getObject(ctx,id,name);if(!raced)throw e;await verifyExisting(raced.bytes,blob,digest);
+    }
+  }
   async function ensureOriginals(data,id){
     const ctx=config(data),state=ctx.profiles[id];
     for(const item of items(data.profiles[id])){
-      if(state.uploaded.includes(item.id))continue;
+      if(item.syncLocalOnly || state.uploaded.includes(item.id))continue;
       const blob=await fileBlob(id+'/'+item.id,null,data);
       if(!blob)throw Error('Не найден оригинал для передачи.');
-      await thumbnail(item,blob);
-      const name='blob-'+item.id;
-      const bytes=await new Blob([new TextEncoder().encode(JSON.stringify(blob.type)+'\n'),blob]).arrayBuffer();
-      try{await put(ctx,id,name,bytes,0)}catch(e){if(e.status!==412)throw e;
-        const existing=await getObject(ctx,id,name);
-        if(!existing||!await sameBytes(existing.bytes,bytes))throw Error('У оригинала с таким ID другое содержимое.');
+      if(blob.size>originalLimit){
+        item.syncLocalOnly={size:blob.size,limit:originalLimit};
+        continue;
       }
+      await thumbnail(item,blob);
+      await saveOriginal(ctx,id,item.id,blob);
       state.uploaded.push(item.id);
     }
   }
   async function sameBytes(a,b){
     if(a.byteLength!==b.byteLength)return false;
-    const [x,y]=await Promise.all([a,b].map(v=>crypto.subtle.digest('SHA-256',v)));
-    return toBase64(new Uint8Array(x))===toBase64(new Uint8Array(y));
+    const [x,y]=await Promise.all([a,b].map(hash));return x===y;
+  }
+  function openPartStore(){
+    return new Promise((resolve,reject)=>{
+      const req=indexedDB.open('health-story-encrypted-transfers',1);
+      req.onupgradeneeded=()=>req.result.createObjectStore('parts');
+      req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
+    });
+  }
+  async function stagedPart(key,method,value){
+    const db=await openPartStore();
+    try{return await new Promise((resolve,reject)=>{
+      const tx=db.transaction('parts',method==='get'?'readonly':'readwrite'),store=tx.objectStore('parts');
+      const req=method==='put'?store.put(value,key):store[method](key);
+      tx.oncomplete=()=>resolve(req.result);tx.onerror=tx.onabort=()=>reject(tx.error);
+    })}finally{db.close()}
+  }
+  async function downloadParts(ctx,id,m){
+    // Stage only authenticated ciphertext; verify again after reopening it.
+    // Local quota/eviction may force some pieces to be downloaded again.
+    const parts=[],cached=[];
+    for(let off=0,index=0;off<m.size;off+=partSize,index++){
+      const name=partName(m,index),key=[ctx.space,id,name];
+      const length=Math.min(partSize,m.size-off);
+      let plain;
+      try{
+        const saved=await stagedPart(key,'get');
+        if(saved){plain=await open(ctx,id,name,saved);if(plain.byteLength!==length)plain=null}
+      }catch{}
+      if(!plain){
+        const response=await request(ctx,'/profiles/'+id+'/'+name);
+        const cipher=await response.arrayBuffer();
+        plain=await open(ctx,id,name,cipher);
+        if(plain.byteLength!==length)throw Error('Получена неполная часть вложения.');
+        try{await stagedPart(key,'put',cipher)}catch{}
+      }
+      parts.push(plain);cached.push(key);
+    }
+    const blob=new Blob(parts,{type:m.mime});
+    if(await hash(await blob.arrayBuffer())!==m.sha256)throw Error('Контрольная сумма оригинала не совпала.');
+    return {blob,cleanup:()=>Promise.allSettled(cached.map(key=>stagedPart(key,'delete')))};
   }
   async function loadOriginal(id,data){
     const [owner,doc]=id.split('/'),ctx=config(data);
-    if(!ctx?.profiles[owner]||!items(data.profiles[owner]).some(f=>f.id===doc))return;
+    if(!ctx?.profiles[owner])return;
+    const item=items(data.profiles[owner]).find(f=>f.id===doc);if(!item)return;
+    if(item.syncLocalOnly)throw Error('Оригинал свыше 128 МиБ хранится на устройстве добавления.');
     const obj=await getObject(ctx,owner,'blob-'+doc);if(!obj)return;
-    const bytes=new Uint8Array(obj.bytes),end=bytes.indexOf(10);if(end<0||end>1024)throw Error('Некорректное вложение.');
-    const type=JSON.parse(new TextDecoder().decode(bytes.slice(0,end))),blob=new Blob([bytes.slice(end+1)],{type});
+    const descriptor=describe(obj.bytes);
+    const {blob,cleanup}=descriptor.manifest?await downloadParts(ctx,owner,descriptor.manifest):descriptor;
     const storedId=originalKey(data,id),entry=await localVault.sealFile(storedId,await blob.arrayBuffer(),blob.type);
     const db=await storageDB(data);try{await new Promise((resolve,reject)=>{
       const tx=db.transaction('documents','readwrite');tx.objectStore('documents').put(entry,storedId);
       tx.oncomplete=resolve;tx.onerror=tx.onabort=()=>reject(tx.error);
     })}finally{db.close()}
+    if(cleanup)await cleanup();
     return blob;
   }
   async function lane(data,id,name,writer){
@@ -147,7 +247,7 @@ const deviceSync=(()=>{
     if(name==='records'){
       installRecords(p,merged.value);
       // Existing published originals can be downloaded on demand or pinned for offline use.
-      state.uploaded=[...new Set([...state.uploaded,...items(p).map(f=>f.id)])];
+      state.uploaded=[...new Set([...state.uploaded,...items(p).filter(f=>!f.syncLocalOnly).map(f=>f.id)])];
     }else Object.assign(p,merged.value);
     state.base[name]={rev:(obj?.rev||0)+(changed&&writer?1:0),value:clone(merged.value),conflicts};
     state.choices=state.choices.filter(c=>c.lane!==name);state.stamps[name]={};
@@ -347,7 +447,11 @@ const deviceSync=(()=>{
         return data.family.members.find(m=>m.id===id)?.name+(changes.length?' ('+changes.join(', ')+')':'');
       });
       root.innerHTML='<p>'+ (running?'Идёт обмен…':!navigator.onLine?'Без сети':names.length?'Ожидают отправки · '+esc(names.join(', ')):'Локальные изменения переданы')+'</p><p>Последний успешный обмен · '+(ctx.last?esc(stamp(ctx.last)):'пока не было')+'</p>'+
-        '<button class="button secondary" data-sync="now">Синхронизировать</button>';
+        '<button class="button secondary" data-sync="now">Синхронизировать</button><p class="hint">Оригиналы до 128 МиБ. Крупные файлы передаются частями.</p>';
+    }
+    const localOriginals=Object.values(data.profiles).flatMap(items).filter(f=>f.syncLocalOnly);
+    if(localOriginals.length){
+      const note=document.createElement('p');note.textContent='Только на устройствах добавления · '+localOriginals.length+' оригинал(ов) свыше 128 МиБ. Карточки передаются отдельно.';root.append(note);
     }
     for(const [id,p] of Object.entries(data.profiles)){
       const cases=[...(p.savedConflicts||[])];

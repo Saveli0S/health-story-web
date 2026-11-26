@@ -31,6 +31,13 @@ const viewer=workingFamily?(previous.access?.role||'admin'):['child','adult'].in
 const readOnly=viewer==='child';
 const viewerPerson=workingFamily?people.find(p=>p.id===(previous.access?.member||family.adminId)):readOnly?people.find(p=>p.role==='Ребёнок'):people.find(p=>p.id===family.adminId);
 function accessibleProfiles(){return people.filter(p=>viewer==='admin'||p.id===viewerPerson.id||(viewer==='adult'&&p.role==='Ребёнок'))}
+function actingForOtherAdult(){return viewer==='admin'&&person.id!==viewerPerson.id&&person.role==='Взрослый'}
+function transferEvent(kind){return {id:uid(),kind,time:new Date().toISOString(),actorId:viewerPerson.id,actorName:viewerPerson.name,role:viewer}}
+function transferHint(){return actingForOtherAdult()?'<p class="fact-note">Разовая передача из профиля '+esc(person.name)+'. Подтверждает администратор '+esc(viewerPerson.name)+'.</p>':''}
+function transferHistory(record){
+  const labels={provider:'Отправлено провайдеру',copy:'Скопировано для ручной передачи',answer:'Ответ добавлен'};
+  return (record.transfers||[]).map(t=>'<p class="hint">'+esc(labels[t.kind]||'Передача')+' · '+esc(t.actorName)+(t.role==='admin'?' (администратор)':'')+' · '+esc(stamp(t.time))+'</p>').join('');
+}
 function mayChangeConsent(){return !readOnly&&(person.id===viewerPerson.id||(viewer==='admin'&&person.role==='Ребёнок'))}
 let person=accessibleProfiles().find(p=>p.id===params.get('profile'))||viewerPerson;
 let section=Object.hasOwn(sectionNames,params.get('section'))?params.get('section'):'overview';
@@ -128,17 +135,18 @@ function showDoctor(id){
 function addNote(id){
   openPanel('Пометка к визиту',visitById(id)[2],`<form id="note-form" class="edit-form" data-id="${id}"><label>Текст пометки<textarea required name="note" maxlength="800"></textarea></label><p class="hint">Увидят все, кому доступна карточка ${esc(person.name)}.</p><button class="button primary">Сохранить пометку</button></form>`);
 }
-const pages={exam:showExam,newExam:visit=>editExam(null,visit),editExam:id=>editExam(id),editVisitClinic:visitClinicEditor,drive:drivePanel,deviceUpdate:updateDevicePanel,joinDevice:joinDevicePanel,grantDevice:grantDevicePanel,revokeDevice:revokeDevicePanel,newFamily:()=>familyForm(true),newMember:()=>familyForm(false),recommendVisit:recommendationEditor,readDraft:id=>openImportDraft(id,'local'),manualDraft:id=>openImportDraft(id,'manual'),prevent:preventCard,editPrevent:preventionForm,completePrevent,tagLibrary,tagDefinition,removeTag:tagRemoval,recordTags:tagEditor,family:showFamily,medical:showMedical,visit:showVisit,doctor:showDoctor,episode:episodeCard,field:showField,removeField:showDelete,
+const pages={resumeExam:id=>editExam(null,'',id),exam:showExam,newExam:visit=>editExam(null,visit),editExam:id=>editExam(id),editVisitClinic:visitClinicEditor,drive:drivePanel,deviceUpdate:updateDevicePanel,joinDevice:joinDevicePanel,grantDevice:grantDevicePanel,revokeDevice:revokeDevicePanel,newFamily:()=>familyForm(true),newMember:()=>familyForm(false),recommendVisit:recommendationEditor,readDraft:id=>openImportDraft(id,'local'),manualDraft:id=>openImportDraft(id,'manual'),prevent:preventCard,editPrevent:preventionForm,completePrevent,tagLibrary,tagDefinition,removeTag:tagRemoval,recordTags:tagEditor,family:showFamily,medical:showMedical,visit:showVisit,doctor:showDoctor,episode:episodeCard,field:showField,removeField:showDelete,
   search:showSearch,lab:labCard,trend:indicatorView,file:showFile,upload:selectUpload,period:showPeriod,finish:showFinish,consent:showConsent,
   review:showReview,manual:showManual,directTreatment:directTreatmentForm,therapy:therapyEditor,brief:visitBrief,measure:measureForm,measureChart,measurePoint,consult:newConsult,consultRecord,
   providers,prompts:promptManager,template:templateForm,resetTemplate:id=>changeTemplate(id,true,false),deleteTemplate:id=>changeTemplate(id,false,false),
   devices:familyDevices,archive:archivePanel,exportBackup:exportForm,importBackup:importForm,linkDocument,verifyLab,resumeVisit,analogs:showAnalogs,addNote,newEpisode:showNewEpisode,newVisit:showNewVisit,photoVisit:showPhotoVisit,intake:showIntake,verifyFile:showVerification};
-const restricted=new Set(['newExam','editExam','applyVisitTranscript','refreshRxDraft','editVisitClinic','recommendVisit','readDraft','manualDraft','queueTreatment','editPrevent','completePrevent','tagDefinition','removeTag','recordTags','confirmTagRemoval','resumeVisit','directTreatment','therapy','verifyLab','linkDocument','measure','consult','providers','prompts','template','resetTemplate','deleteTemplate','exportBackup','importBackup','field','removeField','confirmDelete','finish','period','upload','analyze','consent','run','addNote','manual','copyPrompt','newEpisode','newVisit','photoVisit','visitMode','sampleVisit','intake','verifyFile','sampleRx','retryRead','appendMed','dropMed','deferVerify','intakeAnalyze']);
+const restricted=new Set(['resumeExam','newExam','editExam','applyVisitTranscript','refreshRxDraft','editVisitClinic','recommendVisit','readDraft','manualDraft','queueTreatment','editPrevent','completePrevent','tagDefinition','removeTag','recordTags','confirmTagRemoval','resumeVisit','directTreatment','therapy','verifyLab','linkDocument','measure','consult','providers','prompts','template','resetTemplate','deleteTemplate','exportBackup','importBackup','field','removeField','confirmDelete','finish','period','upload','analyze','consent','run','addNote','manual','copyPrompt','newEpisode','newVisit','photoVisit','visitMode','sampleVisit','intake','verifyFile','sampleRx','retryRead','appendMed','dropMed','deferVerify','intakeAnalyze']);
 function displayRoute(){clearFileURL();const r=routes.at(-1);pages[r.name](r.id)}
 function go(name,id=''){routes.push({name,id});displayRoute()}
 function replaceRoute(name,id){routes.pop();go(name,id)}
 function goBack(){if(routes.length<=1){panel.close();return}routes.pop();displayRoute()}
 panel.addEventListener('close',()=>{
+  if(['newExam','editExam','resumeExam'].includes(routes.at(-1)?.name))render();
   clearFileURL();routes=[];
   if(returnFocus?.isConnected)returnFocus.focus({preventScroll:true});else main.focus({preventScroll:true});
 });

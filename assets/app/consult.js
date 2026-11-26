@@ -1,11 +1,5 @@
 'use strict';
 
-const defaultTreatment='Разбери исходное назначение врача по предоставленным сведениям. Для каждого препарата укажи цель, краткое обоснование и ссылку на источник, применимый к заболеванию и возрасту. Категории: необходимое, рекомендуемое, малоэффективное, общее укрепление организма. Если сведений или источника не хватает, укажи «Недостаточно данных для оценки» и что нужно уточнить. Сохрани назначение врача. Верни JSON вида {"препараты":[{"название":"…","категория":"…","обоснование":"…","источник":"https://…"}]}.';
-const builtinPrompts=[
-  {id:'treatment',name:'Разбор лечения',text:defaultTreatment,scope:'family',version:1},
-  {id:'risk-factors',name:'Оценка факторов риска',scope:'family',version:1,text:'Разбери, какие данные из выбранных записей относятся к риску указанного заболевания. Уточни заболевание и период прогноза, если они не названы. Отдели установленные факторы от неизвестных. Численную вероятность приводи только по валидированной для такого пациента шкале при наличии всех её входных данных. Укажи шкалу, источник и ограничения. В остальных случаях объясни, каких данных недостаёт, и предложи вопросы для врача.'},
-  {id:'doctor-questions',name:'Подготовка к приёму',text:'По выбранным записям составь краткую историю и вопросы к следующему приёму. Отметь, каких сведений не хватает.',scope:'family',version:1}
-];
 function actorTemplates(){return prototypeState.profiles[viewerPerson.id].templates}
 function promptLibrary(){
   const items=new Map(builtinPrompts.map(t=>[t.id,t]));
@@ -165,14 +159,14 @@ function consultRecord(id){
   const r=current().consultations.find(r=>r.id===id);if(!r)return;
   const info='<p class="detail-meta">'+esc(stamp(r.time))+' · '+esc(r.template.name)+' · версия '+r.template.version+'</p><h3>'+esc(r.question)+'</h3>';
   const sent=r.sentAt?'<p class="hint">Передан '+esc(stamp(r.sentAt))+'</p>':'';
-  const refs=sent+'<div class="consult-refs">'+r.refs.map(s=>act(s.kind,s.label,s.id,'chip-link','folder')).join('')+'</div>';
+  const refs=(transferHistory(r)||sent)+'<div class="consult-refs">'+r.refs.map(s=>act(s.kind,s.label,s.id,'chip-link','folder')).join('')+'</div>';
   if(r.answer||readOnly){
     openPanel(person.name,'История консультации',info+refs+(r.answer?'<section class="panel-section"><h3>Ответ · '+esc(r.provider)+'</h3><div class="manual-answer">'+esc(r.answer)+'</div></section>':'<p>Ответ пока не добавлен.</p>')+
       '<details><summary>Запрос и версия промпта</summary><pre>'+esc(r.prompt)+'</pre><p>'+esc(r.template.text)+'</p></details>'+(readOnly?'':act('consult','Повторить с актуальными данными','again:'+id,'button secondary')));return;
   }
   openPanel(person.name,'Проверить и передать запрос',info+refs+`<form class="edit-form" id="consult-answer" data-id="${esc(id)}"><label>Точный текст для провайдера<textarea name="prompt" rows="7" required ${r.sentAt?'readonly':''}>${esc(r.sentAt?r.prompt:cleanClinicalText(r.prompt))}</textarea></label>
     <p class="hint">Проверьте свободный текст на личные сведения. Файлы и имена владельцев карточек в запрос не включаются автоматически.</p>
-    <div class="actions left">${act('askProvider',routerKey?'Подтвердить и отправить в OpenRouter':'Подключить OpenRouter',id,'button primary','spark')}${act('consultCopy','Скопировать для ChatGPT',id,'button secondary')}${external('https://chatgpt.com/','Открыть ChatGPT')}</div>
+    ${transferHint()}<div class="actions left">${act('askProvider',routerKey?'Подтвердить и отправить в OpenRouter':'Подключить OpenRouter',id,'button primary','spark')}${act('consultCopy','Скопировать для ChatGPT',id,'button secondary')}${external('https://chatgpt.com/','Открыть ChatGPT')}</div>
     <p class="hint" role="status" id="provider-result">${esc(r.lastError||'')}</p>
     <label>Ответ из своего чата<textarea name="answer" rows="4">${esc(r.replyDraft||'')}</textarea></label>
     <button class="button secondary">Сохранить ответ</button></form>`);
@@ -182,7 +176,7 @@ function saveConsultAnswer(f,provider='ChatGPT · ручной перенос'){
   const answer=f.elements.answer.value.trim(),prompt=f.elements.prompt.value.trim();
   if(!r||r.answer||!answer||!prompt){f.querySelector('[role=status]').textContent='Заполните запрос и ответ.';return}
   if(!r.sentAt&&!reviewOutboundText(f.elements.prompt,f.querySelector('[role=status]')))return;
-  const old={...r};Object.assign(r,{answer,prompt,provider,answeredAt:new Date().toISOString(),replyDraft:''});
+  const old={...r};Object.assign(r,{answer,prompt,provider,transfers:[...(r.transfers||[]),transferEvent('answer')],answeredAt:new Date().toISOString(),replyDraft:''});
   if(!saveState()){Object.assign(r,old);f.querySelector('[role=status]').textContent='Не удалось сохранить ответ.';return}
   render();consultRecord(r.id);
 }

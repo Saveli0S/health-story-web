@@ -61,7 +61,7 @@ function showPhotoVisit(episodeId){
     <label>После выбора файлов<select id="visit-processing"><option value="local">Распознать на устройстве</option><option value="queue" ${routerKey?'':'selected'}>Сохранить в очереди</option><option value="manual">Заполнить вручную по оригиналам</option></select></label>
     <label class="button primary file-picker">Выбрать документы<input id="visit-source" type="file" multiple accept="${importAccept}" aria-label="Выбрать документы для нового визита"></label>
     ${act('sampleVisit','Попробовать с примером PDF',episodeId,'text-button')}</div>
-    <p class="hint" id="import-progress" role="status">${routerKey?'ИИ-провайдер подключён.':'ИИ-провайдер не подключён.'} Локальное распознавание доступно без входа. Для прототипа используйте тестовые документы.</p>`);
+    <p class="hint">${originalTransferHint()}</p><p class="hint" id="import-progress" role="status">${routerKey?'ИИ-провайдер подключён.':'ИИ-провайдер не подключён.'} Локальное распознавание доступно без входа. Для прототипа используйте тестовые документы.</p>`);
 }
 async function preparePhotoVisit(input,requestedMode){
   const route=routes.at(-1),files=input instanceof File?[input]:Array.from(input||[]);

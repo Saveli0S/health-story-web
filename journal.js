@@ -9,7 +9,7 @@ function searchIndex(){
   const rows=person.visits.map(v=>({type:'visit',id:v[0],title:v[2],meta:dateLabel(v[1])+' · '+doctorLabel(v[3]),terms:v[4]+' '+v[5]+' '+v[1],icon:'calendar'}));
   for(const l of labs()){const report=reportInfo(l);rows.push({type:'lab',id:l.id,title:report.name,meta:[labCategory(l.id),dateLabel(report.date),report.laboratory].filter(Boolean).join(' · '),terms:report.rows.map(r=>r.name).join(' ')+' '+report.date,icon:'lab'})}
   for(const exam of current().exams)rows.push(examSearchRow(exam));
-  for(const f of allFiles()) rows.push({type:'file',id:f.id,title:f.name,meta:f.category+' · '+dateLabel(f.date),terms:[f.file,f.type,f.date].join(' '),icon:'clip'});
+  for(const f of allFiles()) rows.push({type:'file',id:f.id,title:f.name,meta:f.category+' · '+dateLabel(f.date)+(f.syncLocalOnly?' · Оригинал на устройстве добавления':''),terms:[f.file,f.type,f.date].join(' '),icon:'clip'});
   for(const c of allCourses())for(const m of c.meds)rows.push({type:'med',id:c.visit,title:m.name,meta:[m.strength,m.form].filter(Boolean).join(' · '),terms:m.instructions,icon:'pill'});
   for(const n of current().notes)rows.push({type:'note',id:n.visit,title:n.text,meta:n.author+' · '+stamp(n.time),terms:'',icon:'book'});
   for(const row of rows){
@@ -87,7 +87,7 @@ async function showFile(id){
       blob=await fileBlob(person.id+'/'+id);if(route!==routes.at(-1)||!panel.open)return;
       if(!blob)throw Error();
       url=URL.createObjectURL(blob);fileURL=url;
-    }catch{if(route===routes.at(-1))openPanel('Вложение',f.name,deviceSync.thumb(f)+'<p>Оригинал сейчас недоступен. Проверьте связь или откройте предварительно сохранённую копию.</p>');return}
+    }catch{if(route===routes.at(-1))openPanel('Вложение',f.name,deviceSync.thumb(f)+(f.syncLocalOnly?'<p>Оригинал превышает предел обмена 128 МиБ. Откройте его на устройстве добавления или восстановите полную локальную копию.</p>':'<p>Оригинал сейчас недоступен. Проверьте связь или откройте предварительно сохранённую копию.</p>'));return}
   }
   const ext=(f.file||f.name).split('.').at(-1).toUpperCase(),pdf=isPdf(f)||ext==='PDF',photo=isPhoto(f)||/\.(png|jpe?g|webp)$/i.test(f.file||'');
   const area=photo?'<img class="paper-preview" src="'+esc(url)+'" alt="Предпросмотр документа">':
@@ -104,13 +104,14 @@ async function showFile(id){
 }
 const uploadKinds=['Заключения','Лаборатория','Назначения','Рекомендации','Снимки','Другое'];
 function uploadKindOptions(selected){return uploadKinds.map(k=>'<option '+(k===selected?'selected':'')+'>'+k+'</option>').join('')}
+function originalTransferHint(){return 'Файлы больше 128 МиБ сохраняются на устройстве добавления. В облачный обмен входит только их карточка.'}
 function selectUpload(visit){
   const labEntry=visit==='lab',recEntry=visit.startsWith('rec:'),rxEntry=visit.startsWith('rx:');
   if(recEntry||rxEntry)visit=visit.slice(visit.indexOf(':')+1);
   openPanel(person.name,recEntry?'Загрузить рекомендации врача':'Прикрепить файлы',`<form id="upload-form" class="edit-form"><p class="dialog-sub">Выберите один или несколько файлов. Оригиналы сохраняются в этом браузере.</p>
     <label>Визит<select name="visit">${labEntry?'<option value="">Без визита</option>':''}${person.visits.map(v=>'<option value="'+esc(v[0])+'" '+(v[0]===visit?'selected':'')+'>'+esc(v[2])+' · '+dateLabel(v[1])+'</option>').join('')}</select></label>
     <label>Категория<select name="category">${uploadKindOptions(labEntry?'Лаборатория':recEntry?'Рекомендации':rxEntry?'Назначения':'Заключения')}</select></label>
-    <label>Файлы<input multiple required type="file" name="file" accept="${importAccept},.zip"></label><p class="hint">Фото, PDF, TXT или исследование DICOM в ZIP.</p>
+    <label>Файлы<input multiple required type="file" name="file" accept="${importAccept},.zip"></label><p class="hint">Фото, PDF, TXT или исследование DICOM в ZIP. ${originalTransferHint()}</p>
     <div id="upload-manifest"></div>
     <label id="upload-conclusion">Текст заключения для разбора <small>по желанию, только проверенные сведения</small><textarea name="clinical" maxlength="2400"></textarea></label>
     <p class="error" role="alert"></p><button class="button primary">Прикрепить к визиту</button></form>`);

@@ -153,7 +153,7 @@ async function importArchive(f){
     if(!panel.open||!f.isConnected)throw Error();
     if(!restore){
       msg.textContent='Копия проверена. Профилей: '+profiles.length+'. Оригиналов: '+originals.length+'. Черновиков визитов: '+
-        profiles.reduce((count,p)=>count+(p.visitDrafts||[]).filter(d=>!d.parent).length,0)+'. Восстановление: '+destName+'.';
+        profiles.reduce((count,p)=>count+(p.examDrafts||[]).length+(p.visitDrafts||[]).filter(d=>!d.parent).length,0)+'. Восстановление: '+destName+'.';
       f.verifiedTarget=localStorage.getItem(destKey);
       const localTarget=readJson(destKey);
       if(localTarget?.family?.kind==='family')msg.textContent+=' Текущая семья в этом браузере: '+localTarget.family.name+'.';

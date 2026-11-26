@@ -51,8 +51,10 @@ function setupSourceView(file,form,original,position={}){
 function reviewQueue(){
   const pending=current().files.filter(f=>(f.intake&&!f.checked)||(f.category==='Лаборатория'&&(!f.lab||f.labDraft)));
   const drafts=current().visitDrafts.filter(d=>!d.parent),queued=current().treatmentQueue;
-  if((!pending.length&&!drafts.length&&!queued.length)||readOnly)return '';
-  return '<section class="review-queue"><h2>Требует проверки</h2>'+queued.map(q=>resultRow('consent',q.id,visitById(q.id)?.[2]||'Разбор лечения',routerKey?'Провайдер подключён · проверить запрос':'Разбор в очереди · ожидает подключения','spark')).join('')+drafts.map(d=>resultRow('resumeVisit',d.id,d.name,(d.state==='queued'?'В очереди · ':'Проверить данные · ')+draftGroup(d).length+' док.','edit')).join('')+pending.map(f=>{
+  if(readOnly)return '';
+  const exams=examDraftListing();
+  if(!pending.length&&!drafts.length&&!queued.length&&!exams)return '';
+  return '<section class="review-queue"><h2>Требует проверки</h2>'+exams+queued.map(q=>resultRow('consent',q.id,visitById(q.id)?.[2]||'Разбор лечения',routerKey?'Провайдер подключён · проверить запрос':'Разбор в очереди · ожидает подключения','spark')).join('')+drafts.map(d=>resultRow('resumeVisit',d.id,d.name,(d.state==='queued'?'В очереди · ':'Проверить данные · ')+draftGroup(d).length+' док.','edit')).join('')+pending.map(f=>{
     const busy=jobs.has(f.id),action=f.category==='Лаборатория'?'verifyLab':busy?'intake':'verifyFile';
     const hint=f.draft?.meds?.find(m=>!m.strength||needsClarification(m.strength))?'Уточнить дозировку':busy?'Распознаётся':'Сверить данные';
     return resultRow(action,busy?f.visit:f.id,f.name,[visitById(f.visit)?.[2],hint].filter(Boolean).join(' · '),'edit');

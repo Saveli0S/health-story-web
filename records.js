@@ -80,7 +80,7 @@ const initialTags=[
 function makeState(p) {
   return {fields:fieldSpecs.map(([id,label])=>({id,label,value:p[id]||''})),
     periods:(p.course?.meds || []).map((_,i)=>({start:p.course.start,planned:medicineDetails[i].term,end:'',closed:false,unknown:false})),
-    auto:false,directAuto:false,notes:[],reviews:[],files:[],exams:[],episodes:[],addedVisits:[],addedDoctors:[],prompts:{},consultations:[],templates:[],measurements:[],changes:[],questions:[],docLinks:[],visitDrafts:[],sampleAliases:{},prevention:[],tagEdits:[],recommendations:[],treatmentQueue:[]};
+    auto:false,directAuto:false,notes:[],reviews:[],files:[],exams:[],examDrafts:[],episodes:[],addedVisits:[],addedDoctors:[],prompts:{},consultations:[],templates:[],measurements:[],changes:[],questions:[],marketCriteria:[],docLinks:[],visitDrafts:[],sampleAliases:{},prevention:[],tagEdits:[],recommendations:[],treatmentQueue:[]};
 }
 function readJson(key) {
   if(key===familyStateKey){
@@ -100,7 +100,7 @@ if (previous?.profiles) {
   for(const p of people) {
     const data=previous.profiles[p.id], target=prototypeState.profiles[p.id];
     if(!data) continue;
-    for(const key of ['fields','notes','reviews','files','exams','episodes','addedVisits','addedDoctors','consultations','templates','measurements','changes','questions','docLinks','visitDrafts','prevention','tagEdits','recommendations','treatmentQueue']) if(Array.isArray(data[key])) target[key]=data[key];
+    for(const key of ['fields','notes','reviews','files','exams','examDrafts','episodes','addedVisits','addedDoctors','consultations','templates','measurements','changes','questions','marketCriteria','docLinks','visitDrafts','prevention','tagEdits','recommendations','treatmentQueue']) if(Array.isArray(data[key])) target[key]=data[key];
     if(Array.isArray(data.savedConflicts))target.savedConflicts=data.savedConflicts;
     if(data.sampleAliases)target.sampleAliases=data.sampleAliases;
     if(data.prompts && typeof data.prompts==='object')target.prompts=data.prompts;
@@ -207,7 +207,18 @@ function saveState() {
 function field(id) {return current().fields.find(f=>f.id===id)?.value || ''}
 function cleanClinicalText(value){
   const names=[...people.map(p=>p.name),...Object.values(person.doctors).map(d=>d[0])];
-  return anonymizeClinicalText(value,names);
+  let text=String(value??'');
+  const local=current();
+  const clinics=[...Object.values(person.doctors).map(d=>d[2]),...person.visits.map(v=>v[9]),
+    ...local.visitDrafts.map(d=>d.header?.clinic),...local.exams.map(e=>e.clinic)];
+  const files=[...local.files,...local.visitDrafts];
+  const hidden=new Map([...clinics.filter(n=>typeof n==='string'&&n.trim().length>2).map(n=>[n,'[клиника скрыта]']),
+    ...files.filter(f=>typeof f.name==='string'&&/\.[\p{L}\d]{1,8}$/u.test(f.name)).map(f=>[f.name,'[имя файла скрыто]'])]);
+  for(const [literal,masked] of [...hidden].sort((a,b)=>b[0].length-a[0].length)){
+    const pattern=literal.trim().replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    text=text.replace(new RegExp('(?<![\\p{L}\\d])'+pattern+'(?![\\p{L}\\d])','giu'),masked);
+  }
+  return anonymizeClinicalText(text,names);
 }
 function reviewOutboundText(box,status){
   const safe=cleanClinicalText(box.value);
@@ -264,7 +275,7 @@ function medFromKey(key){
   const parts=String(key).split(':'), visit=parts.length===1?person.course?.visit:parts[0], index=Number(parts.at(-1));
   return {visit,index,med:courseAt(visit)?.meds[index]};
 }
-function allFiles(){return [...(workingFamily?[]:sampleFiles[person.id]||[]),...current().files]}
+function allFiles(){return [...(workingFamily?[]:sampleFiles[person.id]||[]),...current().files.filter(f=>!f.examDraft)]}
 function labs(){return allFiles().filter(f=>f.category==='Лаборатория'&&(f.file||f.lab))}
 function labCategory(id){return current().files.find(f=>f.id===id)?.lab?.category||(id==='chem'?'Биохимия':'Гематология')}
 function labResults(id){const report=current().files.find(f=>f.id===id)?.lab;return report?report.rows.map(r=>({...r,values:{[id]:r.value}})):labRows.filter(row=>Object.hasOwn(row.values,id))}
@@ -305,7 +316,7 @@ async function fileBlob(id, file, state=prototypeState) {
 
   // Store bytes instead of a File object so the record is portable across WebKit and Chromium.
   const secured=familyStorageKey(state)===familyStateKey;
-  const bytes=file&&await file.arrayBuffer();
+  const bytes=file&&(secured||file.size<126*1024*1024?await file.arrayBuffer():file.slice());
   const entry=file?(secured?await localVault.sealFile(id,bytes,file.type):{bytes,type:file.type}):null;
   const db=await storageDB(state);
   try {const stored=await new Promise((resolve,reject)=>{

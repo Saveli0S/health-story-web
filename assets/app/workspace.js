@@ -13,7 +13,7 @@ function historyRows(){
 }
 function recordsListing(){
   let content='';
-  if(section==='exams')content=examListing(current().exams,sectionQuery);
+  if(section==='exams')content=examDraftListing(sectionQuery)+examListing(current().exams,sectionQuery);
   if(section==='visits')content=historyRows();
   if(section==='labs'){
     if(analysisMode==='prevention')content=preventionListing(sectionQuery);
@@ -108,7 +108,7 @@ function appExtrasSubmit(f){
     case 'tag-definition':updateTagLibrary(f);break;
     case 'record-tags-form':saveRecordTags(f);break;
     case 'prevention-form':case 'prevent-event':savePrevention(f);break;
-    case 'direct-treatment':sendTreatment(f);break;
+    case 'direct-treatment':sendTreatment(f,true);break;
     case 'rec-form':saveVisitRecommendation(f);break;
     case 'lab-form':saveLab(f);break;
     case 'therapy-form':saveTherapy(f);break;

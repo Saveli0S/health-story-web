@@ -278,3 +278,47 @@ function parseLabText(raw,filename){
   const category=haematology===chemistry?'Другое':haematology?'Гематология':'Биохимия';
   return {name,date:labSampleDate(String(raw||'')),laboratory,category,rows};
 }
+
+const examMethods=['УЗИ','Рентгенография','Флюорография','КТ','МРТ','ЭКГ','Эндоскопия','Другое'];
+const examMethodPatterns=[
+  /УЗИ|ультразвуков/iu,/рентген/iu,/флюорограф/iu,/(?:^|[^а-яё])КТ(?:$|[^а-яё])|компьютерн[а-яё]* томограф/iu,
+  /МРТ|магнитно-резонанс/iu,/ЭКГ|электрокардиогра/iu,/эндоскоп|гастроскоп|колоноскоп/iu
+];
+
+function parseExamProtocol(text){
+  const dates=new Set(),result={parameters:[],questions:[]},lines=text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  const header=lines.filter(s=>!/^заключение|^рекомендации/iu.test(s)).slice(0,6).join('\n');
+  const method=examMethodPatterns.findIndex(re=>re.test(header));
+  if(method>=0)result.method=examMethods[method];
+  let section='';
+  for(const line of lines){
+    const pair=line.match(/^([^:]{1,90})\s*:\s*(.*)$/u);
+    if(/^(?:страница\s+\d+|\d+\s+из\s+\d+|синтетические данные|дата печати|подпись врача|протокол подписан|приложение к протоколу)/iu.test(line)){section='';continue}
+    const label=pair?.[1].trim()||'',value=pair?.[2].trim()||'';
+    if(/^дата(?:\s+(?:исследования|проведения|обследования|выполнения))?$/iu.test(label)){
+      const iso=value.match(/^(\d{4}-\d{2}-\d{2})(?:\s|$)/u),local=value.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})(?:\s|$)/u);
+      const date=iso?.[1]||(local&&[local[3],local[2].padStart(2,'0'),local[1].padStart(2,'0')].join('-'));
+      if(date&&Number.isFinite(Date.parse(date))&&new Date(date).toISOString().slice(0,10)===date)dates.add(date);
+      section='';continue;
+    }
+    const metadata=[['region',/^(?:область(?: исследования)?|зона исследования|орган)$/iu],['doctor',/^(?:врач(?:-диагност)?|специалист)$/iu],['clinic',/^(?:клиника|учреждение)$/iu]].find(([,re])=>re.test(label));
+    if(metadata){result[metadata[0]]=value;section='';continue}
+    if(/^(?:заключение|описание|параметры|измерения)\s*(?::|$)/iu.test(line)){
+      const name=line.split(':')[0].trim().toLowerCase();
+      section=name==='заключение'?'conclusion':name==='описание'?'description':'parameters';
+      if(value&&section!=='parameters')result[section]=[result[section],value].filter(Boolean).join('\n');
+      continue;
+    }
+    if(/^(?:пациент|фио|дата рождения|подпись|рекомендации)\s*:/iu.test(line)){section='';continue}
+    const measure=line.match(/^(.{2,80}?)(?:\s*:\s*|\s+[–—-]\s+|\s+)([<>≤≥≈]?\s*\d+(?:[,.]\d+)?(?:\s*[×xх–-]\s*\d+(?:[,.]\d+)?)*)(?:\s*)(мм рт\.\s*ст\.?|мм|см|мл|мс|м\/с|см\/с|Гц|%|град(?:усов)?|°)\s*[.;]?$/iu);
+    const descriptive=/^(?:контур|структур|эхоструктур|эхогенност|локализаци|положени|форм[аы]|подвижност|проходимост|васкуляризаци|кровоток|плотност|фракция выброса)/iu.test(label);
+    if(section!=='conclusion'&&(measure||((section==='parameters'||descriptive)&&label&&value))){
+      const [name,reading,unit]=measure?measure.slice(1):[label,value,''];
+      result.parameters.push({name:name.trim(),value:reading.trim(),unit:unit.trim()});continue;
+    }
+    if(section==='description'||section==='conclusion')result[section]=[result[section],line].filter(Boolean).join('\n');
+  }
+  if(dates.size===1)result.date=[...dates][0];
+  if(dates.size>1)result.questions.push('В протоколе несколько дат обследования. Уточните дату: '+[...dates].join(', ')+'.');
+  return result;
+}

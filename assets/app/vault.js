@@ -73,12 +73,15 @@ const localVault=(()=>{
     const plain=new Uint8Array(2+mime.length+bytes.byteLength);
     new DataView(plain.buffer).setUint16(0,mime.length);
     plain.set(mime,2);plain.set(new Uint8Array(bytes),2+mime.length);
-    return {version:1,iv,cipher:await crypto.subtle.encrypt(params(iv,'original/'+id),deviceKey,plain)};
+    const cipher=await crypto.subtle.encrypt(params(iv,'original/'+id),deviceKey,plain);
+    // Keep large ciphertext outside Chromium's per-record structured-clone message.
+    return {version:1,iv,cipher:cipher.byteLength>=126*1024*1024?new Blob([cipher]):cipher};
   }
   async function openFile(id,entry){
     if(!entry)return;
     if(entry.version!==1)throw Error('invalid original');
-    const bytes=await crypto.subtle.decrypt(params(entry.iv,'original/'+id),deviceKey,entry.cipher);
+    const cipher=entry.cipher instanceof Blob?await entry.cipher.arrayBuffer():entry.cipher;
+    const bytes=await crypto.subtle.decrypt(params(entry.iv,'original/'+id),deviceKey,cipher);
     const end=2+new DataView(bytes).getUint16(0);
     if(end>bytes.byteLength)throw Error('invalid original');
     return new Blob([bytes.slice(end)],{type:decoder.decode(bytes.slice(2,end))});
