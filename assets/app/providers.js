@@ -1,0 +1,108 @@
+'use strict';
+
+// Keys exist only in this tab's memory and are excluded from the journal and backups.
+let routerKey='',pendingLogin=null,routerDelivery='';
+const providerJobs=new Set();
+function providerFacts(account,delivery){
+  return '<dl class="provider-status"><dt>Вход</dt><dd>'+esc(account)+'</dd><dt>Отправка запросов</dt><dd>'+esc(delivery)+'</dd></dl>';
+}
+function providerStatus(){return routerKey?'OpenRouter подключён на эту сессию':'ChatGPT · ручной перенос'}
+function providers(){
+  const eligible=Boolean(globalThis.crypto?.subtle)&&!readOnly;
+  openPanel('Настройки','ИИ-провайдеры',`<section class="plain-card"><h3>ChatGPT</h3>${providerFacts('Статус виден в ChatGPT.','Перенос в свой чат по тарифу аккаунта. Прямое подключение тарифа к дневнику пока не подтверждено.')}
+    ${external('https://chatgpt.com/auth/login','Войти в ChatGPT','button secondary')}</section>
+    <section class="plain-card"><h3>OpenRouter</h3>${providerFacts(routerKey?'Аккаунт подключён в этой вкладке.':'Аккаунт не подключён.',routerKey?(routerDelivery||'Бесплатная модель. Доступность квоты ещё не проверялась.'):'Для отправки в бесплатную модель подключите аккаунт.')}
+    ${routerKey?act('disconnectAI','Отключить в этой вкладке','','button secondary'):eligible?act('beginAI','Авторизоваться в OpenRouter','','button primary'):'<p class="hint">Для подключения на этом устройстве нужен HTTPS или localhost и роль взрослого.</p>'}
+    <div id="auth-step"></div></section>`);
+}
+function base64url(bytes){return btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'')}
+async function beginProvider(){
+  const host=document.querySelector('#auth-step');if(!host||readOnly||!crypto.subtle)return;
+  const verifier=base64url(crypto.getRandomValues(new Uint8Array(48)));
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier));
+  if(!host.isConnected)return;
+  const url=new URL('https://openrouter.ai/auth');url.searchParams.set('code_challenge',base64url(new Uint8Array(digest)));url.searchParams.set('code_challenge_method','S256');url.searchParams.set('key_label','Лист здоровья');url.searchParams.set('expiration','1-day');
+  pendingLogin={verifier,expires:Date.now()+600000};
+  host.innerHTML='<p>Откройте страницу провайдера и скопируйте выданный одноразовый код.</p>'+external(url.href,'Перейти к авторизации','button secondary')+
+    '<form class="edit-form" id="provider-code"><label>Одноразовый код<input name="code" required autocomplete="off"></label><button class="button primary">Завершить подключение</button><p role="status"></p></form>';
+}
+async function finishProvider(f){
+  const msg=f.querySelector('[role=status]'),pending=pendingLogin;
+  if(!pending||pending.expires<Date.now()){msg.textContent='Срок кода истёк. Начните авторизацию заново.';return}
+  const button=f.querySelector('button');button.disabled=true;msg.textContent='Проверяем код…';
+  try{
+    const response=await fetch('https://openrouter.ai/api/v1/auth/keys',{method:'POST',referrerPolicy:'no-referrer',credentials:'omit',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:f.elements.code.value.trim(),code_verifier:pending.verifier,code_challenge_method:'S256'})});
+    if(!response.ok)throw Error();const data=await response.json();
+    if(typeof data.key!=='string'||!data.key)throw Error();
+    if(!f.isConnected||pending!==pendingLogin)return;
+    routerKey=data.key;pendingLogin=null;routerDelivery='';providers();render();
+  }catch{msg.textContent='Подключение не удалось. Проверьте код или начните авторизацию заново.'}finally{button.disabled=false}
+}
+async function askProvider(id){
+  const f=document.querySelector('#consult-answer'),r=current().consultations.find(r=>r.id===id);
+  if(!r||!f||readOnly||r.answer||providerJobs.has(id))return;
+  r.prompt=f.elements.prompt.value.trim();if(!r.prompt||!saveState())return;
+  if(!routerKey){go('providers');return}
+  const msg=f.querySelector('[role=status]'),profile=current(),prompt=r.prompt;
+  r.lastAttemptAt=new Date().toISOString();r.lastError='';
+  if(!saveState())return;
+  providerJobs.add(id);f.querySelectorAll('button,textarea').forEach(el=>el.disabled=true);msg.textContent='Ожидаем ответ OpenRouter…';
+  try{
+    const {answer,model}=await requestFreeModel(prompt);
+    const record=profile.consultations.find(x=>x.id===id);if(!record||record.answer)return;
+    const old={...record};
+    Object.assign(record,{prompt,answer,sentAt:r.lastAttemptAt,answeredAt:new Date().toISOString(),provider:'OpenRouter · '+model});
+    if(!saveState()){Object.assign(record,old);f.elements.answer.value=answer;msg.textContent='Ответ показан в форме. Не удалось сохранить его в браузере.';return}
+    if(profile===current()){render();if(routes.at(-1)?.name==='consultRecord'&&routes.at(-1).id===id)consultRecord(id)}
+  }catch(e){
+    r.lastError=e.message.includes('Запрос сохранён')?e.message:'Не удалось получить ответ. Запрос сохранён.';
+    msg.textContent=r.lastError;saveState();
+  }
+  finally{providerJobs.delete(id);f.querySelectorAll('button,textarea').forEach(el=>el.disabled=false)}
+}
+async function copyConsult(f){
+  const box=f.elements.prompt,msg=f.querySelector('[role=status]'),r=current().consultations.find(r=>r.id===f.dataset.id);
+  if(!r||!box.value.trim())return;
+  const recordCopy=()=>{r.prompt=box.value;r.sentAt=new Date().toISOString();r.provider='ChatGPT · ручной перенос';box.readOnly=true;saveState()};
+
+  try{if(!navigator.clipboard?.writeText)throw Error();await navigator.clipboard.writeText(box.value);recordCopy();msg.textContent='Запрос скопирован.'}
+  catch{box.focus();box.select();if(document.execCommand('copy')){recordCopy();msg.textContent='Запрос скопирован.'}else msg.textContent='Текст выделен для копирования.'}
+}
+
+async function requestFreeModel(prompt){
+  const result=await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',credentials:'omit',referrerPolicy:'no-referrer',
+      headers:{Authorization:'Bearer '+routerKey,'Content-Type':'application/json'},
+      body:JSON.stringify({model:'openrouter/free',messages:[{role:'user',content:prompt}],provider:{data_collection:'deny'}}),signal:AbortSignal.timeout(120000)});
+    if(!result.ok){
+      routerDelivery=(result.status===429?'Последний запрос отклонён по квоте. ':'Последний запрос не прошёл. ')+stamp(new Date());
+      throw Error(result.status===429?'Квота исчерпана. Запрос сохранён, его можно повторить позже.':'Провайдер недоступен. Запрос сохранён.');
+    }
+    const body=await result.json(),answer=body.choices?.[0]?.message?.content;
+    if(typeof answer!=='string'||!answer.trim())throw Error('Провайдер вернул пустой ответ. Запрос сохранён.');
+  routerDelivery='Последний бесплатный запрос выполнен '+stamp(new Date())+'.';
+  return {answer,model:body.model||'openrouter/free'};
+}
+function directTreatmentForm(id){
+  if(!reviewReady(id)||readOnly)return;
+  const data=makePayload(id),template=promptLibrary().find(t=>t.id==='treatment')||builtinPrompts[0];
+  const snapshot=JSON.stringify(data),old=current().prompts[id];
+  const text=old?.snapshot===snapshot&&old.templateVersion===template.version?old.text:cleanClinicalText(template.text)+'\n\n'+JSON.stringify(data,null,2);
+  current().prompts[id]={snapshot,text,templateVersion:template.version,answer:old?.answer||''};saveState();
+  openPanel('Разбор лечения · OpenRouter','Проверить запрос',`<form class="edit-form" id="direct-treatment" data-id="${esc(id)}"><p class="hint">Данные выбранного визита и профиль. Проверьте свободный текст перед передачей.</p><label>Точный текст<textarea required name="prompt" rows="9">${esc(text)}</textarea></label><button class="button primary">Подтвердить и отправить</button><p role="status"></p>${act('manual','Перенести в свой ChatGPT',id,'button secondary')}</form>`);
+}
+async function sendTreatment(f){
+  if(!f||readOnly||!routerKey||!reviewReady(f.dataset.id))return;
+  const id=f.dataset.id,profile=current(),job='visit:'+person.id+':'+id,prompt=f.elements.prompt.value.trim();
+  if(!prompt||providerJobs.has(job))return;
+  const payload=makePayload(id),version=profile.prompts[id].templateVersion,msg=f.querySelector('[role=status]');
+  profile.prompts[id].text=prompt;if(!saveState())return;
+  providerJobs.add(job);f.querySelectorAll('button,textarea').forEach(el=>el.disabled=true);msg.textContent='Ожидаем разбор…';
+  try{
+    const {answer,model}=await requestFreeModel(prompt);
+    const review={id:uid(),kind:'provider',provider:'OpenRouter · '+model,time:new Date().toISOString(),visit:id,prompt,answer,payload,templateVersion:version,items:readAnswerItems(answer,payload)};
+    profile.reviews.push(review);profile.treatmentQueue=profile.treatmentQueue.filter(q=>q.id!==id);
+    if(!saveState()){msg.textContent='Ответ доступен до закрытия страницы. Хранилище переполнено.';return}
+    if(current()===profile){render();if(f.isConnected&&panel.open)replaceRoute('review',review.id)}
+  }catch(e){msg.textContent=e.message.includes('Запрос сохранён')?e.message:'Провайдер недоступен. Запрос сохранён.'}
+  finally{providerJobs.delete(job);f.querySelectorAll('button,textarea').forEach(el=>el.disabled=false)}
+}

@@ -1,0 +1,12 @@
+Local browser assets for document recognition
+
+PDF.js 4.10.38 (pdfjs-dist), Mozilla, Apache-2.0
+https://github.com/mozilla/pdf.js
+
+Tesseract.js 6.0.1 and tesseract.js-core 6.1.2, Apache-2.0
+https://github.com/naptha/tesseract.js
+https://github.com/naptha/tesseract.js-core
+The LSTM WebAssembly build here runs without SIMD and without external scripts.
+
+Russian and English LSTM data from @tesseract.js-data/rus and @tesseract.js-data/eng 1.0.0,
+4.0.0_best_int distributions from https://github.com/naptha/tessdata

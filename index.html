@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f6f8f4">
+  <title>Лист здоровья — семейный дневник</title>
+  <link rel="stylesheet" href="styles.css">
+  <meta name="referrer" content="no-referrer">
+  <meta name="google-drive-client-id" content="646433403662-cgfj9th6e5s9pgm9brccn3fsqv8u3b72.apps.googleusercontent.com">
+  <script src="assets/app/drive-session.js"></script>
+  <script src="demo-data.js" defer></script>
+  <script src="assets/crypto/nacl-fast-1.0.3.min.js" defer></script>
+  <script src="assets/app/vault.js" defer></script>
+  <script type="application/x-health-script" data-app-src="records.js"></script>
+  <script type="application/x-health-script" data-app-src="journal.js"></script>
+  <script type="application/x-health-script" data-app-src="treatment.js"></script>
+  <script type="application/x-health-script" data-app-src="recognition.js"></script>
+  <script type="application/x-health-script" data-app-src="visit-import.js"></script>
+  <script type="application/x-health-script" data-app-src="intake.js"></script>
+  <script type="application/x-health-script" data-app-src="assets/app/visit-drafts.js"></script>
+  <script type="application/x-health-script" data-app-src="assets/app/source-view.js"></script>
+  <script type="application/x-health-script" data-app-src="assets/app/laboratory.js"></script>
+  <script type="application/x-health-script" data-app-src="assets/app/episodes.js"></script>
+  <script type="application/x-health-script" data-app-src="assets/app/tags.js"></script>
+  <script type="application/x-health-script" data-app-src="assets/app/prevention.js"></script>
+  <script type="application/x-health-script" data-app-src="assets/app/consult-sources.js"></script>
+  <script type="application/x-health-script" data-app-src="assets/app/consult.js"></script>
+  <script type="application/x-health-script" data-app-src="assets/app/providers.js"></script>
+  <script type="application/x-health-script" data-app-src="assets/app/archive.js"></script>
+  <script type="application/x-health-script" data-app-src="assets/app/workspace.js"></script>
+  <script type="application/x-health-script" data-app-src="assets/app/family.js"></script>
+  <script type="application/x-health-script" data-app-src="assets/app/devices.js"></script>
+  <script type="application/x-health-script" data-app-src="assets/app/drive.js"></script>
+  <script type="application/x-health-script" data-app-src="assets/app/sync-merge.js"></script>
+  <script type="application/x-health-script" data-app-src="assets/app/sync.js"></script>
+  <script type="application/x-health-script" data-app-src="app.js"></script>
+  <script src="assets/app/boot.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">К содержанию</a>
+  <header class="top"><div class="wrap bar">
+    <div class="brand"><span class="brandmark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M8 24v-8c0-6 5-10 16-10v7c0 8-6 12-13 12"/><path d="m8 25 12-14m-7 9v-5m1 3h5"/></svg></span>Лист здоровья</div>
+    <div class="bar-actions" inert><span class="demo">Прототип</span><button class="settings-gear" data-action="section" data-id="settings" aria-label="Настройки" title="Настройки"><span data-icon="settings"></span></button><button type="button" class="family" data-action="family"><span class="icon" data-icon="users"></span><span>Профили<span class="wide"> семьи</span></span><span class="icon small" data-icon="down"></span></button></div>
+  </div></header>
+  <div class="wrap refresh-notice" id="refresh-notice" role="status" hidden>Записи изменились в другой вкладке. <button class="text-button" id="refresh-local">Открыть актуальную версию</button></div>
+  <main class="wrap" id="main" tabindex="-1"><p role="status">Открываем дневник…</p></main>
+  <dialog id="panel" aria-labelledby="panel-title"><div class="dialog-content">
+    <button type="button" class="close" aria-label="Закрыть" data-action="close"><span class="icon" data-icon="x"></span></button>
+    <div id="panel-body"></div>
+  </div></dialog>
+  <div id="announcement" aria-live="polite" class="sr"></div>
+</body>
+</html>

@@ -1,0 +1,136 @@
+'use strict';
+
+// Both engines and language data are served with the app. Recognition accepts local Blobs.
+const recognitionRoot=new URL('assets/recognition/',document.baseURI);
+let engineScript;
+function loadTextEngine(){
+  if(!engineScript){
+    engineScript=new Promise((resolve,reject)=>{
+      const script=document.createElement('script');
+      script.src=new URL('tesseract.min.js',recognitionRoot);
+      script.onload=resolve;
+      script.onerror=()=>{script.remove();engineScript=null;reject(Error('Не удалось загрузить распознаватель.'))};
+      document.head.append(script);
+    });
+  }
+  return engineScript;
+}
+async function openLocalPdf(blob){
+  const pdfjs=await import(new URL('pdf.min.mjs',recognitionRoot).href);
+  pdfjs.GlobalWorkerOptions.workerSrc=new URL('pdf.worker.min.mjs',recognitionRoot).href;
+  return pdfjs.getDocument({data:new Uint8Array(await blob.arrayBuffer()),isEvalSupported:false,useSystemFonts:true}).promise;
+}
+async function drawPaper(page,longSide){
+  const initial=page.getViewport({scale:1});
+  const viewport=page.getViewport({scale:longSide/Math.max(initial.width,initial.height)});
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+  await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+  return canvas;
+}
+function isTextFile(file){return file.type==='text/plain'||/\.txt$/i.test(file.name||'')}
+function isPhoto(file){return /^image\//.test(file.type)||/\.(?:png|jpe?g|webp|heic|heif)$/i.test(file.name||'')}
+function isPdf(file){return file.type==='application/pdf'||/\.pdf$/i.test(file.name||'')}
+async function photoCanvas(blob,longSide=2600){
+  const url=URL.createObjectURL(blob),image=new Image();
+  try{
+    image.src=url;await image.decode();
+    const ratio=Math.min(1,longSide/Math.max(image.naturalWidth,image.naturalHeight));
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.round(image.naturalWidth*ratio);canvas.height=Math.round(image.naturalHeight*ratio);
+    const context=canvas.getContext('2d');context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);
+    context.drawImage(image,0,0,canvas.width,canvas.height);return canvas;
+  }finally{URL.revokeObjectURL(url)}
+}
+// Tesseract TSV gives word confidence for raster pages. Keep questionable lines local for review.
+function uncertainLines(tsv,page){
+  const lines=new Map();
+  for(const row of (tsv||'').split('\n')){
+    const [level,,block,paragraph,line,,,,,,confidence,...parts]=row.split('\t');
+    const word=parts.join(' ').trim();if(level!=='5'||!word)continue;
+    const key=[block,paragraph,line].join('/'),entry=lines.get(key)||{words:[],unclear:false};
+    entry.words.push(word);
+    if(Number(confidence)>=0&&Number(confidence)<65&&/[\p{L}\d]/u.test(word))entry.unclear=true;
+    lines.set(key,entry);
+  }
+  return [...lines.values()].filter(l=>l.unclear).map(l=>({page,text:l.words.join(' ')}));
+}
+async function recognizeDocument(blob,pdf,progress,issues=[]){
+  if(isTextFile(blob))return (await blob.text()).trim();
+  let worker,documentPdf,stage='',pageNumber=1;
+  async function readImage(image){
+    if(!worker){
+      await loadTextEngine();
+      worker=await Tesseract.createWorker('rus+eng',1,{
+        workerPath:new URL('worker.min.js',recognitionRoot).href,workerBlobURL:false,
+        corePath:new URL('tesseract-core-lstm.wasm.js',recognitionRoot).href,
+        langPath:recognitionRoot.href,
+        logger:msg=>{if(msg.status==='recognizing text')progress(stage+'Распознавание '+Math.round(msg.progress*100)+' %')},
+        errorHandler:()=>{}
+      });
+    }
+    const {data}=await worker.recognize(image,{},{text:true,tsv:true});
+    issues.push(...uncertainLines(data.tsv,pageNumber));
+    return data.text.trim();
+  }
+  try{
+    progress('Чтение документа…');
+    if(!pdf){
+      const canvas=await photoCanvas(blob);
+      try{return await readImage(canvas)}finally{canvas.width=canvas.height=1}
+    }
+    documentPdf=await openLocalPdf(blob);
+    const pages=[];
+    for(let n=1;n<=documentPdf.numPages;n++){
+      pageNumber=n;stage='Страница '+n+' из '+documentPdf.numPages+' · ';progress(stage+'Чтение текста…');
+      const page=await documentPdf.getPage(n), content=await page.getTextContent();
+      const lines=[];let line='',lastY=null;
+      for(const item of content.items){
+        if(typeof item.str!=='string')continue;
+        const y=item.transform[5];
+        if(line && lastY!==null && Math.abs(y-lastY)>Math.max(3,item.height*.5)){lines.push(line.trim());line=''}
+        line+=item.str+' '; lastY=y;
+        if(item.hasEOL){lines.push(line.trim());line=''}
+      }
+      if(line.trim())lines.push(line.trim());
+      let result=lines.filter(Boolean).join('\n');
+      const hasText=(result.match(/[\p{L}\p{N}]/gu)||[]).length>=10;
+      // Some scans have a small selectable header/footer over a full-page raster.
+      let scan=!hasText;
+      if(hasText && result.length<350){
+        const {OPS}=await import(new URL('pdf.min.mjs',recognitionRoot).href);
+        const ops=await page.getOperatorList();
+        scan=ops.fnArray.some((op,i)=>[OPS.paintImageXObject,OPS.paintInlineImageXObject].includes(op)&&
+          ((ops.argsArray[i][1]||ops.argsArray[i][0]?.width||0)>600));
+      }
+      if(scan){
+        const canvas=await drawPaper(page,2100);
+        try{const imageText=await readImage(canvas);if(imageText)result=imageText}finally{canvas.width=canvas.height=1}
+      }
+      pages.push(result);page.cleanup();
+    }
+    return pages.join('\n\n');
+  }finally{if(worker)await worker.terminate();if(documentPdf)await documentPdf.destroy()}
+}
+function proposedMedicines(raw){
+  const lines=raw.split(/\r?\n/).map(line=>line.trim()).filter(Boolean), meds=[];
+  const dose=/\d+(?:[.,]\d+)?(?:\s*\/\s*\d+(?:[.,]\d+)?)?\s*(?:мкг|мг|мл|ме|ед|г|%|mcg|mg|ml|iu)(?![\p{L}])(?:\s*\/\s*(?:доза|дозу|дозы|мл|табл\.?|ml))?/iu;
+  const forms=/(?:назальный спрей|спрей|таблетк[аиуы]?|табл\.?|раствор|сироп|капсул[аы]?|крем|мазь|капли|гель)/iu;
+  const regimen=/^(?:по\s|принимать|наносить|закапывать|внутрь|\d+\s*(?:раз|табл|капс))/iu;
+  for(let i=0;i<lines.length;i++){
+    const line=lines[i],match=line.match(dose);if(regimen.test(line))continue;
+    if(!match){
+      const uncertain=line.match(/^(?:[•–—-]\s*|\d+[.)]\s*)?(.+?)\s+([?？�]+|неразборчиво)\s*(мкг|мг|мл|г|%)(?:\s|$)/iu);
+      if(uncertain)meds.push({id:uid(),name:uncertain[1],strength:uncertain[2]+' '+uncertain[3],form:line.match(forms)?.[0]||'',instructions:regimen.test(lines[i+1]||'')?lines[i+1]:''});
+      continue;
+    }
+    const prefix=line.slice(0,match.index).replace(/^\s*(?:[•–—-]|\d+[.)])\s*/,'');
+    const form=line.match(forms)?.[0]||'';
+    const name=prefix.replace(forms,'').replace(/^[\s·,:;–—-]+|[\s·,:;–—-]+$/g,'').trim();
+    if(!name||name.length>90)continue;
+    const tail=line.slice(match.index+match[0].length).replace(/^[\s,;·–—-]+/,'');
+    const instructions=[tail,regimen.test(lines[i+1]||'')?lines[i+1]:''].filter(Boolean).join(' ');
+    meds.push({id:uid(),name,strength:match[0],form,instructions});
+  }
+  return meds;
+}

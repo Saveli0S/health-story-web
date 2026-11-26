@@ -1,0 +1,47 @@
+'use strict';
+
+// Only packaged application resources are cached here. Originals live in the owner's IndexedDB.
+const version='health-story-shell-2026-11-sync-1';
+const shell=['index.html','styles.css','demo-data.js','records.js','journal.js','treatment.js','recognition.js','visit-import.js','intake.js','app.js',
+  ...['visit-drafts','source-view','laboratory','episodes','consult','consult-sources','tags','prevention','providers','archive','workspace','family'].map(n=>'assets/app/'+n+'.js'),
+  'assets/crypto/nacl-fast-1.0.3.min.js','assets/app/vault.js','assets/app/boot.js','assets/app/devices.js','assets/app/sync-merge.js','assets/app/sync.js','assets/app/drive-session.js','assets/app/drive.js','assets/inter.ttf','assets/pt-serif.ttf','assets/ginkgo.png'];
+const engines=['pdf.min.mjs','pdf.worker.min.mjs','rus.traineddata.gz','eng.traineddata.gz','tesseract.min.js','worker.min.js','tesseract-core-lstm.wasm.js'].map(n=>'assets/recognition/'+n);
+const root=new URL('./',self.location.href);
+self.addEventListener('install',event=>event.waitUntil((async()=>{
+  const cache=await caches.open(version);await cache.addAll(shell);await self.skipWaiting();
+})()));
+self.addEventListener('activate',event=>event.waitUntil((async()=>{
+  const current=await caches.open(version);
+  for(const key of await caches.keys()){
+    if(!key.startsWith('health-story-shell-')||key===version)continue;
+    const old=await caches.open(key);
+    for(const request of await old.keys()){
+      const name=new URL(request.url).pathname.slice(root.pathname.length);
+      if((engines.includes(name)||name.startsWith('assets/documents/'))&&!await current.match(request)){
+        const response=await old.match(request);if(response)await current.put(request,response);
+      }
+    }
+    await caches.delete(key);
+  }
+  await self.clients.claim();
+})()));
+self.addEventListener('message',event=>{
+  if(event.data!=='offline-engines')return;
+  event.waitUntil((async()=>{try{const cache=await caches.open(version);await cache.addAll(engines);event.ports[0]?.postMessage(true)}catch{event.ports[0]?.postMessage(false)}})());
+});
+self.addEventListener('fetch',event=>{
+  const request=event.request,url=new URL(request.url);
+  if(request.method!=='GET'||url.origin!==root.origin||!url.pathname.startsWith(root.pathname))return;
+  const name=url.pathname.slice(root.pathname.length),navigation=request.mode==='navigate'&&(!name||name==='index.html');
+  if(!navigation&&!shell.includes(name)&&!engines.includes(name)&&!name.startsWith('assets/documents/'))return;
+  const key=new URL(navigation?'index.html':name,root).href;
+  event.respondWith((async()=>{
+    const cache=await caches.open(version);
+    try{
+      const response=await fetch(request);
+      if(response.ok)await cache.put(key,response.clone());return response;
+    }catch{
+      const stored=await cache.match(key);return stored||Response.error();
+    }
+  })());
+});
