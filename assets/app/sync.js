@@ -31,9 +31,12 @@ const deviceSync=(()=>{
     throw Error('Не удалось проверить данные. Обновите доступ устройства.');
   }
   async function open(ctx,id,name,bytes){return (await decryptRevision(ctx,id,name,bytes)).bytes}
-  async function request(ctx,path,method='GET',body,rev){
-    const site=new URL('sync/'+ctx.space+path,document.baseURI);
+  const cloudOrigin='https://health-story-sync.xzx89s.workers.dev';
+  const cloudHosted=location.origin==='https://saveli0s.github.io';
+  async function request(ctx,path,method='GET',body,rev,setupCode){
+    const site=new URL('sync/'+ctx.space+path,cloudHosted?cloudOrigin:document.baseURI);
     const headers={Authorization:'Bearer '+ctx.token};
+    if(setupCode)headers['X-Family-Setup']=setupCode;
     if(rev!==undefined)headers['If-Match']='"'+rev+'"';
     const r=await fetch(site,{method,body,headers,credentials:'omit',cache:'no-store',redirect:'error',referrerPolicy:'no-referrer'});
     if(!r.ok)throw Object.assign(Error(({403:'Доступ устройства отозван или ограничен.',404:'Сервер обмена или запись недоступны.',412:'Данные изменились во время обмена.',413:'Файл превышает лимит сервера.'})[r.status]||'Сервер обмена недоступен.'),{status:r.status});
@@ -223,7 +226,9 @@ const deviceSync=(()=>{
     if(!workingFamily||viewer!=='admin'||data.access||data.sync)return;
     const ctx={space:secret(),token:secret(),rosterMaster:secret(),profiles:{}};
     for(const m of data.family.members)ctx.profiles[m.id]=profileContext();
-    await request(ctx,'','PUT');data.sync=ctx;commit(raw,data,false);await synchronize();
+    const setupCode=cloudHosted?document.querySelector('#sync-setup')?.value.trim():undefined;
+    if(cloudHosted&&!setupCode)throw Error('Введите код подключения семейного сервера.');
+    await request(ctx,'','PUT',undefined,undefined,setupCode);data.sync=ctx;commit(raw,data,false);await synchronize();
   }
   async function derived(secretValue,context){
     const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secretValue),{name:'HMAC',hash:'SHA-256'},false,['sign']);
@@ -332,7 +337,7 @@ const deviceSync=(()=>{
   function draw(){
     const root=document.querySelector('#sync-view');if(!root||!workingFamily)return;
     const data=readJson(familyStateKey),ctx=config(data);
-    if(!ctx){root.innerHTML=viewer==='admin'?'<p>Можно подключить эту семью к серверу обмена по адресу дневника.</p><button class="button secondary" data-sync="enable">Включить обмен между устройствами</button>':'<p>Для подключения обмена получите новый файл доступа у администратора.</p>'}
+    if(!ctx){root.innerHTML=viewer==='admin'?(cloudHosted?'<label>Код подключения семейного сервера<input id="sync-setup" type="password" autocomplete="off"></label>':'<p>Можно подключить эту семью к серверу обмена по адресу дневника.</p>')+'<button class="button secondary" data-sync="enable">Включить обмен между устройствами</button>':'<p>Для подключения обмена получите новый файл доступа у администратора.</p>'}
     else{
       const names=pending(data).map(id=>{
         const p=data.profiles[id],b=ctx.profiles[id].base.records?.value||{},changes=[];
