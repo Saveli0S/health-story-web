@@ -58,9 +58,9 @@ function newConsult(initial){
     if(match)seed.add('indicator:'+match.key);
   }
   const templates=promptLibrary();
-  if(prior?.template.id&&!templates.some(t=>t.id===prior.template.id))templates.push(prior.template);
+  if(prior?.template?.id&&!templates.some(t=>t.id===prior.template.id))templates.push(prior.template);
   const picker=consultSourcePicker(consultSourceGroups(),seed);
-  openPanel(person.name,'Новая ИИ-консультация',`<form id="consult-form" class="edit-form"><label>Промпт<select name="template"><option value="">Свой запрос</option>${templates.map(t=>'<option value="'+esc(t.id)+'" '+((demo?'risk-factors':prior?.template.id)===t.id?'selected':'')+'>'+esc(t.name)+'</option>').join('')}</select></label>
+  openPanel(person.name,'Новая ИИ-консультация',`<form id="consult-form" class="edit-form"><label>Промпт<select name="template"><option value="">Свой запрос</option>${templates.map(t=>'<option value="'+esc(t.id)+'" '+((demo?'risk-factors':prior?.template?.id)===t.id?'selected':'')+'>'+esc(t.name)+'</option>').join('')}</select></label>
     <details id="template-details"><summary>Инструкция для ИИ</summary><p id="template-preview" class="hint"></p></details><label>Что нужно разобрать?<textarea name="question" maxlength="15000" placeholder="Например, что изменилось между двумя анализами?">${esc(demo?'Оцени риск диабета 2-го типа за ближайшие 10 лет. Каких данных не хватает?':prior?.question||'')}</textarea></label>
     ${demo?'<p class="fact-note">Выберите тег «Терапевт» и визит «Плановый осмотр» от 30 октября. Затем смените тег на «Анализ крови» и добавьте «Биохимия крови» от 28 октября.</p>':''}${picker}
     <button class="button primary">Проверить запрос</button></form>`);
@@ -157,12 +157,13 @@ function prepareConsult(f){
 }
 function consultRecord(id){
   const r=current().consultations.find(r=>r.id===id);if(!r)return;
-  const info='<p class="detail-meta">'+esc(stamp(r.time))+' · '+esc(r.template.name)+' · версия '+r.template.version+'</p><h3>'+esc(r.question)+'</h3>';
+  const template=r.template||{name:'Свой запрос',version:1,text:''};
+  const info='<p class="detail-meta">'+esc(stamp(r.time))+' · '+esc(template.name)+' · версия '+esc(template.version)+'</p><h3>'+esc(r.question)+'</h3>';
   const sent=r.sentAt?'<p class="hint">Передан '+esc(stamp(r.sentAt))+'</p>':'';
-  const refs=(transferHistory(r)||sent)+'<div class="consult-refs">'+r.refs.map(s=>act(s.kind,s.label,s.id,'chip-link','folder')).join('')+'</div>';
+  const refs=(transferHistory(r)||sent)+'<div class="consult-refs">'+(r.refs||[]).map(s=>act(s.kind,s.label,s.id,'chip-link','folder')).join('')+'</div>';
   if(r.answer||readOnly){
     openPanel(person.name,'История консультации',info+refs+(r.answer?'<section class="panel-section"><h3>Ответ · '+esc(r.provider)+'</h3><div class="manual-answer">'+esc(r.answer)+'</div></section>':'<p>Ответ пока не добавлен.</p>')+
-      '<details><summary>Запрос и версия промпта</summary><pre>'+esc(r.prompt)+'</pre><p>'+esc(r.template.text)+'</p></details>'+(r.answer?conversationHistory(r):'')+(readOnly?'':act('consult','Повторить с актуальными данными','again:'+id,'button secondary')));return;
+      '<details><summary>Запрос и версия промпта</summary><pre>'+esc(r.prompt)+'</pre><p>'+esc(template.text)+'</p></details>'+(r.answer?conversationHistory(r):'')+(readOnly?'':act('consult','Повторить с актуальными данными','again:'+id,'button secondary')));return;
   }
   openPanel(person.name,'Проверить и передать запрос',info+refs+`<form class="edit-form" id="consult-answer" data-id="${esc(id)}"><label>Точный текст для провайдера<textarea name="prompt" rows="7" required ${r.sentAt?'readonly':''}>${esc(r.sentAt?r.prompt:cleanClinicalText(r.prompt))}</textarea></label>
     <p class="hint">Проверьте свободный текст на личные сведения. Файлы и имена владельцев карточек в запрос не включаются автоматически.</p>

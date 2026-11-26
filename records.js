@@ -208,18 +208,11 @@ function saveState() {
 function field(id) {return current().fields.find(f=>f.id===id)?.value || ''}
 function cleanClinicalText(value){
   const names=[...people.map(p=>p.name),...Object.values(person.doctors).map(d=>d[0])];
-  let text=String(value??'');
   const local=current();
   const clinics=[...Object.values(person.doctors).map(d=>d[2]),...person.visits.map(v=>v[9]),
     ...local.visitDrafts.map(d=>d.header?.clinic),...local.exams.map(e=>e.clinic)];
-  const files=[...local.files,...local.visitDrafts];
-  const hidden=new Map([...clinics.filter(n=>typeof n==='string'&&n.trim().length>2).map(n=>[n,'[клиника скрыта]']),
-    ...files.filter(f=>typeof f.name==='string'&&/\.[\p{L}\d]{1,8}$/u.test(f.name)).map(f=>[f.name,'[имя файла скрыто]'])]);
-  for(const [literal,masked] of [...hidden].sort((a,b)=>b[0].length-a[0].length)){
-    const pattern=literal.trim().replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-    text=text.replace(new RegExp('(?<![\\p{L}\\d])'+pattern+'(?![\\p{L}\\d])','giu'),masked);
-  }
-  return anonymizeClinicalText(text,names);
+  const files=[...local.files,...local.visitDrafts].map(f=>f.name);
+  return anonymizeClinicalText(redactClinicalLabels(value,clinics,files),names);
 }
 function reviewOutboundText(box,status){
   const safe=cleanClinicalText(box.value);

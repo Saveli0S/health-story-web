@@ -1,5 +1,18 @@
 'use strict';
 
+function redactClinicalLabels(value, clinics=[], files=[]){
+  let text=String(value??'');
+  const hidden=new Map([
+    ...clinics.filter(n=>typeof n==='string'&&n.trim().length>2).map(n=>[n.trim(),'[клиника скрыта]']),
+    ...files.filter(n=>typeof n==='string'&&/\.[\p{L}\d]{1,8}$/u.test(n)).map(n=>[n,'[имя файла скрыто]'])
+  ]);
+  for(const [literal,masked] of [...hidden].sort((a,b)=>b[0].length-a[0].length)){
+    const pattern=literal.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    text=text.replace(new RegExp('(?<![\\p{L}\\d])'+pattern+'(?![\\p{L}\\d])','giu'),masked);
+  }
+  return text;
+}
+
 // Shared by the web app and the iOS JavaScriptCore bridge. Call on clinical strings,
 // leaving the local original and the identifiers used for local navigation intact.
 function anonymizeClinicalText(value,knownNames=[]){
