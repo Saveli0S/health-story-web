@@ -1,7 +1,7 @@
 'use strict';
 
 // Only packaged application resources are cached here. Originals live in the owner's IndexedDB.
-const version='health-story-shell-2026-11-exam-drafts-1';
+const version='health-story-shell-2026-11-exam-drafts-2';
 const shell=['index.html','styles.css','demo-data.js','records.js','journal.js','treatment.js','recognition.js','visit-import.js','intake.js','app.js',
   ...['privacy','clinical-parser','visit-drafts','source-view','laboratory','exams','episodes','prompt-defaults','consult','consult-sources','tags','prevention','providers','archive','workspace','family'].map(n=>'assets/app/'+n+'.js'),
   'assets/crypto/nacl-fast-1.0.3.min.js','assets/app/vault.js','assets/app/boot.js','assets/app/devices.js','assets/app/sync-merge.js','assets/app/sync.js','assets/app/drive-session.js','assets/app/drive.js','assets/inter.ttf','assets/pt-serif.ttf','assets/ginkgo.png'];
@@ -11,7 +11,9 @@ self.addEventListener('install',event=>event.waitUntil((async()=>{
   // Fetch one complete release even when the browser still has fresh HTTP cache
   // entries for the previous release under the same URLs.
   const cache=await caches.open(version);
-  await cache.addAll(shell.map(name=>new Request(new URL(name,root),{cache:'reload'})));
+  // Include the reader with the shell so a local PDF opens on the first offline visit.
+  const offlineShell=[...shell,...engines.slice(0,2)];
+  await cache.addAll(offlineShell.map(name=>new Request(new URL(name,root),{cache:'reload'})));
   await self.skipWaiting();
 })()));
 self.addEventListener('activate',event=>event.waitUntil((async()=>{

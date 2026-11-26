@@ -96,7 +96,7 @@ function directTreatmentForm(id){
   const data=makePayload(id),template=promptLibrary().find(t=>t.id==='treatment')||builtinPrompts[0];
   const snapshot=JSON.stringify(data),old=current().prompts[id];
   const text=old?.snapshot===snapshot&&old.templateVersion===template.version?cleanClinicalText(old.text):buildTreatmentPrompt(template,data);
-  current().prompts[id]={snapshot,text,templateVersion:template.version,answer:old?.snapshot===snapshot?old.answer||'':''};saveState();
+  current().prompts[id]={snapshot,text,templateVersion:template.version,answer:old?.snapshot===snapshot?old.answer||'':'',transfers:old?.snapshot===snapshot?old.transfers||[]:[]};saveState();
   openPanel('Разбор лечения · OpenRouter','Проверить запрос',`<form class="edit-form" id="direct-treatment" data-id="${esc(id)}"><p class="hint">Данные выбранного визита и профиль. Проверьте свободный текст перед передачей.</p>${transferHint()}<label>Точный текст<textarea required name="prompt" rows="9">${esc(text)}</textarea></label><button class="button primary">Подтвердить и отправить</button><p role="status"></p>${act('manual','Перенести в свой ChatGPT',id,'button secondary')}</form>`);
 }
 async function sendTreatment(f,confirmed=false){
@@ -118,12 +118,13 @@ async function sendTreatment(f,confirmed=false){
     if(!review){
       const transfer=transferEvent('provider');
       const {answer,model}=await requestFreeModel(prompt);
-      review={id:uid(),transfers:[transfer],kind:'provider',provider:'OpenRouter · '+model,time:new Date().toISOString(),visit:id,prompt,answer,payload,templateVersion:version,items:readAnswerItems(answer,payload)};
+      review={id:uid(),transfers:[...(draft.transfers||[]),transfer],kind:'provider',provider:'OpenRouter · '+model,time:new Date().toISOString(),visit:id,prompt,answer,payload,templateVersion:version,items:readAnswerItems(answer,payload)};
     }
-    const previousQueue=profile.treatmentQueue;
+    const previousQueue=profile.treatmentQueue,previousTransfers=draft.transfers;
+    draft.transfers=[];
     profile.reviews.push(review);profile.treatmentQueue=previousQueue.filter(q=>q.id!==id);
     if(!saveState()){
-      profile.reviews=profile.reviews.filter(r=>r.id!==review.id);profile.treatmentQueue=previousQueue;
+      profile.reviews=profile.reviews.filter(r=>r.id!==review.id);profile.treatmentQueue=previousQueue;draft.transfers=previousTransfers;
       f.pendingReview=review;f.elements.prompt.readOnly=true;f.querySelector('button.primary').textContent='Сохранить полученный ответ';
       msg.textContent='Ответ получен. Освободите место и повторите сохранение в этой форме.';return;
     }
