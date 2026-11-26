@@ -259,7 +259,14 @@ if(!workingFamily&&person.id==='anna'&&!current().reviews.length){
 }
 document.querySelector('.bar-actions').inert=false;
 render();
-if(driveSession.returned&&driveAllowed())go('drive');
+chatGPT.refresh().then(()=>{
+  if(!chatGPT.available)return;
+  if(routes.at(-1)?.name==='providers')providers();
+  if(!panel.open && section==='consults')render();
+  if(routes.at(-1)?.name==='consultRecord' && !document.querySelector('#consult-answer :focus, #chatgpt-followup :focus'))consultRecord(routes.at(-1).id);
+});
+if(!readOnly&&params.get('connect')==='chatgpt')go('providers');
+else if(driveSession.returned&&driveAllowed())go('drive');
 else if(params.get('new')==='family'&&viewer==='admin')go('newFamily');
 else if(params.get('visit')&&visitById(params.get('visit')))go('visit',params.get('visit'));
 else if(params.get('brief')&&current().episodes.some(ep=>ep.id===params.get('brief')))go('brief',params.get('brief'));

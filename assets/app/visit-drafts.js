@@ -15,7 +15,7 @@ function resumeVisit(id){
   openPanel(person.name,'Визит в очереди','<p>Оригиналы сохранены на этом устройстве. '+esc(providerStatus())+'.</p>'+
     docs.map(d=>'<p class="file-name">'+esc(d.name)+'</p>').join('')+
     '<div class="actions">'+act('readDraft','Распознать на устройстве',id,'button primary')+
-    act('manualDraft','Заполнить вручную',id,'button secondary')+(!routerKey?act('providers','Подключить ИИ-провайдера','','text-button'):'')+'</div>');
+    act('manualDraft','Заполнить вручную',id,'button secondary')+(!chatGPT.connected&&!routerKey?act('providers','Подключить ИИ-провайдера','','text-button'):'')+'</div>');
 }
 const visitImportRevision=2;
 const visitHeaderFields=['episodeName','date','title','note','doctorName','specialty','clinic'];

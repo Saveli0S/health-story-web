@@ -6,11 +6,10 @@ const providerJobs=new Set();
 function providerFacts(account,delivery){
   return '<dl class="provider-status"><dt>Вход</dt><dd>'+esc(account)+'</dd><dt>Отправка запросов</dt><dd>'+esc(delivery)+'</dd></dl>';
 }
-function providerStatus(){return routerKey?'OpenRouter подключён на эту сессию':'ChatGPT · ручной перенос'}
+function providerStatus(){return chatGPT.connected?'Личный ChatGPT подключён':routerKey?'OpenRouter подключён на эту сессию':'Личный ChatGPT не подключён'}
 function providers(){
   const eligible=Boolean(globalThis.crypto?.subtle)&&!readOnly;
-  openPanel('Настройки','ИИ-провайдеры',`<section class="plain-card"><h3>ChatGPT</h3>${providerFacts('Статус виден в ChatGPT.','Перенос в свой чат по тарифу аккаунта. Прямое подключение тарифа к дневнику пока не подтверждено.')}
-    ${external('https://chatgpt.com/auth/login','Войти в ChatGPT','button secondary')}</section>
+  openPanel('Настройки','ИИ-провайдеры',`${chatGPTSettings()}
     <section class="plain-card"><h3>OpenRouter</h3>${providerFacts(routerKey?'Аккаунт подключён в этой вкладке.':'Аккаунт не подключён.',routerKey?(routerDelivery||'Бесплатная модель. Доступность квоты ещё не проверялась.'):'Для отправки в бесплатную модель подключите аккаунт.')}
     ${routerKey?act('disconnectAI','Отключить в этой вкладке','','button secondary'):eligible?act('beginAI','Авторизоваться в OpenRouter','','button primary'):'<p class="hint">Для подключения на этом устройстве нужен HTTPS или localhost и роль взрослого.</p>'}
     <div id="auth-step"></div></section>`);
@@ -43,18 +42,18 @@ async function askProvider(id){
   if(!r||!f||readOnly||r.answer||providerJobs.has(id))return;
   if(!reviewOutboundText(f.elements.prompt,f.querySelector('[role=status]')))return;
   r.prompt=f.elements.prompt.value.trim();if(!r.prompt||!f.pendingAnswer&&!saveState())return;
-  if(!routerKey){go('providers');return}
+  if(!chatGPT.connected&&!routerKey){go('providers');return}
   const msg=f.querySelector('[role=status]'),profile=current(),prompt=r.prompt;
   r.lastAttemptAt=new Date().toISOString();r.lastError='';
   if(!f.pendingAnswer&&!saveState())return;
-  providerJobs.add(id);f.querySelectorAll('button,textarea').forEach(el=>el.disabled=true);msg.textContent='Ожидаем ответ OpenRouter…';
+  providerJobs.add(id);f.querySelectorAll('button,textarea').forEach(el=>el.disabled=true);const provider=chatGPT.connected?'ChatGPT':'OpenRouter';msg.textContent='Ожидаем ответ '+provider+'…';
   try{
     const transfer=f.pendingTransfer||transferEvent('provider');
     const delivered=f.pendingAnswer||await requestFreeModel(prompt);
     const {answer,model}=delivered;
     const record=profile.consultations.find(x=>x.id===id);if(!record||record.answer)return;
     const old={...record};
-    Object.assign(record,{prompt,answer,transfers:[...(record.transfers||[]),transfer],sentAt:transfer.time,answeredAt:new Date().toISOString(),provider:'OpenRouter · '+model});
+    Object.assign(record,{prompt,answer,transfers:[...(record.transfers||[]),transfer],sentAt:transfer.time,answeredAt:new Date().toISOString(),provider:provider+' · '+model});
     if(!saveState()){
       for(const k of Object.keys(record))if(!Object.hasOwn(old,k))delete record[k];
       Object.assign(record,old);f.pendingAnswer=delivered;f.pendingTransfer=transfer;f.elements.prompt.readOnly=true;f.elements.answer.value=answer;
@@ -78,6 +77,7 @@ async function copyConsult(f){
 }
 
 async function requestFreeModel(prompt){
+  if(chatGPT.connected)return chatGPT.send([{role:'user',content:prompt}]);
   if(cleanClinicalText(prompt)!==prompt)throw Error('Требуется повторная сверка текста перед отправкой.');
   const result=await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',credentials:'omit',referrerPolicy:'no-referrer',
       headers:{Authorization:'Bearer '+routerKey,'Content-Type':'application/json'},
@@ -97,11 +97,11 @@ function directTreatmentForm(id){
   const snapshot=JSON.stringify(data),old=current().prompts[id];
   const text=old?.snapshot===snapshot&&old.templateVersion===template.version?cleanClinicalText(old.text):buildTreatmentPrompt(template,data);
   current().prompts[id]={snapshot,text,templateVersion:template.version,answer:old?.snapshot===snapshot?old.answer||'':'',transfers:old?.snapshot===snapshot?old.transfers||[]:[]};saveState();
-  openPanel('Разбор лечения · OpenRouter','Проверить запрос',`<form class="edit-form" id="direct-treatment" data-id="${esc(id)}"><p class="hint">Данные выбранного визита и профиль. Проверьте свободный текст перед передачей.</p>${transferHint()}<label>Точный текст<textarea required name="prompt" rows="9">${esc(text)}</textarea></label><button class="button primary">Подтвердить и отправить</button><p role="status"></p>${act('manual','Перенести в свой ChatGPT',id,'button secondary')}</form>`);
+  openPanel('Разбор лечения · '+(chatGPT.connected?'ChatGPT':'OpenRouter'),'Проверить запрос',`<form class="edit-form" id="direct-treatment" data-id="${esc(id)}"><p class="hint">Данные выбранного визита и профиль. Проверьте свободный текст перед передачей.</p>${transferHint()}<label>Точный текст<textarea required name="prompt" rows="9">${esc(text)}</textarea></label><button class="button primary">Подтвердить и отправить</button><p role="status"></p>${chatGPT.connected?'':act('manual','Перенести в свой ChatGPT',id,'button secondary')}</form>`);
 }
 async function sendTreatment(f,confirmed=false){
-  if(actingForOtherAdult()&&!confirmed)return;
-  if(!f||readOnly||!routerKey||!reviewReady(f.dataset.id))return;
+  if((chatGPT.connected||actingForOtherAdult())&&!confirmed)return;
+  if(!f||readOnly||(!chatGPT.connected&&!routerKey)||!reviewReady(f.dataset.id))return;
   const id=f.dataset.id,profile=current(),job='visit:'+person.id+':'+id,prompt=f.elements.prompt.value.trim();
   if(!prompt||providerJobs.has(job))return;
   const msg=f.querySelector('[role=status]');
@@ -117,8 +117,9 @@ async function sendTreatment(f,confirmed=false){
     let review=f.pendingReview;
     if(!review){
       const transfer=transferEvent('provider');
+      const provider=chatGPT.connected?'ChatGPT':'OpenRouter';
       const {answer,model}=await requestFreeModel(prompt);
-      review={id:uid(),transfers:[...(draft.transfers||[]),transfer],kind:'provider',provider:'OpenRouter · '+model,time:new Date().toISOString(),visit:id,prompt,answer,payload,templateVersion:version,items:readAnswerItems(answer,payload)};
+      review={id:uid(),transfers:[...(draft.transfers||[]),transfer],kind:'provider',provider:provider+' · '+model,time:new Date().toISOString(),visit:id,prompt,answer,payload,templateVersion:version,items:readAnswerItems(answer,payload)};
     }
     const previousQueue=profile.treatmentQueue,previousTransfers=draft.transfers;
     draft.transfers=[];

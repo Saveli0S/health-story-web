@@ -80,6 +80,8 @@ function appExtrasClick(action,id,button){
   if(action==='dropLab')button.closest('.lab-input').remove();
   if(action==='deferLab')saveLab(button.form,true);
   if(action==='applyReset'||action==='applyDelete')changeTemplate(id,action==='applyReset',true);
+  if(action==='connectChatGPT')chatGPT.connect(button);
+  if(action==='disconnectChatGPT')chatGPT.disconnect(button);
   if(action==='beginAI')beginProvider();
   if(action==='disconnectAI'){routerKey='';pendingLogin=null;routerDelivery='';providers();render()}
   if(action==='askProvider')askProvider(id);
@@ -98,6 +100,7 @@ function appExtrasChange(el){
     fields.hidden=!['dose','replace'].includes(el.value);fields.querySelector('[name=changeName]').readOnly=el.value==='dose';
   }
   if(el.closest('#visit-form')&&['episode','date'].includes(el.name))refreshPreviousFields(el.form);
+  if(!readOnly&&el.closest('#chatgpt-followup')){const record=current().consultations.find(r=>r.id===el.form.dataset.id);if(record){record.nextQuestion=el.value;saveState()}}
   if(el.closest('#consult-answer')){
     const f=el.form,r=current().consultations.find(r=>r.id===f.dataset.id);
     if(r&&!r.answer){if(!r.sentAt)r.prompt=cleanClinicalText(f.elements.prompt.value);r.replyDraft=f.elements.answer.value;saveState()}
@@ -115,6 +118,7 @@ function appExtrasSubmit(f){
     case 'measure-form':saveMeasure(f);break;
     case 'template-form':saveTemplate(f);break;
     case 'consult-form':prepareConsult(f);break;
+    case 'chatgpt-followup':sendFollowup(f);break;
     case 'consult-answer':saveConsultAnswer(f);break;
     case 'provider-code':finishProvider(f);break;
     case 'backup-export':exportArchive(f);break;
