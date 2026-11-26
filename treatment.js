@@ -89,7 +89,7 @@ function makePayload(id) {
     вариантыВрача:c?.meds.some(m=>m.fixture)?['Флутиказон · отдельно указан в демонстрационном листе назначений']:[],
     анализы:labs().filter(l=>l.visit===id).flatMap(l=>{
       const report=reportInfo(l);
-      return report.rows.map(r=>({датаОбразца:report.date,исследование:report.name,
+      return report.rows.map(r=>({датаОбразца:report.date,исследование:reportTitleForAI(report,l),
         показатель:r.name,результат:r.value,единица:r.unit,материал:r.specimen||'Не указан',диапазон:r.range||'Не указан'}));
     })};
   const history=person.visits.filter(other=>other[7]===v[7]&&other[0]!==id&&other[1]<v[1]);

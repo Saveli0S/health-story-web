@@ -141,7 +141,7 @@ function consultContext(selected){
       results.push(result);
     }
     if(!results.length)continue;
-    (data.анализы??=[]).push({дата:info.date,исследование:info.name,результаты:results});
+    (data.анализы??=[]).push({дата:info.date,исследование:reportTitleForAI(info,lab),результаты:results});
     addRef('lab',lab.id,info.name+' · '+dateLabel(info.date));
   }
   data.анализы?.sort((a,b)=>a.дата.localeCompare(b.дата));

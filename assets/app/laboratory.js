@@ -6,6 +6,12 @@ function reportInfo(file){
   return {name:file.name,date:file.date,laboratory:'Лаборатория «Линия»',category:file.id==='chem'?'Биохимия':'Гематология',
     rows:labRows.filter(r=>Object.hasOwn(r.values,file.id)).map(r=>({name:r.name,value:String(r.values[file.id]),unit:r.unit,range:r.range}))};
 }
+function reportTitleForAI(report,file){
+  const filename=String(file.name||'').normalize('NFC').trim().toLowerCase();
+  const title=String(report.name||'').normalize('NFC').trim().toLowerCase();
+  if(!title||file.lab&&(title===filename||title===filename.replace(/\.[^.]+$/u,'')))return 'Лабораторное исследование';
+  return report.name;
+}
 function indicatorKey(name,unit){
   // Prefix case can change the magnitude of a unit. Only normalize typography.
   const formatted=String(unit).trim().replace(/\s*\/\s*/g,'/').replace(/\s+/g,' ').replace(/μ/g,'µ')
