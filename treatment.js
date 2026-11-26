@@ -117,7 +117,9 @@ function createReview(id) {
 function startReview(id){
   if(!reviewReady(id)||readOnly)return;
   if(chatGPT.connected||routerKey){
-    go('directTreatment',id);if(!chatGPT.connected&&current().directAuto&&!actingForOtherAdult())sendTreatment(document.querySelector('#direct-treatment'));return;
+    go('directTreatment',id);
+    if(canAutoSendTreatment())sendTreatment(document.querySelector('#direct-treatment'));
+    return;
   }
   if(current().auto && !demoReviewAvailable(id)){go('manual',id);return}
   if(current().auto){completeReview(id);return}
@@ -167,18 +169,38 @@ function pharmacySearch(name,city=true) {
 }
 
 const marketNorm=value=>String(value??'').toLocaleLowerCase('ru').replace(/ё/g,'е').replaceAll(',','.').replace(/\s+/g,' ').trim();
-const marketDoseKey=value=>marketNorm(value).replace(/\s+/g,'').replace('μг','мкг');
+function marketDoseKey(value){
+  // Only compare explicitly stated quantities. Keep the denominator and its unit.
+  const raw=marketNorm(value).replace(/\s+/g,'').replace(/[μµ]г/gu,'мкг');
+  const dose=raw.match(/^(\d+(?:\.\d+)?)(мкг|мг|г|ме|%)(?:\/(?:(\d+(?:\.\d+)?))?(доза|дозу|мл|г))?$/u);
+  if(!dose)return raw;
+  const [,amount,unit,perAmount,perUnit]=dose;
+  function decimal(number,shift=0){
+    const [whole,fraction='']=number.split('.');
+    const digits=whole+fraction.padEnd(shift,'0'),cut=whole.length+shift;
+    const integer=digits.slice(0,cut).replace(/^0+(?=\d)/,'');
+    const tail=digits.slice(cut).replace(/0+$/,'');
+    return tail?integer+'.'+tail:integer;
+  }
+  const shift={мкг:0,мг:3,г:6}[unit];
+  const quantity=decimal(amount,shift),per=decimal(perAmount||'1');
+  if(quantity==='0'||per==='0')return raw;
+  return [quantity,shift===undefined?unit:'мкг',per,perUnit==='дозу'?'доза':perUnit||''].join(':');
+}
 function marketPackKey(value){
   const v=marketNorm(value).replace(/\s+/g,'');
   const count=v.match(/^(?:№|n|no\.?|#)(\d+)$/u)||v.match(/^(\d+)(?:шт\.?|таблет(?:ок|ки|ка)|капсул(?:ы|а)?)$/u);
   if(count)return '№'+count[1];
-  return /^(?:\d+(?:\.\d+)?(?:доз(?:а|ы)?|мл|г))$/u.test(v)?v.replace(/доз[аы]$/,'доз'):v;
+  const measure=v.match(/^(\d+(?:\.\d+)?)(доз(?:а|ы)?|мл|г)(?:(?:№|n|#)(\d+))?$/u);
+  if(!measure)return v;
+  const unit=measure[2].startsWith('доз')?'доз':measure[2];
+  return measure[1]+unit+'№'+(measure[3]||'1');
 }
 function marketDescription(form){
   let rest=marketNorm(form);
   const take=re=>{const m=rest.match(re);if(m)rest=rest.replace(m[0],' ').trim();return m?.[0]||''};
   const count=take(/(?:^|\s)(?:n|№|#)\s*\d+(?=\s|$)/u);
-  const strength=take(/(?<![\d.])\d+(?:\.\d+)?\s*(?:мкг|мг|ме|%|г)(?:\s*\/\s*(?:\d+(?:\.\d+)?\s*)?(?:доза|дозу|мл|г))?(?![\p{L}])/u);
+  const strength=take(/(?<![\d.])\d+(?:\.\d+)?\s*(?:мкг|[μµ]г|мг|ме|%|г)(?:\s*\/\s*(?:\d+(?:\.\d+)?\s*)?(?:доза|дозу|мл|г))?(?![\p{L}])/u);
   const pack=take(/(?<![\d./])\d+(?:\.\d+)?\s*(?:доз(?:ы|а)?|мл|г)(?![\p{L}])/u);
   // A volume plus a count describes the whole package: two vials are different from one.
   const packageText=[pack,count].filter(Boolean).map(s=>s.trim()).join(' ');

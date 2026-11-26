@@ -106,6 +106,7 @@ if (previous?.profiles) {
     if(data.prompts && typeof data.prompts==='object')target.prompts=data.prompts;
     if(Array.isArray(data.periods) && data.periods.length===target.periods.length) target.periods=data.periods;
     target.auto=data.auto===true;target.directAuto=data.directAuto===true;
+    if(data.chatGPTAuto===true)target.chatGPTAuto=true;
   }
 } else {
   const old=readJson('health-story.demo.courses.v1');
@@ -181,7 +182,7 @@ function saveState() {
       if(latest.access){
         for(const k of ['family','templates','tags','city'])if(JSON.stringify(latest[k])!==JSON.stringify(prototypeState[k]))return false;
         for(const p of latest.family.members)if(p.id!==latest.access.member){
-          for(const k of ['auto','directAuto'])if(latest.profiles[p.id][k]!==prototypeState.profiles[p.id][k])return false;
+          for(const k of ['auto','directAuto','chatGPTAuto'])if((latest.profiles[p.id][k]===true)!==(prototypeState.profiles[p.id][k]===true))return false;
         }
       }
     }

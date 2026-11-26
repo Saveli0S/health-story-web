@@ -6,14 +6,20 @@ const deviceSync=(()=>{
   const clone=v=>structuredClone(v);
   function config(data){return data?.sync}
   function records(p){
-    const result=clone(p);delete result.auto;delete result.directAuto;delete result.sampleAliases;delete result.savedConflicts;
+    const result=clone(p);delete result.auto;delete result.directAuto;delete result.chatGPTAuto;delete result.sampleAliases;delete result.savedConflicts;
     for(const item of [...result.files,...(result.visitDrafts||[])])delete item.blobId;
     return result;
   }
-  const consent=p=>({auto:p.auto===true,directAuto:p.directAuto===true});
+  const consent=p=>({auto:p.auto===true,directAuto:p.directAuto===true,...(p.chatGPTAuto===true?{chatGPTAuto:true}:{})});
+  function installConsent(profile,value){
+    delete profile.chatGPTAuto;
+    Object.assign(profile,consent(value));
+  }
   function installRecords(p,value){
     const aliases=new Map([...p.files,...(p.visitDrafts||[])].map(f=>[f.id,f.blobId]));
-    Object.assign(p,clone(value));
+    const incoming=clone(value);
+    for(const key of ['auto','directAuto','chatGPTAuto'])delete incoming[key];
+    Object.assign(p,incoming);
     for(const f of [...p.files,...(p.visitDrafts||[])])if(aliases.get(f.id))f.blobId=aliases.get(f.id);
   }
   function profileContext(){return {key:secret(),base:{},stamps:{},uploaded:[],choices:[]}}
@@ -248,7 +254,7 @@ const deviceSync=(()=>{
       installRecords(p,merged.value);
       // Existing published originals can be downloaded on demand or pinned for offline use.
       state.uploaded=[...new Set([...state.uploaded,...items(p).filter(f=>!f.syncLocalOnly).map(f=>f.id)])];
-    }else Object.assign(p,merged.value);
+    }else installConsent(p,merged.value);
     state.base[name]={rev:(obj?.rev||0)+(changed&&writer?1:0),value:clone(merged.value),conflicts};
     state.choices=state.choices.filter(c=>c.lane!==name);state.stamps[name]={};
     if(p.savedConflicts){p.savedConflicts=p.savedConflicts.filter(c=>c.lane!==name);if(!p.savedConflicts.length)delete p.savedConflicts}
@@ -430,7 +436,7 @@ const deviceSync=(()=>{
       installRecords(p,m.value);
       if(m.conflicts.length)p.savedConflicts=m.conflicts.map(c=>({...c,id:uid(),lane:'records'}));
       for(const f of items(p)){const existing=items(old).find(o=>o.id===f.id);if(existing?.blobId)f.blobId=existing.blobId}
-      if(id===before.access.member)Object.assign(p,consent(old));
+      if(id===before.access.member)installConsent(p,old);
     }
     data.access.edited=true;
   }
@@ -459,7 +465,7 @@ const deviceSync=(()=>{
         for(const c of b.conflicts||[])if(!cases.some(x=>x.id===c.id))cases.push({...c,lane});
       for(const c of cases){
         const title=document.createElement('p'),record=c.path[1]?.id;
-        const labels={fields:'Медкарта',addedVisits:'Визит',notes:'Пометка',files:'Документ',measurements:'Измерение',episodes:'Эпизод',consultations:'Консультация',auto:'Автоанализ',directAuto:'Автоотправка'};
+        const labels={fields:'Медкарта',addedVisits:'Визит',notes:'Пометка',files:'Документ',measurements:'Измерение',episodes:'Эпизод',consultations:'Консультация',auto:'Автоанализ',directAuto:'Автоотправка в OpenRouter',chatGPTAuto:'Автоотправка в ChatGPT'};
         const item=c.path[0]==='fields'?p.fields.find(f=>f.id===record)?.label:c.path[0]==='addedVisits'?p.addedVisits.find(v=>v[0]===record)?.[2]:null;
         title.textContent='Расхождение · '+data.family.members.find(m=>m.id===id)?.name+' · '+(labels[c.path[0]]||'Запись')+(item?' · '+item:'');root.append(title);
         const editable=!readOnly&&(c.lane!=='consent'||!data.access||data.access.member===id);

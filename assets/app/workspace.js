@@ -94,7 +94,11 @@ function appExtrasChange(el){
   }
   if(el.closest('#consult-form')&&['sourceTag','source'].includes(el.name))filterConsultSources(el.form);
   if(el.closest('#consult-form')&&el.name==='template')updateConsultTemplate(el.form);
-  if(el.id==='direct-auto'&&mayChangeConsent()){current().directAuto=el.checked;saveState()}
+  if(['direct-auto','chatgpt-auto'].includes(el.id)&&mayChangeConsent()){
+    const profile=current(),key=el.id==='chatgpt-auto'?'chatGPTAuto':'directAuto',before=profile[key];
+    profile[key]=el.checked;
+    if(!saveState()){profile[key]=before;el.checked=before===true;announce('Не удалось сохранить настройку отправки.')}
+  }
   if(el.name==='decision'){
     const fields=el.closest('.therapy-decision').querySelector('.decision-fields');
     fields.hidden=!['dose','replace'].includes(el.value);fields.querySelector('[name=changeName]').readOnly=el.value==='dose';

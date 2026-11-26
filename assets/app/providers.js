@@ -99,8 +99,17 @@ function directTreatmentForm(id){
   current().prompts[id]={snapshot,text,templateVersion:template.version,answer:old?.snapshot===snapshot?old.answer||'':'',transfers:old?.snapshot===snapshot?old.transfers||[]:[]};saveState();
   openPanel('Разбор лечения · '+(chatGPT.connected?'ChatGPT':'OpenRouter'),'Проверить запрос',`<form class="edit-form" id="direct-treatment" data-id="${esc(id)}"><p class="hint">Данные выбранного визита и профиль. Проверьте свободный текст перед передачей.</p>${transferHint()}<label>Точный текст<textarea required name="prompt" rows="9">${esc(text)}</textarea></label><button class="button primary">Подтвердить и отправить</button><p role="status"></p>${chatGPT.connected?'':act('manual','Перенести в свой ChatGPT',id,'button secondary')}</form>`);
 }
+function canAutoSendTreatment(){
+  if(readOnly||actingForOtherAdult()||(!chatGPT.connected&&!routerKey))return false;
+  const setting=chatGPT.connected?'chatGPTAuto':'directAuto';
+  const saved=readJson(stateKey),profile=saved?.profiles?.[person.id];
+  if(current()[setting]!==true||profile?.[setting]!==true)return false;
+  const conflicts=[...(saved.sync?.profiles?.[person.id]?.base?.consent?.conflicts||[]),
+    ...(profile.savedConflicts||[]).filter(c=>c.lane==='consent')];
+  return !conflicts.some(c=>!c.path?.length||c.path[0]===setting);
+}
 async function sendTreatment(f,confirmed=false){
-  if((chatGPT.connected||actingForOtherAdult())&&!confirmed)return;
+  if(!confirmed&&!canAutoSendTreatment())return;
   if(!f||readOnly||(!chatGPT.connected&&!routerKey)||!reviewReady(f.dataset.id))return;
   const id=f.dataset.id,profile=current(),job='visit:'+person.id+':'+id,prompt=f.elements.prompt.value.trim();
   if(!prompt||providerJobs.has(job))return;
@@ -117,6 +126,7 @@ async function sendTreatment(f,confirmed=false){
     let review=f.pendingReview;
     if(!review){
       const transfer=transferEvent('provider');
+      if(!confirmed)transfer.automatic=true;
       const provider=chatGPT.connected?'ChatGPT':'OpenRouter';
       const {answer,model}=await requestFreeModel(prompt);
       review={id:uid(),transfers:[...(draft.transfers||[]),transfer],kind:'provider',provider:provider+' · '+model,time:new Date().toISOString(),visit:id,prompt,answer,payload,templateVersion:version,items:readAnswerItems(answer,payload)};

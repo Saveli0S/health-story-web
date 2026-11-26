@@ -36,7 +36,7 @@ function transferEvent(kind){return {id:uid(),kind,time:new Date().toISOString()
 function transferHint(){return actingForOtherAdult()?'<p class="fact-note">Разовая передача из профиля '+esc(person.name)+'. Подтверждает администратор '+esc(viewerPerson.name)+'.</p>':''}
 function transferHistory(record){
   const labels={provider:'Отправлено провайдеру',copy:'Скопировано для ручной передачи',answer:'Ответ добавлен'};
-  return (record.transfers||[]).map(t=>'<p class="hint">'+esc(labels[t.kind]||'Передача')+' · '+esc(t.actorName)+(t.role==='admin'?' (администратор)':'')+' · '+esc(stamp(t.time))+'</p>').join('');
+  return (record.transfers||[]).map(t=>'<p class="hint">'+esc(t.automatic&&t.kind==='provider'?'Отправлено автоматически':labels[t.kind]||'Передача')+' · '+esc(t.actorName)+(t.role==='admin'?' (администратор)':'')+' · '+esc(stamp(t.time))+'</p>').join('');
 }
 function mayChangeConsent(){return !readOnly&&(person.id===viewerPerson.id||(viewer==='admin'&&person.role==='Ребёнок'))}
 let person=accessibleProfiles().find(p=>p.id===params.get('profile'))||viewerPerson;

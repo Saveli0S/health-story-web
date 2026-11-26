@@ -175,9 +175,10 @@ async function saveUpload(form){
 function showSettings(){
   const canAuto=mayChangeConsent();
   return `<section class="section-page"><h2>Настройки</h2>${settingsMenu()}<div class="settings-grid"><article class="plain-card"><h3>Разбор лечения</h3>
-    <p>Параметры профиля · ${esc(person.name)}</p><label class="switch-line"><input type="checkbox" id="auto-analysis" ${current().auto?'checked':''} ${canAuto?'':'disabled'}>Запускать без подтверждения</label>
+    <p>Параметры профиля · ${esc(person.name)}</p><label class="switch-line"><input type="checkbox" id="auto-analysis" ${current().auto?'checked':''} ${canAuto?'':'disabled'}>Без подключённого ИИ сразу открывать разбор по сохранённым данным</label>
     <label class="switch-line"><input type="checkbox" id="direct-auto" ${current().directAuto?'checked':''} ${canAuto?'':'disabled'}>Автоматически отправлять сверенное лечение в подключённый OpenRouter</label>
-    <small>Для новых визитов первая настройка пропускает сводку. При подключённом личном ChatGPT вы проверяете запрос и подтверждаете отправку в дневнике.</small></article>
+    <label class="switch-line"><input type="checkbox" id="chatgpt-auto" ${current().chatGPTAuto===true?'checked':''} ${canAuto?'':'disabled'}>Автоматически отправлять сверенное лечение в подключённый личный ChatGPT</label>
+    <small>Автоотправка действует для выбранного профиля. Перед разовой отправкой из карты другого взрослого администратор проверяет запрос.</small></article>
     <article class="plain-card"><h3>Поиск в аптеках</h3><label>Город семьи<select id="city" ${viewer==='admin'?'':'disabled'}>${Object.keys(pharmacyRegions).map(city=>'<option '+(city===prototypeState.city?'selected':'')+'>'+esc(city)+'</option>').join('')}</select></label><small>Один город для всех профилей семьи.</small></article>
     <article class="plain-card"><h3>Хранение данных</h3><p>${workingFamily?'Записи и оригиналы зашифрованы на этом устройстве.':'Открыта демонстрационная семья. Для личных записей создайте свой архив.'} ${prototypeState.sync?'Между доверенными устройствами включён зашифрованный обмен.':'Открыть параметры обмена можно в разделе «Синхронизация и резервная копия».'}</p></article></div></section>`;
 }
