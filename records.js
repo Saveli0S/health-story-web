@@ -279,7 +279,10 @@ function allFiles(){return [...(workingFamily?[]:sampleFiles[person.id]||[]),...
 function labs(){return allFiles().filter(f=>f.category==='Лаборатория'&&(f.file||f.lab))}
 function labCategory(id){return current().files.find(f=>f.id===id)?.lab?.category||(id==='chem'?'Биохимия':'Гематология')}
 function labResults(id){const report=current().files.find(f=>f.id===id)?.lab;return report?report.rows.map(r=>({...r,values:{[id]:r.value}})):labRows.filter(row=>Object.hasOwn(row.values,id))}
-function stamp(date){return new Intl.DateTimeFormat('ru',{dateStyle:'short',timeStyle:'short'}).format(new Date(date))}
+function stamp(date){
+  const value=new Date(date);
+  return date!=null&&Number.isFinite(value.getTime())?new Intl.DateTimeFormat('ru',{dateStyle:'short',timeStyle:'short'}).format(value):'Дата неизвестна';
+}
 function storageDB(state=prototypeState) {
   return new Promise((resolve,reject)=>{
     const req=indexedDB.open(familyStorageKey(state)===familyStateKey?'health-story-family-files':'health-story-demo-files',1);

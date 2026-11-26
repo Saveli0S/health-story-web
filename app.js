@@ -45,7 +45,10 @@ if(section==='labs'&&params.get('view')==='prevention')analysisMode='prevention'
 let sectionQuery='', labFilter='Все', routes=[], returnFocus;
 const main=document.querySelector('main'),panel=document.querySelector('#panel'),panelBody=document.querySelector('#panel-body');
 function announce(message){document.querySelector('#announcement').textContent=message}
-function dateLabel(value,options={day:'numeric',month:'long'}){return new Intl.DateTimeFormat('ru-RU',{...options,timeZone:'UTC'}).format(new Date(value+'T12:00:00Z'))}
+function dateLabel(value,options={day:'numeric',month:'long'}){
+  const date=new Date(value+'T12:00:00Z');
+  return Number.isFinite(date.getTime())?new Intl.DateTimeFormat('ru-RU',{...options,timeZone:'UTC'}).format(date):'Дата неизвестна';
+}
 function act(action,text,id='',classes='text-button',mark=''){
   return '<button type="button" class="'+classes+'" data-action="'+action+'" data-id="'+esc(id)+'">'+(mark?icon(mark,true):'')+esc(text)+'</button>';
 }

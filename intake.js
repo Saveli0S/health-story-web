@@ -18,6 +18,7 @@ function submitEpisode(f){
 function showNewVisit(episodeId,photo){
   photo??=routes.at(-1)?.photo;
   const manual=routes.at(-1)?.name==='newVisit'||!photo;
+  const existingMeds=photo&&current().visitDrafts.find(d=>d.id===photo.draftId)?.manualMeds;
   const episodes=current().episodes,d=photo?.header||{};
   // A shared diagnosis alone does not establish that this is the same episode.
   const doctors=Object.entries(person.doctors);
@@ -34,7 +35,7 @@ function showNewVisit(episodeId,photo){
     <label>Клиника <small>по желанию</small><input name="clinic" maxlength="160" value="${esc(d.clinic)}"></label>
     <label>Сведения о визите <small>по желанию</small><textarea name="note" maxlength="2000" placeholder="Причина обращения, диагноз или выводы врача">${esc(d.note)}</textarea></label>
     <label>Рекомендации врача <small>по желанию</small><textarea name="recommendation" maxlength="3600" placeholder="Что рекомендовал врач, когда пройти контроль"></textarea></label>
-    <div id="previous-therapy"></div>${manual?'<div id="rx-rows"></div>'+act('appendMed','Добавить препарат вручную','','button secondary','plus'):''}
+    <div id="previous-therapy"></div>${manual||existingMeds?.length?'<div id="rx-rows"></div>'+act('appendMed','Добавить препарат вручную','','button secondary','plus'):''}
     <p class="error" role="alert"></p><button class="button primary">${photo?'Создать визит и сверить назначения':'Сохранить визит'}</button>
     ${photo?act('deferVisit','Уточнить позже',photo.draftId,'text-button'):'<button class="text-button" value="attach" name="next">Создать визит и перейти к вложениям</button>'}</form>`);
   toggleVisitInputs();refreshPreviousFields(document.querySelector('#visit-form'));
@@ -85,7 +86,7 @@ async function submitVisit(f,next){
     const kind=d.kind||'Назначения',row={id:d.id,blobId:d.blobId,visit:visit[0],category:kind,name:d.name,type:d.type,date:visit[1]};
     if(d.issues?.length)row.issues=d.issues;
     if(['Назначения','Рекомендации'].includes(kind))Object.assign(row,{intake:true,raw:d.raw||'',transcription:d.transcription,visitImportRevision:d.visitImportRevision,proposed:kind==='Рекомендации'?[]:d.proposed||[],readError:d.readError,checked:false,meds:[]});
-    if(kind==='Лаборатория'&&d.raw){row.labRaw=d.raw;row.labDraft=parseLabText(d.raw,d.name)}
+    if(kind==='Лаборатория'&&(d.raw||d.labDraft)){row.labRaw=d.raw||'';row.labDraft=d.labDraft||parseLabText(d.raw,d.name)}
     return row;
   });
   profile.visitDrafts=profile.visitDrafts.filter(d=>!originals.includes(d));profile.files.push(...rows);
