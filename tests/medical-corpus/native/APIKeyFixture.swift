@@ -18,12 +18,17 @@ enum NativeAPIKeyFixture {
                   let messages = payload["messages"] as? [[String: String]],
                   payload["model"] as? String == model, payload["max_tokens"] as? Int == 4096,
                   !String(decoding: bytes, as: UTF8.self).contains("synthetic-"), !String(decoding: bytes, as: UTF8.self).contains("example.org") {
-            if claude, url.path == "/v1/messages", messages.map({ $0["role"] }) == ["user", "assistant", "user"],
+            let initialQuestion = ["role": "user", "content": "Ответь одним словом: готово"]
+            let continuation = [initialQuestion, ["role": "assistant", "content": "Да"],
+                                ["role": "user", "content": "Повтори ответ заглавными буквами"]]
+            if claude, url.path == "/v1/messages",
+               messages == continuation + [["role": "assistant", "content": "ДА"], ["role": "user", "content": "Next control question"]],
                request.value(forHTTPHeaderField: "anthropic-version") == "2026-10-21" {
                 body = ["model": model, "content": [["type": "thinking"], ["type": "text", "text": "Учебный ответ Claude"]]]
             } else if !claude, url.host == "api.deepseek.com", url.path == "/chat/completions",
-                      messages.map({ $0["role"] }) == ["user"], (payload["thinking"] as? [String: String])?["type"] == "disabled" {
-                body = ["model": model, "choices": [["message": ["content": "Учебный ответ DeepSeek"]]]]
+                      (messages == [initialQuestion] || messages == continuation),
+                      (payload["thinking"] as? [String: String])?["type"] == "disabled" {
+                body = ["model": model, "choices": [["message": ["content": messages.count == 1 ? "Да" : "ДА"]]]]
             } else {
                 status = 400
             }

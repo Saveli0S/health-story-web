@@ -271,6 +271,20 @@ struct NativeChatGPTSettings: View {
 
     var body: some View {
         List {
+            if let keys {
+                Section {
+                    Picker("Провайдер по умолчанию", selection: Binding(
+                        get: { keys.preferredProvider }, set: { keys.setPreferredProvider($0) }
+                    )) {
+                        Text("Автоматически").tag(nil as NativeAIProvider?)
+                        ForEach(NativeAIProvider.allCases, id: \.self) { provider in
+                            Text(provider.label).tag(Optional(provider))
+                        }
+                    }
+                } footer: {
+                    Text("Для новых консультаций и разборов лечения. В переписке подставляется провайдер последнего ответа, если он доступен.")
+                }
+            }
             if let account { ChatGPTAccountRows(account: account) }
             if let keys {
                 Section { Text(NativeAIProvider.cost + " Проверка ключа выполняется без запроса к модели.").font(.footnote) }

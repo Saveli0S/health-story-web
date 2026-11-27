@@ -4,7 +4,7 @@ const {chromium,webkit,devices}=require('playwright-core');
 const mobile=process.argv.includes('--iphone');
 (async()=>{
   const browser=mobile?await webkit.launch():await chromium.launch({channel:'chrome'});
-  const base='http://127.0.0.1:8764/';
+  const base=process.env.HEALTH_PREVIEW_URL||'http://127.0.0.1:8764/';
   try{
     const page=await browser.newPage({...mobile?devices['iPhone 13']:{},serviceWorkers:'block'});
     const sent=[];
@@ -34,7 +34,13 @@ const mobile=process.argv.includes('--iphone');
     assert.equal(sent[0][0].content,review.prompt);
     assert.equal(review.transfers.at(-1).automatic,true);
     assert.equal(review.provider,'ChatGPT · synthetic');
+    await settings();
+    await page.locator('main [data-action=providers]').click();
+    await panel.getByLabel('Провайдер по умолчанию',{exact:true}).selectOption('deepseek');
+    await visit();await panel.locator('#direct-treatment').waitFor();assert.equal(sent.length,1);
     await settings();await page.locator('#chatgpt-auto').uncheck();
+    await page.locator('main [data-action=providers]').click();
+    await panel.getByLabel('Провайдер по умолчанию',{exact:true}).selectOption('');
     await visit();await panel.locator('#direct-treatment').waitFor();assert.equal(sent.length,1);
     console.log('PASS',mobile?'WebKit':'Chrome','legacy opt-in isolated, ChatGPT opt-in persisted, exact prompt sent once, author and automatic transfer recorded, revocation restored preview');
   }finally{await browser.close()}

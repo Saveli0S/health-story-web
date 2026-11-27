@@ -565,6 +565,7 @@ private struct VisitMetadataEditor: View {
 
 private struct VisitEditor: View {
     @Environment(\.nativeChatGPT) private var chatGPT
+    @Environment(\.nativeAPIKeys) private var apiKeys
     @ObservedObject var journal:DeviceJournal
     let owner:String
     var resumeID:String?=nil
@@ -659,7 +660,8 @@ private struct VisitEditor: View {
                 do {
                     duplicate=nil
                     let visit=try journal.saveVisit(owner:owner,draft:draft,expectedDraft:previous)
-                    if let chatGPT,NativeTreatmentDelivery.allowsAutomatic(journal,owner:owner),
+                    if let chatGPT,apiKeys?.preferredProvider == nil || apiKeys?.preferredProvider == .chatGPT,
+                       NativeTreatmentDelivery.allowsAutomatic(journal,owner:owner),
                        let request=try? NativeTreatmentDelivery.prepare(journal,owner:owner,visit:visit){
                         Task {
                             do {try await NativeTreatmentDelivery.send(journal,owner:owner,visit:visit,request:request,automatic:true,via:chatGPT)}

@@ -10,17 +10,50 @@ const apiKeyProviders={
 const paidAPIHint='Запросы по API-ключу могут расходовать баланс провайдера.';
 const apiCredentials=new Map();
 const providerNames={chatgpt:'ChatGPT',router:'OpenRouter',...Object.fromEntries(Object.entries(apiKeyProviders).map(([id,p])=>[id,p.name]))};
+const preferredProviderOptions=['chatgpt','deepseek','anthropic'];
+function providerPreferenceKey(){return 'health-story.preferred-provider.'+family.id+'/'+viewerPerson.id}
+function savedProviderPreference(){
+  try{
+    const value=localStorage.getItem(providerPreferenceKey());
+    return preferredProviderOptions.includes(value)?value:'';
+  }catch{return ''}
+}
+function saveProviderPreference(input){
+  if(readOnly||input.value&&!preferredProviderOptions.includes(input.value))return;
+  const status=document.querySelector('#provider-preference-status');
+  try{
+    if(input.value)localStorage.setItem(providerPreferenceKey(),input.value);
+    else localStorage.removeItem(providerPreferenceKey());
+    status.textContent='Выбор сохранён.';
+  }catch{
+    input.value=savedProviderPreference();
+    status.textContent='Не удалось сохранить выбор в браузере.';
+  }
+}
 function connectedProviders(){
   if(readOnly)return [];
   return [chatGPT.connected&&'chatgpt',routerKey&&'router',...Object.keys(apiKeyProviders).filter(id=>apiCredentials.has(id))].filter(Boolean);
 }
+function selectProvider(options,previous=''){
+  const preferred=savedProviderPreference();
+  return options.find(id=>(previous||'').startsWith(providerNames[id]+' · '))
+    ||(options.includes(preferred)?preferred:options[0]);
+}
 function providerChoice(preferred=''){
-  const options=connectedProviders(),selected=options.find(id=>preferred.startsWith(providerNames[id]+' · '))||options[0];
+  const options=connectedProviders(),selected=selectProvider(options,preferred);
   if(!selected)return '';
   const choice=options.length===1
     ?'<input type="hidden" name="provider" value="'+selected+'">'
     :'<label>Провайдер<select name="provider" aria-label="Провайдер">'+options.map(id=>'<option value="'+id+'" '+(id===selected?'selected':'')+'>'+esc(providerNames[id])+'</option>').join('')+'</select></label>';
   return choice+(options.some(id=>Object.hasOwn(apiKeyProviders,id))?'<p class="hint">'+paidAPIHint+'</p>':'');
+}
+function providerPreferenceSettings(){
+  const selected=savedProviderPreference();
+  return '<section class="plain-card"><h3>Провайдер по умолчанию</h3><label>Для новых запросов '+
+    '<select id="provider-preference" aria-label="Провайдер по умолчанию"><option value="">Автоматически</option>'+
+    preferredProviderOptions.map(id=>'<option value="'+id+'" '+(selected===id?'selected':'')+'>'+esc(providerNames[id])+'</option>').join('')+
+    '</select></label><p class="hint">Для новых консультаций и разборов. В переписке подставляется провайдер последнего ответа, если он доступен.</p>'+
+    '<p id="provider-preference-status" role="status"></p></section>';
 }
 function apiKeySettings(id,p){
   const connected=apiCredentials.has(id);
@@ -93,6 +126,7 @@ function providerStatus(){
 function providers(){
   const eligible=Boolean(globalThis.crypto?.subtle)&&!readOnly;
   openPanel('Настройки','ИИ-провайдеры',`<div class="provider-cards">
+    ${eligible?providerPreferenceSettings():''}
     ${chatGPTSettings()}
     <section class="plain-card"><h3>OpenRouter</h3>${providerFacts(routerKey?'Аккаунт подключён в этой вкладке.':'Аккаунт не подключён.',routerKey?(routerDelivery||'Бесплатная модель. Доступность квоты ещё не проверялась.'):'Для отправки в бесплатную модель подключите аккаунт.')}
     ${routerKey?act('disconnectAI','Отключить в этой вкладке','','button secondary'):eligible?act('beginAI','Авторизоваться в OpenRouter','','button primary'):'<p class="hint">Для подключения на этом устройстве нужен HTTPS или localhost и роль взрослого.</p>'}
@@ -201,9 +235,11 @@ function directTreatmentForm(id){
   const destination=options.length===1?' · '+providerNames[options[0]]:'';
   openPanel('Разбор лечения'+destination,'Проверить запрос',`<form class="edit-form" id="direct-treatment" data-id="${esc(id)}"><p class="hint">Данные выбранного визита и профиль. Проверьте свободный текст перед передачей.</p>${transferHint()}<label>Точный текст<textarea required name="prompt" rows="9">${esc(text)}</textarea></label>${providerChoice()}<button class="button primary">Подтвердить и отправить</button><p role="status"></p>${chatGPT.connected?'':act('manual','Перенести в свой ChatGPT',id,'button secondary')}</form>`);
 }
-function canAutoSendTreatment(){
-  if(readOnly||actingForOtherAdult()||(!chatGPT.connected&&!routerKey))return false;
-  const setting=chatGPT.connected?'chatGPTAuto':'directAuto';
+function canAutoSendTreatment(providerID=selectProvider(connectedProviders())){
+  const preferred=savedProviderPreference();
+  if(readOnly||actingForOtherAdult()||(preferred&&preferred!==providerID)||
+    !['chatgpt','router'].includes(providerID)||!connectedProviders().includes(providerID))return false;
+  const setting=providerID==='chatgpt'?'chatGPTAuto':'directAuto';
   const saved=readJson(stateKey),profile=saved?.profiles?.[person.id];
   if(current()[setting]!==true||profile?.[setting]!==true)return false;
   const conflicts=[...(saved.sync?.profiles?.[person.id]?.base?.consent?.conflicts||[]),
@@ -211,10 +247,9 @@ function canAutoSendTreatment(){
   return !conflicts.some(c=>!c.path?.length||c.path[0]===setting);
 }
 async function sendTreatment(f,confirmed=false){
-  if(!confirmed&&!canAutoSendTreatment())return;
   if(!f||readOnly||!reviewReady(f.dataset.id))return;
   const providerID=f.elements.provider?.value;
-  if(!confirmed&&providerID!==(chatGPT.connected?'chatgpt':'router'))return;
+  if(!confirmed&&!canAutoSendTreatment(providerID))return;
   if(!f.pendingReview&&!connectedProviders().includes(providerID)){
     f.querySelector('[role=status]').textContent='Подключите выбранного провайдера. Запрос сохранён.';return;
   }

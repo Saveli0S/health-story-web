@@ -38,17 +38,29 @@ final class APIKeysUI: XCTestCase {
             tap(app.buttons["Проверить и подключить " + label], in: app)
             XCTAssertTrue(app.buttons["Отключить " + label].waitForExistence(timeout: 5))
         }
+        let defaultPicker = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Провайдер по умолчанию'")).firstMatch
+        tap(defaultPicker, in: app)
+        tap(app.buttons["Claude (Anthropic)"], in: app)
         app.navigationBars.buttons.firstMatch.tap()
         tap(app.buttons["Мая Макетова"], in: app)
         tap(app.buttons["ИИ-консультация"], in: app)
         let record = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'QA API keys'")).firstMatch
         tap(record, in: app)
+        XCTAssertTrue(app.buttons["Подтвердить и отправить в Claude (Anthropic)"].waitForExistence(timeout: 7))
+        let picker = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Провайдер,'")).firstMatch
+        tap(picker, in: app)
+        tap(app.buttons["DeepSeek"], in: app)
         tap(app.buttons["Подтвердить и отправить в DeepSeek"], in: app)
-        XCTAssertTrue(app.staticTexts["Учебный ответ DeepSeek"].waitForExistence(timeout: 7))
+        XCTAssertTrue(app.staticTexts["Да"].waitForExistence(timeout: 7), app.debugDescription)
+        app.navigationBars.buttons.firstMatch.tap()
+        tap(record, in: app)
         let next = app.descendants(matching: .any)["chatgpt-followup-draft"].firstMatch
         tap(next, in: app)
-        next.typeText("Follow-up QA")
-        let picker = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Провайдер'")).firstMatch
+        next.typeText("Повтори ответ заглавными буквами")
+        tap(app.buttons["Подтвердить и отправить в DeepSeek"], in: app)
+        XCTAssertTrue(app.staticTexts["ДА"].waitForExistence(timeout: 7), app.debugDescription)
+        tap(next, in: app)
+        next.typeText("Next control question")
         tap(picker, in: app)
         tap(app.buttons["Claude (Anthropic)"], in: app)
         tap(app.buttons["Подтвердить и отправить в Claude (Anthropic)"], in: app)
@@ -57,6 +69,7 @@ final class APIKeysUI: XCTestCase {
         app.launch()
         openJournal(app)
         tap(app.buttons["ИИ-провайдеры"], in: app)
+        XCTAssertTrue(defaultPicker.label.contains("Claude (Anthropic)"))
         tap(app.buttons["Отключить DeepSeek"], in: app)
         XCTAssertTrue(app.secureTextFields["API-ключ DeepSeek"].exists)
         XCTAssertTrue(app.buttons["Отключить Claude (Anthropic)"].exists)

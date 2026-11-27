@@ -1,7 +1,7 @@
 import Security
 import SwiftUI
 
-enum NativeAIProvider: String, Hashable, Sendable {
+enum NativeAIProvider: String, CaseIterable, Hashable, Sendable {
     case chatGPT, deepseek, anthropic
 
     static let keyed: [Self] = [.deepseek, .anthropic]
@@ -120,6 +120,7 @@ enum NativeAIProvider: String, Hashable, Sendable {
 final class NativeAPIKeys {
     private var context: String?
     private(set) var connected: Set<NativeAIProvider> = []
+    private(set) var preferredProvider: NativeAIProvider?
 
     static func selection(_ journal: DeviceJournal) -> String? {
         let family = caption(journal.data["family"] as? JournalObject ?? [:], "id")
@@ -130,6 +131,15 @@ final class NativeAPIKeys {
     func activate(_ next: String?) {
         context = next
         connected = Set(NativeAIProvider.keyed.filter { key($0) != nil })
+        preferredProvider = next.flatMap {
+            UserDefaults.standard.string(forKey: preferenceKey($0)).flatMap(NativeAIProvider.init(rawValue:))
+        }
+    }
+
+    func setPreferredProvider(_ provider: NativeAIProvider?) {
+        guard let context else { return }
+        UserDefaults.standard.set(provider?.rawValue, forKey: preferenceKey(context))
+        preferredProvider = provider
     }
 
     func connect(_ provider: NativeAIProvider, _ input: String) async throws {
@@ -161,6 +171,9 @@ final class NativeAPIKeys {
     }
 
     private static let service = "by.healthstory.ai-api-key"
+    private func preferenceKey(_ context: String) -> String {
+        "healthstory.preferred-provider." + context
+    }
     private func account(_ provider: NativeAIProvider, _ context: String) -> String {
         context + "/" + provider.rawValue
     }
@@ -186,7 +199,10 @@ struct NativeProviderChoice<Actions: View>: View {
     }
 
     var selection: NativeAIProvider? {
-        options.first(where: { $0 == choice }) ?? options.first(where: { preferred.hasPrefix($0.label + " · ") }) ?? options.first
+        options.first(where: { $0 == choice })
+            ?? options.first(where: { preferred.hasPrefix($0.label + " · ") })
+            ?? options.first(where: { $0 == keys?.preferredProvider })
+            ?? options.first
     }
 
     var transport: NativeChatGPTTransport? {

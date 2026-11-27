@@ -191,7 +191,7 @@ else:
     if args.case=="chatgpt":
         profile["consultations"].append(dict(id="chatgpt-qa",question="QA ChatGPT",time="2026-02-02",prompt="First fixture question",answer="",provider=""))
     if args.case=="api-keys":
-        profile["consultations"].append(dict(id="api-keys-qa",question="QA API keys",time="2026-02-02",prompt="First fixture question",answer="",provider=""))
+        profile["consultations"].append(dict(id="api-keys-qa",question="QA API keys",time="2026-02-02",prompt="Ответь одним словом: готово",answer="",provider=""))
     if args.case=="pharmacy-live":
         profile["addedVisits"][0].append([dict(id="catalog-qa",name="Парацетамол",strength="500 мг",form="таблетки",pack="№20")])
     if args.case=="batch":
