@@ -75,6 +75,24 @@ else:
         source=providers.read_text()
         assert source.count("ChatGPTHTTP.load(request)")==1
         providers.write_text(source.replace("ChatGPTHTTP.load(request)","NativeAPIKeyFixture.load(request)"))
+        journal = ios/"HealthStory/DeviceJournal.swift"
+        with journal.open("a") as out:
+            out.write("""
+@MainActor extension DeviceJournal {
+    func holdEditsForReplyTest() {
+        busy = true
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            busy = false
+        }
+    }
+}
+""")
+        consultation = ios/"HealthStory/Consultations.swift"
+        source = consultation.read_text()
+        anchor = "let reply = try await transport.reply(messages)"
+        assert source.count(anchor) == 1
+        consultation.write_text(source.replace(anchor, anchor+"\n                    journal.holdEditsForReplyTest()"))
     if args.case=="lab":
         screen=ios/"HealthStory/LabIntake.swift"
         actual='Button("Выбрать фото или PDF из файлов"){picker=true}'

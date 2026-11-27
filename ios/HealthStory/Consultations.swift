@@ -308,6 +308,12 @@ private struct ConsultationRecord:View {
         }.journalValidation(validation).journalBackground().navigationTitle("Запрос и ответ")
             .disabled(sending)
             .navigationBarBackButtonHidden(sending || received != nil)
+            .interactiveDismissDisabled(sending || received != nil)
+            .onReceive(journal.$busy) { busy in
+                guard !busy, received != nil, error.isEmpty else { return }
+                // Published values arrive before the property has been updated.
+                Task { @MainActor in persistReply() }
+            }
             .fileExporter(isPresented: $exportingRequest, document: requestFile, contentType: .plainText, defaultFilename: "chatgpt-request.txt") { result in
                 requestFile = nil
                 switch result {
@@ -331,9 +337,13 @@ private struct ConsultationRecord:View {
         if sending {
             ProgressView("Ожидаем ответ " + sendingTo + "…")
         } else if received != nil {
-            Button("Сохранить полученный ответ"){ persistReply() }
-                .disabled(journal.busy)
-            Button("Выйти без сохранения ответа",role:.destructive){ received = nil }
+            if error.isEmpty {
+                ProgressView("Сохраняем ответ после синхронизации…")
+            } else {
+                Button("Повторить сохранение"){ persistReply() }
+                    .disabled(journal.busy)
+                Button("Выйти без сохранения ответа",role:.destructive){ received = nil }
+            }
         } else {
             let lastProvider = entries(row,"turns").last.map { caption($0,"provider") } ?? caption(row,"provider")
             NativeProviderChoice(preferred:lastProvider,choice:$provider) { transport in
@@ -413,7 +423,7 @@ private struct ConsultationRecord:View {
         } catch { self.error=error.localizedDescription }
     }
     private func persistReply() {
-        guard let (reply,question,previous,sentHistory,transfer,providerName)=received else { return }
+        guard !journal.busy, let (reply,question,previous,sentHistory,transfer,providerName)=received else { return }
         do {
             try NativeChatGPTConversation.edit(journal,owner:owner,id:id){
                 try NativeChatGPTConversation.save(reply,question:question,previous:previous,sentHistory:sentHistory,transfer:transfer,providerName:providerName,in:&$0)
