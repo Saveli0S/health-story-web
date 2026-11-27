@@ -220,7 +220,7 @@ async function step(name,fn){stage=name;const details=await fn();evidence.stages
         for(const file of files){
           const filename=path.basename(file);const listing=p.locator('#listing [data-action=file]').filter({hasText:filename});assert.equal(await listing.count(),1);await listing.click();
           const bytes=await download(dialog().getByRole('link',{name:'Скачать оригинал'}));assert.equal(hash(bytes),hash(await fs.readFile(file)));
-          evidence.verifiedOriginals.push({file:filename,bytes:bytes.length,sha256:hash(bytes)});await act('close');
+          evidence.verifiedOriginals.push({file:filename,bytes:bytes.length,sha256:hash(bytes)});await act('close');await dialog().waitFor({state:'hidden'});
         }
       }
       await gotoVisit(childId,initial);await dialog().getByText(noteText,{exact:true}).waitFor();await act('episode');await act('brief');await dialog().getByText(question,{exact:true}).waitFor();

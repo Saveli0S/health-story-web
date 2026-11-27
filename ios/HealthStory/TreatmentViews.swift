@@ -202,6 +202,7 @@ struct TreatmentSection:View {
                     NavigationLink {NativeVisitDetails(journal:journal,owner:owner,row:row)} label:{
                         JournalRowLabel(title:first.visitTitle,symbol:"calendar",subtitle:first.date)
                     }.listRowBackground(JournalTheme.treatment)
+                    NativeDoctorLink(journal:journal,owner:owner,visit:id).listRowBackground(JournalTheme.treatment)
                 }
                 ForEach(group){item in
                     VStack(alignment:.leading,spacing:6){CourseLabel(item:item)

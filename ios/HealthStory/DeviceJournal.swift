@@ -345,6 +345,24 @@ final class DeviceJournal: ObservableObject {
         }
         try commitEdit(next,owner:owner)
     }
+    var canManageFamilyTags:Bool {
+        admin && (hasLocalArchive || (data["sync"] as? JournalObject)?["tagLibrary"] is JournalObject)
+    }
+    func changeFamilyTags(_ update:([JournalObject])throws->[JournalObject]) async throws {
+        guard canManageFamilyTags,!busy else {throw JournalError("Справочник доступен после обмена с веб-дневником администратора.")}
+        busy=true;defer{busy=false}
+        var next=data
+        if hasLocalArchive {
+            next["tags"]=try update(entries(next,"tags"))
+        } else {
+            guard let ctx=next["sync"] as? JournalObject,let keys=ctx["tagLibrary"] as? JournalObject else {
+                throw JournalError("Справочник тегов недоступен.")
+            }
+            next["tags"]=try await DeviceExchange(endpoint:exchangeEndpoint).changeFamilyTags(ctx,keys:keys,update:update)
+        }
+        var candidate=payload;candidate["data"]=next
+        try commit(candidate)
+    }
     func saveFamilyTemplate(_ item:JournalObject,remove:Bool=false) throws {
         guard hasLocalArchive,!busy else {throw JournalError("Общие промпты подключённой семьи изменяются в веб-дневнике.")}
         var d=data,next=payload

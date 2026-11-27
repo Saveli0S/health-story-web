@@ -4,10 +4,13 @@ import Foundation
 struct RecordTags {
     typealias Row = [String: Any]
     private let labels: [String: [String]]
+    private let applied: [String: Set<String>]
+    private let automatic: [String: Set<String>]
     private let specialties: [String: String]
 
     init(profile: Row, library: [Row]) {
         var result = [String: [String]]()
+        var appliedByKey = [String: Set<String>](), automaticByKey = [String: Set<String>]()
         var overrides = [String: [String: Bool]]()
         for row in profile["tagEdits"] as? [Row] ?? [] {
             if let key = row["id"] as? String { overrides[key] = row["values"] as? [String: Bool] }
@@ -30,8 +33,13 @@ struct RecordTags {
             var matches = 0
             result[key] = terms.compactMap { tagID, name, keywords in
                 let inferred = matches < 3 && keywords.contains { evidence.contains(" " + $0 + " ") }
-                if inferred { matches += 1 }
-                return (overrides[key]?[tagID] ?? inferred) ? name : nil
+                if inferred {
+                    matches += 1
+                    automaticByKey[key,default:[]].insert(tagID)
+                }
+                guard overrides[key]?[tagID] ?? inferred else {return nil}
+                appliedByKey[key,default:[]].insert(tagID)
+                return name
             }
         }
         for visit in profile["addedVisits"] as? [[Any]] ?? [] {
@@ -54,14 +62,18 @@ struct RecordTags {
             if let id = row["id"] as? String { index("prevent", id, [kinds[row["kind"] as? String ?? ""] ?? "",row["title"] as? String ?? ""]) }
         }
         labels = result
+        applied = appliedByKey
+        automatic = automaticByKey
     }
 
-    private static func words(_ text: String) -> String {
+    static func words(_ text: String) -> String {
         text.lowercased().replacingOccurrences(of: "ё", with: "е")
             .components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }.joined(separator: " ")
     }
 
     func names(_ key: String) -> [String] { labels[key] ?? [] }
+    func selectedIDs(_ key:String)->Set<String> {applied[key] ?? []}
+    func inferredIDs(_ key:String)->Set<String> {automatic[key] ?? []}
     func specialty(_ id: String) -> String { specialties[id] ?? "" }
     func matches(_ query: String, key: String, fields: [String]) -> Bool {
         if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }

@@ -192,6 +192,7 @@ struct LabReport:View {
                 if !caption(lab,"laboratory").isEmpty {LabeledContent("Лаборатория",value:caption(lab,"laboratory"))}
                 NavigationLink("Исходный бланк"){DeviceAttachment(journal:journal,owner:owner,id:id,name:caption(file,"name"))}
             }
+            NativeRecordTags(journal:journal,owner:owner,kind:.lab,id:id)
             Section("Показатели"){
                 let rows=entries(lab,"rows")
                 ForEach(rows.indices,id:\.self){i in

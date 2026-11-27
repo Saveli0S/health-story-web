@@ -225,6 +225,7 @@ struct NativeTreatmentReview:View {
                         NavigationLink("Аналоги и цены"){NativePharmacy(journal:journal,owner:owner,visit:visit,med:m)}}
                 }
             }
+            NativeDoctorLink(journal:journal,owner:owner,visit:visit)
             if journal.editable {Button("Разобрать лечение в ChatGPT"){composing=true}.disabled(meds.isEmpty || journal.busy)}
             Section("История разборов"){
                 if history.isEmpty {Text("Разборов пока нет.").foregroundStyle(.secondary)}

@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 
 parser=argparse.ArgumentParser()
 parser.add_argument("device")
-parser.add_argument("--case",choices=["consultation","chatgpt","cards","remove","treatment","review","review-direct","visit-files","layout","archive-unlock","archive-cloud-key","archive-inspection","sync","lab","batch","pharmacy-live","validation"],default="consultation")
+parser.add_argument("--case",choices=["consultation","chatgpt","cards","remove","treatment","review","review-direct","visit-files","layout","archive-unlock","archive-cloud-key","archive-inspection","sync","lab","batch","pharmacy-live","validation","record-links"],default="consultation")
 parser.add_argument("--sync-fixture",type=Path)
 parser.add_argument("--sync-relay")
 args=parser.parse_args()
@@ -42,6 +42,7 @@ if args.case=="pharmacy-live": bundle="by.healthstory.pharmacy.qa"
 if args.case=="cards": bundle="by.healthstory.cardediting.qa"
 if args.case=="remove": bundle="by.healthstory.recordremoval.qa"
 if args.case=="validation": bundle="by.healthstory.validation.qa"
+if args.case=="record-links": bundle="by.healthstory.recordlinks.qa"
 work=Path(tempfile.mkdtemp(prefix="hs-corpus-uitest-"))
 print("Evidence:",work,flush=True)
 ios=work/"ios"
@@ -104,6 +105,7 @@ else:
         target.write_text(source.replace(anchor,replacement,1))
     screens={"archive-unlock":"ArchiveUnlockUI","archive-cloud-key":"CloudArchiveKeyUI","archive-inspection":"ArchiveInspectionUI","layout":"LayoutUI","visit-files":"VisitAttachmentsUI","batch":"VisitBatchUI","lab":"LabUI","treatment":"TreatmentUI","review":"ReviewUI","review-direct":"ProviderReviewUI","chatgpt":"ChatGPTUI","cards":"CardEditingUI","remove":"RecordRemovalUI","pharmacy-live":"PharmacyLiveUI"}
     screens["validation"]="ValidationUI"
+    screens["record-links"]="RecordLinksUI"
     shutil.copy(native/(screens.get(args.case,"ConsultationUI")+".swift"),ios/"CorpusUI")
 project_file=project/"project.pbxproj"
 data=json.loads(subprocess.check_output(["plutil","-convert","json","-o","-",project_file]))
@@ -189,12 +191,24 @@ else:
     if args.case in ("review","review-direct"):
         from review_fixture import profile as review_profile, verify
         profile=review_profile()
+    if args.case=="record-links":
+        profile["addedDoctors"].append(dict(id="d-other",values=["Другой врач QA","Хирург","Стенд"]))
+        profile["addedVisits"].append(["another","2026-01-07","Другой врач в эпизоде QA","d-other","Эпизод QA","","scope","ep"])
+        profile["exams"]=[dict(id="exam-saved",method="УЗИ",region="Обследование QA",date="2026-01-08",description="Описание QA",attachments=[])]
+        profile["examDrafts"]=[]
+        profile["files"]=[f for f in profile["files"] if f["id"]!="pending-exam"]
+        profile["files"].append(dict(id="existing-snap",name="Снимок из профиля.jpg",type="image/jpeg",category="Снимки",visit="v"))
     members=[dict(id="p-main",name="Мая Макетова",role="Взрослый"),dict(id="p-other",name="Другой профиль",role="Ребёнок")]
     family=dict(id="family-qa",kind="family",name="Стенд",adminId="p-main",members=members)
     payload=dict(version=2,data=dict(schemaVersion=2,family=family,profiles={"p-main":profile,"p-other":{"files":[],"fields":[{"id":"chronic","label":"QA","value":"PRIVATE-OTHER-PROFILE"}]}}),
                  files=[{"id":"p-main/"+f["id"],"type":"text/plain","bytes":base64.b64encode(b"QA").decode()} for f in profile["files"]])
     if args.case=="batch":
         payload["files"]=[dict(id="p-main/"+f["id"],type="text/plain",bytes=base64.b64encode(f["raw"].encode()).decode()) for f in profile["visitDrafts"]]
+    if args.case=="record-links":
+        payload["data"]["tags"]=[dict(id="archive-tag",name="Архив QA",keywords=[]),dict(id="visit-tag",name="Терапевт",keywords=[])]
+        jpeg=(repo/"tests/medical-corpus/visits/V04-a-front.jpg").read_bytes()
+        original=next(f for f in payload["files"] if f["id"]=="p-main/existing-snap")
+        original.update(type="image/jpeg",bytes=base64.b64encode(jpeg).decode())
     folder=sandbox/"Library/Application Support";folder.mkdir(parents=True,exist_ok=True)
     encoder="""const {randomBytes,createCipheriv}=require('crypto'),fs=require('fs'),iv=randomBytes(12),c=createCipheriv('aes-256-gcm',Buffer.alloc(32,66),iv);fs.writeFileSync(process.argv[1],Buffer.concat([Buffer.from('HS01'),iv,c.update(fs.readFileSync(0)),c.final(),c.getAuthTag()]));"""
     original_archive=folder/"family.health"
@@ -207,7 +221,7 @@ else:
         copy={"version":2,"data":{"schemaVersion":2,"family":{"id":"family-copy","kind":"family","name":"Семья из копии","adminId":"p-copy","members":[{"id":"p-copy","name":"Профиль из копии","role":"Взрослый"}]},"profiles":{"p-copy":{"files":[{"id":"proof","name":"Оригинал из копии.pdf"}]}}},"files":[{"id":"p-copy/proof","type":"application/pdf","bytes":base64.b64encode(pdf).decode()}]}
         subprocess.run(["node","-e",encoder,inspection],input=json.dumps(copy).encode(),check=True)
 run("xcodebuild","test-without-building","-xctestrun",next(products.glob("Corpus*.xctestrun")),"-destination",dest,"-parallel-testing-enabled","NO","-resultBundlePath",work/"result.xcresult",log="test.log")
-if treatment or args.case in ("review","review-direct","visit-files","lab","batch","cards","remove","validation"):
+if treatment or args.case in ("review","review-direct","visit-files","lab","batch","cards","remove","record-links","validation"):
     folder=Path(subprocess.check_output(["xcrun","simctl","get_app_container",device,bundle,"data"],text=True).strip())/"Library/Application Support"
     decoder="""const {createDecipheriv}=require('crypto'),fs=require('fs'),b=fs.readFileSync(process.argv[1]),c=createDecipheriv('aes-256-gcm',Buffer.alloc(32,66),b.subarray(4,16));c.setAuthTag(b.subarray(-16));process.stdout.write(Buffer.concat([c.update(b.subarray(16,-16)),c.final()]));"""
     saved=json.loads(subprocess.check_output(["node","-e",decoder,folder/"family.health"]))
@@ -249,6 +263,15 @@ if treatment or args.case in ("review","review-direct","visit-files","lab","batc
         assert updated[5]=="QA visit details"
         assert observed["addedVisits"][-1][0]=="v"
         print("PASS native repeated visit, open existing, edit visit and preserve the original archive")
+        sys.exit(0)
+    if args.case=="record-links":
+        after=saved["data"]["profiles"]["p-main"]
+        assert after["exams"][0]["attachments"]==[{"id":"existing-snap"}]
+        assert after["files"]==profile["files"]
+        assert next(r for r in after["tagEdits"] if r["id"]=="visit:v")["values"]=={"archive-tag":True}
+        originals=[f for f in saved["files"] if f["id"]=="p-main/existing-snap"]
+        assert len(originals)==1 and base64.b64decode(originals[0]["bytes"])==jpeg
+        print("PASS doctor history stays scoped, tag override persisted, one existing JPEG and one attachment link")
         sys.exit(0)
     if args.case=="batch":
         p=saved["data"]["profiles"]["p-main"]

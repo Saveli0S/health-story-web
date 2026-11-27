@@ -62,6 +62,7 @@ private struct NativeExamDetail:View {
             }}}
             if !caption(e,"description").isEmpty {Section("Описание"){Text(caption(e,"description"))}}
             Section("Заключение врача"){Text(caption(e,"conclusion").isEmpty ? "Заключение пока не добавлено.":caption(e,"conclusion"))}
+            NativeRecordTags(journal:journal,owner:owner,kind:.exam,id:id)
             Section("Протокол и снимки"){NativeFiles(journal:journal,owner:owner,items:entries(p,"files").filter{ids.contains(caption($0,"id"))})}
             if journal.editable {NavigationLink("Редактировать"){NativeExamEditor(journal:journal,owner:owner,exam:e,draft:entries(p,"examDrafts").first{caption($0,"exam")==id} ?? [:])}}
         }.journalBackground().navigationTitle("Обследование").navigationBarTitleDisplayMode(.inline)
@@ -87,6 +88,7 @@ private struct NativeExamEditor:View {
     @State private var sources:[JournalObject]
     @State private var reviewed:Bool
     @State private var picking=false
+    @State private var pickingExisting=false
     @State private var protocolMode=true
     @State private var reading=false
     @State private var finished=false
@@ -112,6 +114,16 @@ private struct NativeExamEditor:View {
     }
     private func binding(_ key:String)->Binding<String>{Binding(get:{fields[key] ?? ""},set:{fields[key]=$0})}
     private var hasProtocol:Bool {sources.contains{$0["protocol"] as? Bool==true}}
+    private var existingFiles:[JournalObject] {
+        let profile=journal.profile(owner),exam=entries(profile,"exams").first{caption($0,"id")==recordID} ?? [:]
+        let linked=Set((entries(exam,"attachments")+sources).map{caption($0,"id")})
+        return entries(profile,"files").filter{file in
+            guard file["examDraft"]==nil,!linked.contains(caption(file,"id")) else {return false}
+            let mime=caption(file,"type"),ext=URL(fileURLWithPath:caption(file,"name")).pathExtension
+            let type=UTType(mimeType:mime) ?? UTType(filenameExtension:ext)
+            return type.map{$0.conforms(to:.image) || $0.conforms(to:.pdf) || $0.conforms(to:protocolMode ? .plainText : .zip)} ?? false
+        }
+    }
     private func parameterField(_ row:ExamMeasurement,_ key:String)->String {"exam-\(row.id)-\(key)"}
     private var validationIssues:[JournalFieldIssue] {
         let date=fields["date"] ?? ""
@@ -138,6 +150,7 @@ private struct NativeExamEditor:View {
             Section("Оригиналы"){
                 Picker("Что добавить",selection:$protocolMode){Text("Протокол").tag(true);Text("Снимок").tag(false)}.pickerStyle(.segmented)
                 Button("Из файлов"){picking=true}
+                if !existingFiles.isEmpty {Button("Из документов профиля"){pickingExisting=true}}
                 PhotosPicker("Из фото",selection:$photos,matching:.images)
                 if UIImagePickerController.isSourceTypeAvailable(.camera){Button("Снять камерой"){showCamera=true}}
                 ForEach(sources.indices,id:\.self){i in
@@ -179,6 +192,20 @@ private struct NativeExamEditor:View {
         .fileImporter(isPresented:$picking,allowedContentTypes:protocolMode ? [.image,.pdf,.plainText]:[.image,.pdf,.zip],allowsMultipleSelection:true){result in
             Task{do{for url in try result.get(){let data=try readNativeFile(url);try await add(data,url.lastPathComponent,UTType(filenameExtension:url.pathExtension)?.preferredMIMEType ?? "application/octet-stream")}}catch{notice=error.localizedDescription}}
         }
+        .sheet(isPresented:$pickingExisting){
+            NavigationStack {
+                List {
+                    ForEach(existingFiles.indices,id:\.self){index in
+                        let file=existingFiles[index]
+                        Button(caption(file,"name")){
+                            pickingExisting=false
+                            Task{await attachExisting(file)}
+                        }
+                    }
+                }.navigationTitle(protocolMode ? "Выбрать протокол" : "Выбрать снимок")
+                    .toolbar{Button("Отмена"){pickingExisting=false}}
+            }
+        }
         .sheet(isPresented:$showCamera){NativeCamera{data in Task{do{try await add(data,"Фото.jpg","image/jpeg")}catch{notice=error.localizedDescription}}}}
         .onChange(of:photos){_,items in Task{do{for item in items{if let data=try await item.loadTransferable(type:Data.self){let type=item.supportedContentTypes.first;try await add(data,"Фото."+(type?.preferredFilenameExtension ?? "jpg"),type?.preferredMIMEType ?? "image/jpeg")}}}catch{notice=error.localizedDescription}}}
         .onChange(of:fields){_,_ in save()}.onChange(of:rows){_,_ in save()}.onChange(of:reviewed){_,_ in save()}
@@ -193,6 +220,10 @@ private struct NativeExamEditor:View {
             try journal.changeProfile(owner,originals:newFile.map{[$0]} ?? []){p in
                 var files=entries(p,"files"),drafts=entries(p,"examDrafts").filter{caption($0,"id") != draftID}
                 if let f=newFile {files.append(["id":f.id,"examDraft":draftID,"name":f.name,"type":f.mime,"date":dayString(),"visit":"","category":"Черновики обследований","sourceDigest":ClinicalDuplicates.digest(f.bytes)])}
+                let existingIDs=Set(files.filter{$0["examDraft"]==nil}.map{caption($0,"id")})
+                guard sources.filter({$0["existing"] as? Bool==true}).allSatisfy({existingIDs.contains(caption($0,"id"))}) else {
+                    throw JournalError("Один из выбранных документов больше недоступен в профиле.")
+                }
                 if final{
                     var exams=entries(p,"exams")
                     let old=exams.first{caption($0,"id")==newID} ?? [:]
@@ -253,6 +284,17 @@ private struct NativeExamEditor:View {
         if protocolMode {reviewed=false}
         guard save(newFile:file) else {sources.removeLast();return}
         if protocolMode {await recognize(file.id)}
+    }
+    @MainActor private func attachExisting(_ file:JournalObject) async {
+        let id=caption(file,"id")
+        guard !id.isEmpty,existingFiles.contains(where:{caption($0,"id")==id}) else {
+            notice="Документ больше недоступен или уже приложен.";return
+        }
+        let wasReviewed=reviewed,isProtocol=protocolMode
+        sources.append(["id":id,"name":caption(file,"name"),"type":caption(file,"type"),"protocol":isProtocol,"existing":true])
+        if isProtocol {reviewed=false}
+        guard save() else {sources.removeLast();reviewed=wasReviewed;return}
+        if isProtocol {await recognize(id)}
     }
     @MainActor private func recognize(_ id:String) async {
         guard let index=sources.firstIndex(where:{caption($0,"id")==id}) else{return}

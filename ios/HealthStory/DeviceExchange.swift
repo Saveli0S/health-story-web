@@ -156,6 +156,29 @@ struct DeviceExchange {
         }
         return ["id":owner+"/"+id,"type":mime,"bytes":source.base64EncodedString()]
     }
+    private static let tagLibraryID="_health_story_family_tags_v1"
+    private func readFamilyTags(_ ctx:JournalObject,keys:JournalObject) async throws->([JournalObject],Int) {
+        let (bytes,revision)=try await read(ctx,keys,Self.tagLibraryID,"records")
+        let document=try jsonObject(bytes)
+        guard let tags=document["tags"] as? [JournalObject],
+              tags.allSatisfy({$0["id"] is String && $0["name"] is String && $0["keywords"] is [String]}) else {
+            throw JournalError("Справочник тегов не удалось прочитать.")
+        }
+        return (tags,revision)
+    }
+    func changeFamilyTags(_ ctx:JournalObject,keys:JournalObject,update:([JournalObject])throws->[JournalObject]) async throws->[JournalObject] {
+        defer {session.finishTasksAndInvalidate()}
+        for attempt in 0..<3 {
+            let (before,revision)=try await readFamilyTags(ctx,keys:keys)
+            let after=try update(before)
+            if try jsonBytes(before)==jsonBytes(after) {return after}
+            do {
+                _=try await put(jsonBytes(["tags":after]),ctx,keys,Self.tagLibraryID,"records",revision)
+                return after
+            } catch let failure as ExchangeError where failure.status==412 && attempt<2 {continue}
+        }
+        throw JournalError("Справочник изменился. Повторите сохранение.")
+    }
     static let consentKeys = ["auto","directAuto","chatGPTAuto"]
 
     static func consent(_ profile: JournalObject) -> [String:Bool] {
@@ -270,6 +293,11 @@ struct DeviceExchange {
         ctx["profiles"]=states;ctx["last"]=ISO8601DateFormatter().string(from:Date())
         data["profiles"]=profiles;data["sync"]=ctx
         for k in ["family","tags","templates","city"] {data[k]=roster[k]}
+        if let keys=roster["tagLibrary"] as? JournalObject {
+            data["tags"]=try await readFamilyTags(ctx,keys:keys).0
+            ctx["tagLibrary"]=keys
+        } else {ctx.removeValue(forKey:"tagLibrary")}
+        data["sync"]=ctx
         var updated=access;updated["edited"]=false;data["access"]=updated
         let remaining=files.filter{file in
             let address=(file["id"] as? String ?? "").split(separator:"/",maxSplits:1).map(String.init)

@@ -118,6 +118,9 @@ struct DeviceHome:View {
             }
             Section {
                 chatGPTLink
+                NavigationLink {NativeTagLibrary(journal:journal)} label:{
+                    JournalRowLabel(title:"Справочник тегов",symbol:"tag")
+                }
             }
             if journal.admin {
                 Section {
@@ -460,7 +463,10 @@ struct NativeVisitDetails:View {
             }
             Section {
                 if let episode=row[4] as? String,!episode.isEmpty {Text(episode)}
-                if let doc=(p["addedDoctors"] as? [JournalObject])?.first(where:{$0["id"] as? String==row[3] as? String})?["values"] as? [String],doc.count>=2 {Text(doc[1]+" · "+doc[0]);let clinic=row.count>9 ? (row[9] as? String ?? "") : (doc.count>2 ? doc[2] : "");if !clinic.isEmpty {LabeledContent("Клиника",value:clinic)}}
+                NativeDoctorLink(journal:journal,owner:owner,visit:visit)
+                let doctor=NativeDoctorLink.values(profile:p,id:NativeTreatments.field(row,3))
+                let clinic=row.count>9 ? NativeTreatments.field(row,9) : (doctor.count>2 ? doctor[2] : "")
+                if !clinic.isEmpty {LabeledContent("Клиника",value:clinic)}
                 if let note=row[5] as? String,!note.isEmpty {Text(note)}
                 if journal.editable{Button("Редактировать визит",systemImage:"square.and.pencil"){editing=true}}
             } header: {
@@ -474,6 +480,7 @@ struct NativeVisitDetails:View {
             NavigationLink {VisitBrief(journal:journal,owner:owner,episodeID:NativeTreatments.episode(row,p))} label:{
                 JournalRowLabel(title:"Сводка по этому эпизоду",symbol:"list.bullet.clipboard")
             }
+            NativeRecordTags(journal:journal,owner:owner,kind:.visit,id:visit)
             VisitNotes(journal:journal,owner:owner,visit:visit)
             Section("Результаты обследований"){ExamLinks(journal:journal,owner:owner,rows:entries(p,"exams").filter{caption($0,"visit")==visit})}
             Section("Рекомендации врача"){
