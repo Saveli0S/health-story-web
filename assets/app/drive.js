@@ -36,8 +36,8 @@ function drivePanel(){
     (last?'<p>Последняя успешная выгрузка этой семьи · '+esc(stamp(last))+'</p>':'')+form+
     (connected&&workingFamily?'<details><summary>Ключ восстановления семьи</summary><p>Сохраните ключ отдельно от Google Диска. Он понадобится на новом устройстве.</p><code>'+esc(deviceAuthority(family.id).recovery)+'</code></details>':'')+
     (connected?'<div class="actions left">'+(workingFamily?'<button class="button primary" data-drive="upload">Сохранить копию на Google Диск</button>':'')+
-      '<button class="button secondary" data-drive="list">Выбрать копию для восстановления</button><button class="text-button" data-drive="disconnect">Отключить Google Диск</button></div>':'')+
-    '<div id="drive-result" role="status">'+esc(driveSession.returned&&!connected?driveSession.message:'')+'</div>');
+      '<button class="button secondary" data-drive="list">Управление копиями</button><button class="text-button" data-drive="disconnect">Отключить Google Диск</button></div>':'')+
+    '<div id="drive-result" role="status">'+esc(driveSession.returned&&!connected?driveSession.message:'')+'</div><div id="drive-copies"></div>');
   const auth=document.querySelector('#drive-auth');
   if(auth)auth.onsubmit=e=>{e.preventDefault();try{driveSession.connect(auth.elements.client.value.trim(),driveOwner())}catch(err){document.querySelector('#drive-result').textContent=err.message}};
   document.querySelectorAll('[data-drive]').forEach(b=>b.onclick=()=>driveAction(b.dataset.drive));
@@ -46,12 +46,49 @@ async function listDriveCopies(){
   const files=[];let next='';
   do{
     const query=new URLSearchParams({q:"trashed = false and appProperties has { key='healthArchive' and value='HS01' }",
-      spaces:'drive',fields:'nextPageToken,files(id,name,modifiedTime,size)',orderBy:'modifiedTime desc',pageSize:'100'});
+      spaces:'drive',fields:'nextPageToken,files(id,name,modifiedTime,size,capabilities(canTrash))',orderBy:'modifiedTime desc',pageSize:'100'});
     if(next)query.set('pageToken',next);
     const page=await (await driveFetch(driveApi+'/files?'+query)).json();
     files.push(...page.files);next=page.nextPageToken||'';
   }while(next);
   return files;
+}
+async function trashDriveCopy(file){
+  if(file.capabilities?.canTrash!==true||!/^[A-Za-z0-9_-]+$/.test(file.id))throw Error('Google Диск не разрешает удалить эту копию.');
+  const response=await driveFetch(driveApi+'/files/'+file.id+'?fields=id,trashed',{
+    method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({trashed:true})
+  });
+  const receipt=await response.json();
+  if(receipt.id!==file.id||receipt.trashed!==true)throw Error('Google Диск не подтвердил перенос копии в корзину. Обновите список.');
+}
+function driveButton(action,label,handler,className='button secondary'){
+  const button=document.createElement('button');
+  button.type='button';button.className=className;button.dataset.drive=action;button.textContent=label;button.onclick=handler;
+  return button;
+}
+function renderDriveCopies(list,files){
+  list.replaceChildren();
+  for(const file of files){
+    const row=document.createElement('div');row.className='actions left';
+    const label=file.name+' · '+stamp(file.modifiedTime);
+    const show=()=>{
+      row.replaceChildren(driveButton('download',label,()=>driveAction('download',file)));
+      if(file.capabilities?.canTrash!==true)return;
+      const remove=driveButton('confirm-trash','Удалить копию',confirm,'button danger');
+      remove.setAttribute('aria-label','Удалить копию '+file.name);
+      row.append(remove);
+      return remove;
+    };
+    const confirm=()=>{
+      const description=document.createElement('p');
+      description.textContent='Переместить «'+file.name+'» в корзину Google Диска?';
+      if(list.children.length===1)description.append(' Это последняя копия в списке.');
+      const cancel=driveButton('cancel-trash','Отмена',()=>show()?.focus());
+      row.replaceChildren(description,cancel,driveButton('trash','Переместить в корзину',()=>driveAction('trash',file,row),'button danger'));
+      cancel.focus();
+    };
+    show();list.append(row);
+  }
 }
 async function uploadDriveCopy(status){
   const owner=driveOwner(),data=readJson(familyStateKey);
@@ -92,8 +129,9 @@ async function uploadDriveCopy(status){
     driveUpload=null;return auth.driveBackupAt;
   }catch(e){if(e.expired)driveUpload=null;throw e}
 }
-async function driveAction(action,fileId){
-  const out=document.querySelector('#drive-result');if(!out||driveOperation||!driveAllowed())return;
+async function driveAction(action,file,row){
+  const out=document.querySelector('#drive-result'),list=document.querySelector('#drive-copies');
+  if(!out||driveOperation||!driveAllowed()||(action==='trash'&&row?.parentElement!==list))return;
   const status=text=>{if(out.isConnected)out.textContent=text};driveOperation=action;
   const buttons=[...panelBody.querySelectorAll('[data-drive]')];buttons.forEach(b=>b.disabled=true);
   try{
@@ -102,13 +140,14 @@ async function driveAction(action,fileId){
       const time=await uploadDriveCopy(status);status('Копия сохранена на Google Диске · '+stamp(time));
     }else if(action==='list'){
       status('Загружаем список копий…');const files=await listDriveCopies();
-      if(!out.isConnected)return;status(files.length?'Выберите копию для проверки.':'На этом диске ещё нет копий, созданных приложением.');
-      for(const item of files){
-        const b=document.createElement('button');b.type='button';b.className='button secondary';
-        b.textContent=item.name+' · '+stamp(item.modifiedTime);b.onclick=()=>driveAction('download',item.id);out.append(b);
-      }
+      if(!out.isConnected)return;status(files.length?'Выберите копию для проверки или удаления.':'На этом диске ещё нет копий, созданных приложением.');
+      renderDriveCopies(list,files);
+    }else if(action==='trash'){
+      status('Перемещаем копию в корзину…');await trashDriveCopy(file);
+      if(row.isConnected)row.remove();
+      status('Копия перемещена в корзину Google Диска.'+(list.childElementCount?'':' Список копий пуст.'));
     }else if(action==='download'){
-      status('Загружаем зашифрованную копию…');const blob=await (await driveFetch(driveApi+'/files/'+encodeURIComponent(fileId)+'?alt=media')).blob();
+      status('Загружаем зашифрованную копию…');const blob=await (await driveFetch(driveApi+'/files/'+encodeURIComponent(file.id)+'?alt=media')).blob();
       if(out.isConnected&&panel.open)importForm(blob);
     }else if(action==='disconnect'){
       const token=driveToken();
@@ -121,5 +160,8 @@ async function driveAction(action,fileId){
     if(!driveSession.access(driveOwner())&&out.isConnected){
       const b=document.createElement('button');b.className='button secondary';b.textContent='Подключить повторно';b.onclick=drivePanel;out.append(b);
     }
-  }finally{driveOperation=null;buttons.forEach(b=>b.disabled=false)}
+  }finally{
+    driveOperation=null;buttons.forEach(b=>b.disabled=false);
+    if(action==='trash'&&!row.isConnected&&list.isConnected)panelBody.querySelector('[data-drive=list]')?.focus();
+  }
 }
