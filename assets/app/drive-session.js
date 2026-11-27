@@ -20,8 +20,9 @@ const driveSession=(()=>{
       }
     }catch{message='Google Диск не подключён. Повторите вход из настроек.'}
   }
+  function validClient(client){return /^\d+-[a-zA-Z0-9-]+\.apps\.googleusercontent\.com$/.test(client)}
   function connect(client,who){
-    if(!/^\d+-[a-zA-Z0-9-]+\.apps\.googleusercontent\.com$/.test(client))throw Error('Проверьте публичный Client ID веб-приложения.');
+    if(!validClient(client))throw Error('Проверьте публичный Client ID веб-приложения.');
     const state=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');
     sessionStorage.setItem(stateKey,JSON.stringify({state,owner:who,until:Date.now()+600000}));
     localStorage.setItem(clientKey,client);
@@ -29,6 +30,6 @@ const driveSession=(()=>{
     url.search=new URLSearchParams({client_id:client,redirect_uri:redirect,response_type:'token',scope,state,prompt:'select_account'}).toString();
     location.assign(url.href);
   }
-  return {scope,redirect,returned,message,connect,client:()=>localStorage.getItem(clientKey)||document.querySelector('meta[name=google-drive-client-id]')?.content||'',
+  return {scope,redirect,returned,message,connect,validClient,client:()=>localStorage.getItem(clientKey)||document.querySelector('meta[name=google-drive-client-id]')?.content||'',
     access:who=>owner===who&&Date.now()<expires-1000?token:'',clear(){token='';expires=0;owner=''}};
 })();

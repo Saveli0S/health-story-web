@@ -1,0 +1,2 @@
+*.pdf binary
+tests/medical-corpus/attachments/files/04-technician-note.txt -text whitespace=cr-at-eol

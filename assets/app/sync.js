@@ -505,7 +505,11 @@ const deviceSync=(()=>{
       }
     }
     const status=document.createElement('p');status.setAttribute('role','status');status.textContent=lastError;root.append(status);
-    for(const b of root.querySelectorAll('[data-sync]'))b.onclick=()=>perform(b.dataset.sync==='enable'?enable:synchronize);
+    for(const b of root.querySelectorAll('[data-sync]'))b.onclick=()=>{
+      const enabling=b.dataset.sync==='enable',field=root.querySelector('#sync-setup');
+      if(enabling&&field&&!field.value.trim())return rejectFieldValue(field,'Введите код подключения семейного сервера.');
+      return perform(enabling?enable:synchronize);
+    };
   }
   async function perform(fn){try{await fn()}catch(e){lastError=e.status===404?'По этому адресу сервер обмена пока не включён.':e.message}refresh()}
   function start(){

@@ -1,6 +1,9 @@
 'use strict';
 
 const driveApi='https://www.googleapis.com/drive/v3';
+registerFieldRules('drive-auth',(form,add)=>{
+  if(!driveSession.validClient(form.elements.client.value.trim()))add('client','Введите публичный Client ID веб-приложения Google.');
+});
 let driveOperation=null,driveUpload=null;
 function driveOwner(){return readJson(familyStateKey)?.family.id||'recovery'}
 function driveAllowed(){

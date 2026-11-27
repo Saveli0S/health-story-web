@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>GIDClientID</key><string>$(GOOGLE_DRIVE_IOS_CLIENT_ID)</string>
+    <key>CFBundleURLTypes</key><array><dict>
+        <key>CFBundleURLSchemes</key><array><string>$(GOOGLE_DRIVE_IOS_REVERSED_ID)</string></array>
+    </dict><dict>
+        <key>CFBundleURLSchemes</key><array><string>by.healthstory.familyjournal.chatgpt</string></array>
+    </dict></array>
+    <key>NSCameraUsageDescription</key>
+    <string>Сфотографировать назначение или бланк и сохранить его в вашем дневнике.</string>
+    <key>NSFaceIDUsageDescription</key>
+    <string>Подтверждать доступ к ключам восстановления семейного архива.</string>
+    <key>UIFileSharingEnabled</key>
+    <true/>
+    <key>UIAppFonts</key>
+    <array><string>pt-serif.ttf</string><string>inter.ttf</string></array>
+    <key>LSSupportsOpeningDocumentsInPlace</key>
+    <true/>
+</dict>
+</plist>

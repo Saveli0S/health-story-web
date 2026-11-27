@@ -1,0 +1,12 @@
+{
+  "description": "Синтетические записи для ручного ввода и проверки через интерфейс.",
+  "measurements": [
+    {"marker":"Температура QA", "reading":"36,6", "unit":"°C", "time":"2026-09-13T09:15"},
+    {"marker":"Температура QA", "reading":"37,1", "unit":"°C", "time":"2026-09-14T20:45"}
+  ],
+  "prevention": {"kind":"vaccine","title":"Учебная прививка QA","done":"2026-04-15","next":"2027-04-15","note":"Серия QA-VAX-01"},
+  "consultation": {
+    "question":"Проверь историю выполнения. Карта QA-CARD-0041. Адрес: ул. Вымышленная, дом 404. test@example.invalid. Пациент: Анна Белова.",
+    "identifiers":["QA-CARD-0041","Вымышленная","test@example.invalid","Анна Белова"]
+  }
+}

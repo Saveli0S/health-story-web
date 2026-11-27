@@ -1,0 +1,85 @@
+const {chromium,webkit,devices}=require('playwright-core');
+const assert=require('node:assert/strict');
+const path=require('node:path');
+const base=process.env.HEALTH_PREVIEW_URL||'http://127.0.0.1:8764/';
+
+async function exercise(mobile){
+  const browser=mobile?await webkit.launch():await chromium.launch({channel:'chrome'});
+  const ctx=await browser.newContext(mobile?devices['iPhone 13']:{viewport:{width:1320,height:950}});
+  const page=await ctx.newPage(),dialog=page.locator('dialog'),main=page.locator('main'),errors=[];
+  page.setDefaultTimeout(8000);
+  page.on('pageerror',e=>errors.push(e.message));
+  const action=(name,scope=dialog)=>scope.locator('[data-action="'+name+'"]').first().click();
+  const field=name=>dialog.locator('[name="'+name+'"]').first();
+  const submit=()=>dialog.locator('form button.primary:not([type=button])').click();
+  const open=async q=>{await page.goto(base+q);await main.locator('h1').waitFor({state:'attached'})};
+  let step='Справочник';
+  try{
+    await open('');
+    await page.evaluate(()=>{
+      const legacy=JSON.parse(localStorage.getItem(stateKey));delete legacy.tags;
+      for(const profile of Object.values(legacy.profiles)){delete profile.prevention;delete profile.tagEdits}
+      legacy.profiles.anna.fields.push({id:'legacy-extra',label:'История',value:'Сохранённая запись'});
+      localStorage.setItem(stateKey,JSON.stringify(legacy));
+    });
+    await open('?section=settings');await action('tagLibrary',main);await dialog.getByText('Создать тег',{exact:true}).click();
+    await field('title').fill('Семейный контроль');await field('keywords').fill('контрольная панель');await submit();
+    await action('close');
+    step='Загрузка и классификация';
+    await open('?section=labs');await action('upload',main);
+    await field('file').setInputFiles(path.join(__dirname,'../assets/documents/cbc.pdf'));await submit();
+    await dialog.locator('#lab-form').waitFor({timeout:45000});
+    await field('title').fill('Общий анализ крови — контрольная панель');assert.match(await dialog.locator('.import-tags').innerText(),/Семейный контроль/);await field('verified').check();await submit();
+    assert.deepEqual(await dialog.locator('.record-tag').allTextContents(),['Анализ крови','Семейный контроль']);
+    await action('recordTags');await dialog.getByLabel('Анализ крови').uncheck();await submit();
+    assert.deepEqual(await dialog.locator('.record-tag').allTextContents(),['Семейный контроль']);await action('close');
+    await open('?section=labs');await main.locator('#section-filter').fill('семейный контроль');
+    assert.equal(await main.locator('#listing [data-action=lab]').count(),1);
+    step='План и история';
+    await open('?section=labs&view=prevention');await action('editPrevent',main);
+    await field('kind').selectOption('procedure');await field('title').fill('Флюорография');await field('done').fill('2025-01-15');
+    await field('next').fill('2026-01-15');await field('period').fill('По семейному плану');await submit();
+    assert.equal(await dialog.locator('.record-tag').textContent(),'Флюорография');await action('completePrevent');
+    await field('done').fill('2026-01-16');await field('source').selectOption('visit:a2');await field('next').fill('2027-01-16');await submit();
+    assert.equal(await dialog.locator('.note').count(),2);
+    await dialog.getByText('Исправить выполнение',{exact:true}).first().click();await field('done').fill('2026-01-17');await submit();
+    assert.equal(await dialog.locator('.note').count(),2);assert.match(await dialog.locator('.note').first().innerText(),/17 янв/);
+    await action('close');
+    await open('');await action('medical',main);await dialog.getByText('Флюорография',{exact:true}).click();assert.equal(await dialog.locator('.note').count(),2);await action('close');
+    step='Выбор источников';
+    await open('?section=consults&new=consultation');
+    await dialog.locator('.prompt-picker summary').click();
+    await dialog.getByRole('button',{name:'Оценка факторов риска',exact:true}).click();await field('question').fill('Какие сведения относятся к риску диабета в ближайшие годы?');
+    await field('sourceTag').selectOption({label:'Семейный контроль'});const lab=dialog.locator('.picker-source:visible input[value^="lab:"]');assert.equal(await lab.count(),1);await lab.check();
+    await field('sourceTag').selectOption('therapist');await dialog.locator('.picker-source:visible [value="visit:a2"]').check();
+    await field('sourceTag').selectOption('fluoro');await dialog.locator('.picker-source:visible').filter({has:page.locator('strong').filter({hasText:/^Флюорография$/})}).locator('input').check();
+    assert.equal(await dialog.locator('[data-unselect]').count(),3);await dialog.locator('#consult-source-search').fill('нет совпадений');
+    assert.match(await dialog.locator('#picker-status').textContent(),/Совпадений нет/);
+    assert.equal(await dialog.locator('[data-unselect]').count(),3);
+    await dialog.locator('[data-unselect="visit:a2"]').click();await submit();
+    const prompt=await field('prompt').inputValue();assert.match(prompt,/валидированной/);assert.match(prompt,/контрольная панель/);assert.match(prompt,/Флюорография/);
+    assert.doesNotMatch(prompt,/Семейный контроль|Анна Белова|"визиты"|Плановый осмотр/);
+    await field('answer').fill('Тестовый ответ');await dialog.getByText('Сохранить ответ',{exact:true}).click();await action('close');
+    step='Переименование и удаление';
+    await open('?section=settings');await action('tagLibrary',main);
+    await dialog.getByText('Семейный контроль',{exact:true}).click();await field('title').fill('Проверка семьи');await submit();await action('close');
+    await open('?section=labs');await main.locator('#section-filter').fill('проверка семьи');await action('lab',main.locator('#listing'));
+    assert.deepEqual(await dialog.locator('.record-tag').allTextContents(),['Проверка семьи']);await action('close');
+    await open('?section=settings');await action('tagLibrary',main);await dialog.getByText('Проверка семьи',{exact:true}).click();
+    await action('removeTag');await action('confirmTagRemoval');await action('close');
+    await open('?section=labs');await main.locator('#section-filter').fill('проверка семьи');assert.equal(await main.locator('#listing [data-action=lab]').count(),0);
+    step='Права и раздельные профили';
+    await open('?role=adult&section=settings');await action('tagLibrary',main);assert.equal(await dialog.locator('[data-action=tagDefinition]').count(),0);await action('close');
+    await open('?profile=misha&section=labs&view=prevention');await action('editPrevent',main);
+    await field('kind').selectOption('vaccine');await field('title').fill('Прививка по карте ребёнка');await field('done').fill('2025-05-03');await submit();
+    assert.equal(await dialog.locator('.record-tag').innerText(),'Прививка');await action('close');
+    await action('editPrevent',main);await field('kind').selectOption('lab');await field('title').fill('Анализ мочи');await field('next').fill('2027-01-01');await submit();await action('close');
+    await open('?role=child&section=labs&view=prevention');assert.equal(await main.locator('[data-action=editPrevent]').count(),0);
+    assert.equal(await main.locator('[data-action=prevent]').count(),2);assert.doesNotMatch(await main.innerText(),/Флюорография/);
+    await action('prevent',main);assert.equal(await dialog.locator('[data-action=completePrevent],[data-action=recordTags],[data-action=editPrevent]').count(),0);
+    await action('close');await open('');await action('medical',main);assert.match(await dialog.innerText(),/Сохранённая запись/);
+    await open('?role=child&visit=m1');assert.equal(await dialog.locator('[data-action=recordTags]').count(),0);
+    assert.deepEqual(errors,[]);console.log('PASS '+(mobile?'iPhone WebKit':'desktop Chrome')+' — import, tag rules and overrides, shared prevention history, scoped AI prompt, roles');
+  }catch(e){throw Error(step+' — '+e.message)}finally{await browser.close()}
+}
+(async()=>{await exercise(false);await exercise(true)})().catch(e=>{console.error(e.message);process.exitCode=1});

@@ -49,6 +49,7 @@ async function finishProvider(f){
 async function askProvider(id){
   const f=document.querySelector('#consult-answer'),r=current().consultations.find(r=>r.id===id);
   if(!r||!f||readOnly||r.answer||providerJobs.has(id))return;
+  if(!f.elements.prompt.value.trim())return rejectFieldValue(f.elements.prompt,'Введите текст запроса.');
   if(!reviewOutboundText(f.elements.prompt,f.querySelector('[role=status]')))return;
   r.prompt=f.elements.prompt.value.trim();if(!r.prompt||!f.pendingAnswer&&!saveState())return;
   if(!chatGPT.connected&&!routerKey){go('providers');return}
@@ -78,7 +79,9 @@ async function askProvider(id){
 }
 async function copyConsult(f){
   const box=f.elements.prompt,msg=f.querySelector('[role=status]'),r=current().consultations.find(r=>r.id===f.dataset.id);
-  if(!r||!box.value.trim()||!reviewOutboundText(box,msg))return;
+  if(!r)return;
+  if(!box.value.trim())return rejectFieldValue(box,'Введите текст запроса.');
+  if(!reviewOutboundText(box,msg))return;
   const recordCopy=()=>{const transfer=transferEvent('copy');r.transfers=[...(r.transfers||[]),transfer];r.prompt=box.value;r.sentAt=transfer.time;r.provider='ChatGPT · ручной перенос';box.readOnly=true;saveState()};
 
   try{if(!navigator.clipboard?.writeText)throw Error();await navigator.clipboard.writeText(box.value);recordCopy();msg.textContent='Запрос скопирован.'}

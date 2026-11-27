@@ -94,6 +94,17 @@ async function verifyLab(id){
   setupSourceView(f,form,null,draft.position);
   showUncertainText(form,f.issues);
 }
+registerFieldRules('lab-form',(form,add)=>{
+  const rows=form.querySelectorAll('.lab-input');
+  if(!rows.length)add(form.querySelector('[data-action=appendLab]'),'Добавьте хотя бы один показатель.');
+  for(const row of rows){
+    const [marker,reading,unit,range]=['marker','reading','unit','range'].map(name=>row.querySelector('[name="'+name+'"]'));
+    for(const field of [marker,reading,unit,range]){
+      if(needsClarification(field.value))add(field,'Уточните значение по оригиналу.');
+    }
+    if(/^[<>≤≥+−-]?\s*\d/.test(reading.value.trim())&&!unit.value.trim())add(unit,'Укажите единицу числового результата.');
+  }
+});
 function saveLab(form,defer=false){
   if(readOnly)return;
   const f=current().files.find(x=>x.id===form.dataset.id);
@@ -102,10 +113,6 @@ function saveLab(form,defer=false){
   const data={name:value(form,'title'),date:value(form,'date'),laboratory:value(form,'laboratory'),category:value(form,'category'),
     rows:[...form.querySelectorAll('.lab-input')].map(el=>({name:value(el,'marker'),value:value(el,'reading'),unit:value(el,'unit'),range:value(el,'range'),specimen:value(el,'specimen')}))};
   if(data.date&&data.date===form.dataset.estimatedDate)data.dateEstimated=true;
-  const unresolved=data.rows.some(r=>!r.name||!r.value||[r.name,r.value,r.unit,r.range].some(needsClarification)||(/^[<>≤≥+−-]?\s*\d/.test(r.value)&&!r.unit));
-  if(!defer&&(!data.name||!data.date||!data.rows.length||unresolved||!form.elements.verified.checked)){
-    form.querySelector('.error').textContent='Уточните неясные значения по оригиналу. Для числового результата укажите единицу или выберите «Уточнить позже».';return;
-  }
   if(!defer&&(!f.lab||labIdentity(f.lab)!==labIdentity(data))){
     const key=labIdentity(data),match=latestProfile().files.find(other=>other.id!==f.id&&other.lab&&labIdentity(other.lab)===key);
     if(match)return duplicateCard(form,'lab',match.id,'Открыть существующий анализ');

@@ -1,0 +1,11 @@
+{
+  "name": "health-story-sync",
+  "main": "worker.js",
+  "compatibility_date": "2026-05-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": false },
+  "vars": { "WEB_ORIGIN": "https://saveli0s.github.io" },
+  "durable_objects": { "bindings": [{ "name": "FAMILIES", "class_name": "FamilyStore" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["FamilyStore"] }]
+}

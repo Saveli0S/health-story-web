@@ -50,6 +50,7 @@ function exportForm(){
   const key=workingFamily?deviceAuthority(family.id).recovery:base64url(crypto.getRandomValues(new Uint8Array(32)));
   openPanel('Семейный архив','Сохранить резервную копию',`<form class="edit-form" id="backup-export"><p class="hint">Сохраните ключ отдельно от файла. Если хотите использовать ранее записанный семейный ключ, вставьте его в поле.</p><label>Ключ восстановления семьи<input required spellcheck="false" autocomplete="off" name="key" value="${key}"></label>
     <label class="source-choice"><input required type="checkbox">Ключ записан отдельно</label><button class="button primary">Подготовить файл</button><p role="status"></p></form>`);
+  document.querySelector('#backup-export').localFieldRules=[archiveKeyFieldRules];
 }
 function importForm(cloudFile){
   if(viewer!=='admin')return;
@@ -61,6 +62,7 @@ function importForm(cloudFile){
     <label class="source-choice" hidden><input type="checkbox" name="replace">Восстановить указанную семью из копии, заменив её текущие записи</label>
     <button class="button primary">Проверить копию</button></form>`);
   const form=document.querySelector('#backup-import');
+  form.localFieldRules=[archiveKeyFieldRules];
   if(cloudFile instanceof Blob){
     form.cloudFile=cloudFile;
     const label=form.elements.archive.parentElement;
@@ -82,10 +84,14 @@ function importForm(cloudFile){
   }
   form.elements.key.oninput=resetCheck;form.elements.archive.onchange=resetCheck;
 }
-async function archiveKey(text){
+function archiveKeyBytes(text){
   const bytes=fromBase64(text.trim().replaceAll('-','+').replaceAll('_','/'));
   if(bytes.length!==32)throw Error();
-  return crypto.subtle.importKey('raw',bytes,'AES-GCM',false,['encrypt','decrypt']);
+  return bytes;
+}
+async function archiveKey(text){return crypto.subtle.importKey('raw',archiveKeyBytes(text),'AES-GCM',false,['encrypt','decrypt'])}
+function archiveKeyFieldRules(form,add){
+  try{archiveKeyBytes(form.elements.key.value)}catch{add('key','Проверьте формат ключа восстановления.')}
 }
 async function encryptedArchive(key){
   if(viewer!=='admin'||readJson(familyStateKey)?.access)throw Error('permission');
@@ -106,7 +112,7 @@ async function exportArchive(f){
   if(viewer!=='admin')return;
   const msg=f.querySelector('[role=status]'),button=f.querySelector('button');
   button.disabled=true;let key;
-  try{key=await archiveKey(f.elements.key.value)}catch{button.disabled=false;msg.textContent='Проверьте ключ восстановления семьи.';return}
+  try{key=await archiveKey(f.elements.key.value)}catch{button.disabled=false;msg.textContent='Не удалось подготовить шифрование на этом устройстве.';return}
   msg.textContent='Собираем оригиналы…';
   try{
     const blob=await encryptedArchive(key);

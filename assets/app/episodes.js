@@ -33,12 +33,24 @@ function readTherapyChanges(f,visit){
     let replacement=null;
     if(kind==='dose'||kind==='replace'){
       replacement={id:uid(),name:kind==='dose'?old.name:get('changeName'),strength:get('changeStrength'),form:get('changeForm'),instructions:get('changeInstructions'),period:emptyPeriod()};
-      if(!replacement.name||!replacement.strength||!replacement.instructions||needsClarification(replacement.strength))throw Error('Укажите препарат, уточнённую дозировку и схему приёма.');
     }
     changes.push({id:uid(),kind,visit:visit[0],episode:visit[7],date:visit[1],doctor:visit[3],source,medId,before,replacement});
   }
   return changes;
 }
+function therapyFieldRules(form,add){
+  for(const row of form.querySelectorAll('.therapy-decision')){
+    const control=name=>row.querySelector('[name="'+name+'"]');
+    const kind=control('decision').value;
+    if(kind!=='replace'&&kind!=='dose')continue;
+    if(kind==='replace'&&!control('changeName').value.trim())add(control('changeName'),'Укажите название препарата.');
+    const strength=control('changeStrength').value.trim();
+    if(!strength||needsClarification(strength))add(control('changeStrength'),'Уточните дозировку.');
+    if(!control('changeInstructions').value.trim())add(control('changeInstructions'),'Укажите схему приёма.');
+  }
+}
+registerFieldRules('visit-form',therapyFieldRules);
+registerFieldRules('therapy-form',therapyFieldRules);
 function therapyEditor(id){
   const v=visitById(id);if(!v)return;
   openPanel(v[2],'Решения по предыдущей схеме','<form class="edit-form" id="therapy-form" data-id="'+esc(id)+'">'+
@@ -110,9 +122,11 @@ function measureForm(){
     <label>Дата и время<input name="time" type="datetime-local" required max="${time}" value="${time}"></label><label>Эпизод<select name="episode"><option value="">Без привязки</option>${current().episodes.map(e=>'<option value="'+esc(e.id)+'">'+esc(e.name)+'</option>').join('')}</select></label>
     <p role="alert" class="error"></p><button class="button primary">Сохранить измерение</button></form>`);
 }
+registerFieldRules('measure-form',(form,add)=>{
+  if(!/^[-+]?\d+(?:[.,]\d+)?$/.test(form.elements.reading.value.trim()))add('reading','Введите числовое значение.');
+});
 function saveMeasure(f){
   const d=new FormData(f),get=k=>d.get(k).trim(),m={id:uid(),name:get('marker'),value:get('reading'),unit:get('unit'),time:get('time'),episode:get('episode')};
-  if(!m.name||!m.unit||!/^[-+]?\d+(?:[.,]\d+)?$/.test(m.value)){f.querySelector('.error').textContent='Введите название, числовой результат и единицу.';return}
   current().measurements.push(m);
   if(!saveState()){current().measurements.pop();return}
   render();replaceRoute('measureChart',indicatorKey(m.name,m.unit));

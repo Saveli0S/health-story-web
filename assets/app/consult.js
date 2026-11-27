@@ -200,10 +200,13 @@ function consultRecord(id){
     <label ${chatGPT.connected?'hidden':''}>Ответ из своего чата<textarea name="answer" rows="4">${esc(r.replyDraft||'')}</textarea></label>
     <button class="button secondary" ${chatGPT.connected?'hidden':''}>Сохранить ответ</button></form>${deletionButton('consultations',id,'Удалить консультацию')}`);
 }
+registerFieldRules('consult-answer',(form,add)=>{
+  if(!form.elements.answer.value.trim())add('answer','Вставьте ответ из своего чата.');
+});
 function saveConsultAnswer(f,provider='ChatGPT · ручной перенос'){
   const r=current().consultations.find(r=>r.id===f.dataset.id);
   const answer=f.elements.answer.value.trim(),prompt=f.elements.prompt.value.trim();
-  if(!r||r.answer||!answer||!prompt){f.querySelector('[role=status]').textContent='Заполните запрос и ответ.';return}
+  if(!r||r.answer||!answer||!prompt)return;
   if(!r.sentAt&&!reviewOutboundText(f.elements.prompt,f.querySelector('[role=status]')))return;
   const old={...r};Object.assign(r,{answer,prompt,provider,transfers:[...(r.transfers||[]),transferEvent('answer')],answeredAt:new Date().toISOString(),replyDraft:''});
   if(!saveState()){Object.assign(r,old);f.querySelector('[role=status]').textContent='Не удалось сохранить ответ.';return}

@@ -86,13 +86,17 @@ function tagRemoval(id){
   openPanel('Семейный справочник','Удалить тег «'+t.name+'»?','<p>Тег исчезнет из карточек и поиска у всей семьи. Медицинские записи сохранятся.</p>'+
     act('back','Отмена','','button secondary')+act('confirmTagRemoval','Удалить из справочника',id,'button primary'));
 }
+registerFieldRules('tag-definition',(form,add)=>{
+  const name=tagWords(form.elements.title.value);
+  if(!name)add('title','Введите название тега.');
+  else if(prototypeState.tags.some(t=>t.id!==form.dataset.id&&tagWords(t.name)===name))add('title','Тег с таким названием уже есть.');
+});
 function updateTagLibrary(form,removeId){
   if(viewer!=='admin')return;
   const previous=prototypeState.tags,id=removeId||form.dataset.id||uid();
   let next=previous.filter(t=>t.id!==id);
   if(!removeId){
     const name=form.elements.title.value.trim();
-    if(!tagWords(name)||next.some(t=>tagWords(t.name)===tagWords(name))){form.querySelector('.error').textContent='Укажите уникальное название тега.';return}
     const keywords=[...new Set(form.elements.keywords.value.split(',').map(w=>w.trim()).filter(Boolean))];
     const original=previous.find(t=>t.id===id);
     if(original&&tagWords(original.name)!==tagWords(name)&&!keywords.some(word=>tagWords(word)===tagWords(original.name)))keywords.push(original.name);

@@ -1,0 +1,40 @@
+Local web regression suite, 2026-11-26
+Chrome desktop and iPhone 13 Playwright WebKit, localhost. Provider and Google Drive use intercepted responses.
+
+review desktop | PASS Chrome desktop original, draft, own lab, three points, scoped consultations, prompt history, follow-up, brief, measures, attachments, roles
+review iphone | PASS iPhone WebKit original, draft, own lab, three points, scoped consultations, prompt history, follow-up, brief, measures, attachments, roles
+document-batch desktop | PASS Chrome desktop risk prompt, demo tags, queued and manual visits, photo batch, all three previews, recommendations and dose clarification
+document-batch iphone | PASS iPhone WebKit risk prompt, demo tags, queued and manual visits, photo batch, all three previews, recommendations and dose clarification
+prevention-tags desktop | PASS desktop Chrome — import, tag rules and overrides, shared prevention history, scoped AI prompt, roles
+prevention-tags iphone | PASS iPhone WebKit — import, tag rules and overrides, shared prevention history, scoped AI prompt, roles
+family-archive desktop | PASS desktop Chrome family creation, clean profiles, persistence, working archive restores twice, identical originals and archived visits, legacy import isolation
+family-archive iphone | PASS iPhone WebKit family creation, clean profiles, persistence, working archive restores twice, identical originals and archived visits, legacy import isolation
+provider-archive desktop | PASS desktop Chrome persistent draft, PKCE exchange, bounded model, quota/retry, exact request, treatment, encrypted backup and restore of originals
+provider-archive iphone | PASS iPhone WebKit persistent draft, PKCE exchange, bounded model, quota/retry, exact request, treatment, encrypted backup and restore of originals
+drive desktop | PASS desktop Chrome Drive OAuth, refusal, interrupted upload, quota, revoke and fresh restore (intercepted API)
+drive iphone | PASS iPhone WebKit Drive OAuth, refusal, interrupted upload, quota, revoke and fresh restore (intercepted API)
+device-vault desktop | PASS desktop Chrome legacy encryption, cold open, per-device originals, role isolation, updates, revocation and corruption
+device-vault iphone | PASS iPhone WebKit legacy encryption, cold open, per-device originals, role isolation, updates, revocation and corruption
+PASS Chrome ↔ iPhone WebKit: real encrypted relay, role checks, lazy original, offline merge, conflict resolution, revocation
+ok 1 - a new document uses its own dose and keeps a missing regimen unresolved
+ok 2 - photo-first creation extracts the labelled visit date and leaves ambiguous dates blank
+ok 3 - unverified attachments block the whole visit and OCR originals stay out of the request
+ok 4 - independent creations survive saves from two tabs and stay in the owning profile
+ok 5 - a structured reply without a clinical source yields insufficient data for that medicine
+ok 6 - uncertain OCR stays attached to its source page and a questionable strength remains unresolved
+ok 7 - v1 backup requires exactly one original for each profile document and draft
+ok 8 - independent profile and visit fields merge by stable identity
+ok 9 - deleted versus modified note keeps both options and restores the selected note
+ok 10 - field conflict reports the author who modified that field
+# tests 10
+# pass 10
+# fail 0
+
+--- Post-fix verification, 2026-11-26 ---
+privacy-final-chrome | PASS desktop Chrome persistent draft, PKCE exchange, bounded model, quota/retry, exact request, treatment, encrypted backup and restore of originals
+privacy-final-iphone | PASS iPhone WebKit persistent draft, PKCE exchange, bounded model, quota/retry, exact request, treatment, encrypted backup and restore of originals
+upgrade-rerun-desktop | PASS desktop Chrome cache upgrade; note survived online and offline, new privacy code active
+upgrade-rerun-iphone | PASS iPhone WebKit cache upgrade; note survived online and offline, new privacy code active
+relay | PASS Chrome ↔ iPhone WebKit: real encrypted relay, role checks, lazy original, offline merge, conflict resolution, revocation
+originals-cross | PASS Chrome → iPhone WebKit isolated encrypted family restore, zero external requests
+GitHub Pages 6a7fd45 verified via 15 deployed file hashes. Chrome and iPhone WebKit passed 19/19 context checks including lab filename fallback. Both engines passed 4/4 visit workflows (3/4 fully automatic), and 11/11 original lab rows. Node suite: 19 passed.

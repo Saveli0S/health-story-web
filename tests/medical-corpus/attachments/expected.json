@@ -1,0 +1,64 @@
+{
+  "study": "QA-XR-07",
+  "synthetic": true,
+  "files": [
+    {
+      "file": "files/01-phantom.png",
+      "mime": "image/png",
+      "category": "Снимки",
+      "preview": "image",
+      "bytes": 163305,
+      "sha256": "da651fc4e9167c72d1ff5755b688d3c87acdc9326ac06806a3c1b7eef56a0129",
+      "pixels": [
+        640,
+        640
+      ]
+    },
+    {
+      "file": "files/02-phantom-photo.jpg",
+      "mime": "image/jpeg",
+      "category": "Снимки",
+      "preview": "image",
+      "bytes": 34015,
+      "sha256": "6acfeac9f13d544ef28312d3ed8c258d8d72d5dc32a676e84627fc87041569c6",
+      "pixels": [
+        640,
+        640
+      ]
+    },
+    {
+      "file": "files/03-phantom-report.pdf",
+      "mime": "application/pdf",
+      "category": "Заключения",
+      "preview": "pdf",
+      "bytes": 319590,
+      "sha256": "a00ef2e334873e3a53c04f50328bedf36ba794181413dc90c8b09856562cc7dd",
+      "pages": 2
+    },
+    {
+      "file": "files/04-technician-note.txt",
+      "mime": "text/plain",
+      "category": "Другое",
+      "preview": "text",
+      "bytes": 406,
+      "sha256": "83540ff28f1d062f1a47daa9c3c738a7e80cc9faf4bee1ce4e10ae4fd8a8df25",
+      "contains": "Контрольная строка: размер 640 × 640, отметка № 7."
+    },
+    {
+      "file": "files/05-phantom-dicom.zip",
+      "mime": "application/zip",
+      "category": "Снимки",
+      "preview": "download",
+      "bytes": 194219,
+      "sha256": "49d849144afdb0fb7390cf6170c7677893c0353647ca8f7a286bc7f546af66a4",
+      "member": "QA-XR-07/IM000001.dcm",
+      "memberSHA256": "971d0c00808c4af5f9c2b8d459505dde41c4465c78bb3b8c1ac91c008c76266c",
+      "decodedPixelSHA256": "84355c003473be8655c6f7875441d9bb6914853239edac74f62966da127a2603",
+      "dicomSOP": "Secondary Capture Image Storage",
+      "pixels": [
+        640,
+        640
+      ]
+    }
+  ]
+}

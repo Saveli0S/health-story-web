@@ -70,6 +70,10 @@ function editExam(id,visit='',resume=''){
     <p data-draft-status class="hint" role="status"></p><p class="error" role="alert"></p><div class="actions"><button type="button" class="button secondary" data-defer>Отложить сверку</button><button class="button primary">Сохранить обследование</button></div></form>`);
   const form=panelBody.querySelector('#exam-form'),params=form.querySelector('[data-parameters]'),status=form.querySelector('[data-status]'),submit=form.querySelector('.primary');
   const originals=form.querySelector('[data-originals]'),error=form.querySelector('.error'),owner=person.id,route=routes.at(-1);
+  form.localFieldRules=[(_,add)=>{
+    if(!form.elements.description.value.trim()&&!form.elements.conclusion.value.trim()&&!params.children.length&&!sourceList.length&&!savedExam?.attachments.length)
+      add('description','Добавьте описание, заключение, параметр или файл обследования.');
+  }];
   const active=()=>form.isConnected&&panel.open&&route===routes.at(-1)&&current()===profile&&!readOnly;
   const fieldNames=['method','customMethod','region','date','clinic','doctor','visit','description','conclusion'];
   let position=draft?.position||{},reading=false,saving=false;
@@ -147,7 +151,7 @@ function editExam(id,visit='',resume=''){
       }catch{preview.textContent='Оригинал недоступен. Проверьте связь.'}
     };
   }
-  function drawSources(){originals.replaceChildren();sourceList.forEach(sourceView)}
+  function drawSources(){originals.replaceChildren();sourceList.forEach(sourceView);refreshInlineFields(form)}
   async function readSource(source,file){
     const issues=[];let text='';
     try{text=await recognizeDocument(file,isPdf(file),msg=>{if(active())status.textContent=msg},issues)}catch{/* Manual review remains available. */}
@@ -168,9 +172,14 @@ function editExam(id,visit='',resume=''){
     review.checked=false;review.required=true;form.querySelector('[data-review]').hidden=false;
     persist();drawSources();
   }
-  async function attach(files,protocol,existing=null){
+  async function attach(files,protocol,existing=null,input=null){
     if(reading||saving||!active())return;
-    if(files.some(f=>!f.size||!(isPhoto(f)||isPdf(f)||(protocol?isTextFile(f):/\.zip$/i.test(f.name))))){error.textContent='Выберите непустые файлы в одном из указанных форматов.';return}
+    if(files.some(f=>!f.size||!(isPhoto(f)||isPdf(f)||(protocol?isTextFile(f):/\.zip$/i.test(f.name))))){
+      const message='Выберите непустые файлы в одном из указанных форматов.';
+      if(input){input.value='';rejectFieldValue(input,message,{blocking:false})}else error.textContent=message;
+      return;
+    }
+    if(input)input.value='';
     setBusy(true);error.textContent='';
     try{
       const batch=[];
@@ -209,7 +218,7 @@ function editExam(id,visit='',resume=''){
     finally{setBusy(false)}
   }
   for(const name of ['protocol','images']){
-    const input=form.elements[name];input.onchange=()=>{const files=Array.from(input.files);input.value='';attach(files,name==='protocol')};
+    const input=form.elements[name];input.onchange=()=>{const files=Array.from(input.files);if(files.length)attach(files,name==='protocol',null,input)};
   }
   const link=form.querySelector('[data-existing]');
   if(link)link.onclick=async()=>{
@@ -233,9 +242,7 @@ function editExam(id,visit='',resume=''){
     ev.preventDefault();
     if(!active()||reading||saving||!form.reportValidity())return;
     const parameters=listParams();
-    if(parameters.some(p=>!p.name||!p.value)){error.textContent='Введите название и значение каждого параметра.';return}
     const values=fieldsNow();values.date||=todayLocal();if(values.method==='Другое'&&values.customMethod.trim())values.method=values.customMethod.trim();delete values.customMethod;
-    if(!values.description.trim()&&!values.conclusion.trim()&&!parameters.length&&!sourceList.length&&!savedExam?.attachments.length){error.textContent='Добавьте снимок, протокол, параметр или текст результата.';return}
     const key=examIdentity({...values,parameters});
     const snapshot=latestProfile(),focusId=id||draftId;
     const sourceFiles=new Map([...profile.files,...snapshot.files].map(f=>[f.id,f]));

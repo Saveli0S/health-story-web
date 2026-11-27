@@ -1,0 +1,199 @@
+{
+  "profile": "Лада Макетова · QA-17 (вымышленный профиль)",
+  "note": "Референсы взяты из синтетических бланков и нужны только для проверки переноса. canonicalValue применяется исключительно к графику, исходная запись не изменяется.",
+  "reports": [
+    {
+      "file": "01-baseline.pdf",
+      "format": "PDF с текстовым слоем, одна страница",
+      "name": "Общий анализ крови и биохимия",
+      "laboratory": "Лаборатория Северный макет",
+      "date": "2025-01-08",
+      "issued": "2025-01-09",
+      "rows": [
+        {
+          "name": "Гемоглобин",
+          "value": "132",
+          "unit": "г/л",
+          "range": "120–150",
+          "group": "hb-blood",
+          "canonicalValue": 132,
+          "specimen": "Цельная кровь"
+        },
+        {
+          "name": "Глюкоза",
+          "value": "4,8",
+          "unit": "ммоль/л",
+          "range": "3,9–5,5",
+          "group": "glucose-plasma",
+          "canonicalValue": 4.8,
+          "specimen": "Плазма"
+        },
+        {
+          "name": "С-реактивный белок",
+          "value": "<1",
+          "unit": "мг/л",
+          "range": "0–5",
+          "group": "crp",
+          "plot": false,
+          "specimen": "Плазма"
+        }
+      ]
+    },
+    {
+      "file": "02-followup-en.pdf",
+      "format": "Две текстовые страницы, английские заголовки, графы единиц и результата переставлены",
+      "name": "Haematology and chemistry",
+      "laboratory": "North Mock Lab",
+      "date": "2025-02-12",
+      "issued": "2025-02-14",
+      "rows": [
+        {
+          "name": "Haemoglobin (HGB)",
+          "value": "13.8",
+          "unit": "g/dL",
+          "range": "12.0–15.0",
+          "group": "hb-blood",
+          "canonicalValue": 138,
+          "specimen": "Цельная кровь"
+        },
+        {
+          "name": "Glucose",
+          "value": "5.1",
+          "unit": "mmol/L",
+          "range": "3.9–5.5",
+          "group": "glucose-plasma",
+          "canonicalValue": 5.1,
+          "specimen": "Плазма"
+        },
+        {
+          "name": "C-reactive protein",
+          "value": "1.4",
+          "unit": "mg/L",
+          "range": "",
+          "group": "crp",
+          "canonicalValue": 1.4,
+          "specimen": "Плазма"
+        }
+      ]
+    },
+    {
+      "file": "03-followup-scan.pdf",
+      "format": "Скан-PDF без текстового слоя, лёгкий наклон",
+      "name": "Анализ крови",
+      "laboratory": "Лаборатория Контур макет",
+      "date": "2025-03-13",
+      "issued": "2025-03-14",
+      "rows": [
+        {
+          "name": "Hb",
+          "value": "14,0",
+          "unit": "г/дл",
+          "range": "12,0–15,0",
+          "group": "hb-blood",
+          "canonicalValue": 140,
+          "specimen": "Цельная кровь"
+        },
+        {
+          "name": "Глюкоза плазмы",
+          "value": "5,0",
+          "unit": "ммоль/л",
+          "range": "",
+          "group": "glucose-plasma",
+          "canonicalValue": 5,
+          "specimen": "Плазма"
+        }
+      ]
+    },
+    {
+      "file": "04-urine-scan.jpg",
+      "format": "JPEG, монохромная карточка, несовместимый тип образца и качественный результат",
+      "name": "Анализ мочи",
+      "laboratory": "Лаборатория Восток макет",
+      "date": "2025-04-15",
+      "issued": "2025-04-16",
+      "rows": [
+        {
+          "name": "Глюкоза",
+          "value": "0,3",
+          "unit": "ммоль/л",
+          "range": "",
+          "group": "glucose-urine",
+          "canonicalValue": 0.3,
+          "specimen": "Моча"
+        },
+        {
+          "name": "Нитриты",
+          "value": "отрицательно",
+          "unit": "",
+          "range": "",
+          "group": "nitrite-urine",
+          "plot": false,
+          "specimen": "Моча"
+        }
+      ]
+    },
+    {
+      "file": "05-unclear.png",
+      "format": "PNG, утраченный символ в результате",
+      "name": "Анализ мочи на белок",
+      "laboratory": "Лаборатория Восток макет",
+      "date": "2025-05-12",
+      "issued": "2025-05-13",
+      "rows": [
+        {
+          "name": "Белок",
+          "value": "?",
+          "unit": "мг/л",
+          "range": "0–100",
+          "group": "protein-urine",
+          "clarify": true,
+          "plot": false,
+          "specimen": "Моча"
+        }
+      ]
+    }
+  ],
+  "expectedTrends": {
+    "hb-blood": {
+      "unit": "г/л",
+      "points": [
+        132,
+        138,
+        140
+      ]
+    },
+    "glucose-plasma": {
+      "unit": "ммоль/л",
+      "points": [
+        4.8,
+        5.1,
+        5
+      ]
+    },
+    "glucose-urine": {
+      "unit": "ммоль/л",
+      "points": [
+        0.3
+      ]
+    },
+    "crp": {
+      "unit": "мг/л",
+      "points": [
+        1.4
+      ],
+      "unplotted": [
+        "<1"
+      ]
+    },
+    "protein-urine": {
+      "points": [],
+      "clarify": true
+    },
+    "nitrite-urine": {
+      "points": [],
+      "unplotted": [
+        "отрицательно"
+      ]
+    }
+  }
+}
