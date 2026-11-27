@@ -190,6 +190,12 @@ function enqueueFiles(visit,files,category='Назначения'){
     // Save every selected original before the slower, sequential recognition work.
     archiveQueue=archiveQueue.then(async()=>{
       try{
+        const digest=await sourceDigest(file);
+        const duplicate=await matchingOriginal(patient,file,digest,profile.files.filter(f=>f.visit===visit));
+        if(duplicate){
+          jobs.delete(row.id);intakeErrors.set(key,'Такое вложение уже есть в визите.');refreshIntake(patient,visit);return;
+        }
+        row.sourceDigest=digest;
         await fileBlob(patient+'/'+row.id,file);
         profile.files.push(row);
         if(!saveState()){profile.files.pop();await removeBlob(patient+'/'+row.id);throw Error()}

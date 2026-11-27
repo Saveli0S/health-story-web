@@ -154,23 +154,23 @@ async function saveUpload(form){
     error.textContent='Проверьте типы файлов. ZIP можно приложить как снимок, заключение или другой документ.';return;
   }
   form.dataset.busy='true';const submit=form.querySelector('button.primary');submit.disabled=true;
-  const accepted=[],seenLabs=new Set();let existingLab;
+  const accepted=[];let existing;
   try{
     for(const [i,f] of files.entries()){
-      const row=rows[i];
-      if(row.category==='Лаборатория'){
-        const digest=await sourceDigest(f);
-        if(patient!==person.id||!form.isConnected||readOnly)throw Error();
-        const duplicate=await matchingOriginal(patient,f,digest,latestProfile().files.filter(x=>x.category==='Лаборатория'));
-        if(duplicate){existingLab=duplicate;continue}
-        if(seenLabs.has(digest))continue;
-        seenLabs.add(digest);row.sourceDigest=digest;
-      }
+      const row=rows[i],digest=await sourceDigest(f);
+      if(patient!==person.id||!form.isConnected||readOnly)throw Error();
+      const candidates=[...latestProfile().files,...staged].filter(x=>
+        row.category==='Лаборатория'?x.category==='Лаборатория':x.visit===visit);
+      const duplicate=await matchingOriginal(patient,f,digest,candidates);
+      if(duplicate){existing??=duplicate;continue}
+      row.sourceDigest=digest;
       if(patient!==person.id||!form.isConnected||readOnly)throw Error();
       await fileBlob(patient+'/'+row.id,f);staged.push(row);accepted.push([row,f]);
     }
-    if(!accepted.length&&existingLab){
-      duplicateCard(form,existingLab.lab?'lab':'verifyLab',existingLab.id,'Открыть существующий бланк');
+    if(!accepted.length&&existing){
+      const lab=existing.category==='Лаборатория';
+      const kind=lab?(existing.lab?'lab':'verifyLab'):existing.intake&&!existing.checked?'verifyFile':'file';
+      duplicateCard(form,kind,existing.id,lab?'Открыть существующий бланк':'Открыть существующее вложение');
       submit.disabled=false;delete form.dataset.busy;return;
     }
     profile.files.push(...staged);if(!saveState())throw Error();
@@ -186,7 +186,7 @@ async function saveUpload(form){
   }
   if(form.isConnected&&patient===person.id){
     render();const first=staged[0];
-    if(existingLab)announce('Повторный лабораторный бланк пропущен.');
+    if(existing)announce('Повторный файл уже есть в дневнике.');
     replaceRoute(first.intake?'intake':first.category==='Лаборатория'?'verifyLab':'file',first.intake?visit:first.id);
   }
 }
