@@ -96,6 +96,7 @@ function appExtrasClick(action,id,button){
   if(action==='disconnectChatGPT')chatGPT.disconnect(button);
   if(action==='beginAI')beginProvider();
   if(action==='disconnectAI'){routerKey='';pendingLogin=null;routerDelivery='';providers();render()}
+  if(action==='removeAPIKey'){apiCredentials.delete(id);providers();render()}
   if(action==='askProvider')askProvider(id);
   if(action==='consultCopy')copyConsult(button.form);
 }
@@ -118,10 +119,11 @@ function appExtrasChange(el){
   if(!readOnly&&el.closest('#chatgpt-followup')){const record=current().consultations.find(r=>r.id===el.form.dataset.id);if(record){record.nextQuestion=el.value;saveState()}}
   if(el.closest('#consult-answer')){
     const f=el.form,r=current().consultations.find(r=>r.id===f.dataset.id);
-    if(r&&!r.answer){if(!r.sentAt)r.prompt=cleanClinicalText(f.elements.prompt.value);r.replyDraft=f.elements.answer.value;saveState()}
+    if(r&&!r.answer&&['prompt','answer'].includes(el.name)){if(!r.sentAt)r.prompt=cleanClinicalText(f.elements.prompt.value);r.replyDraft=f.elements.answer.value;saveState()}
   }
 }
 function appExtrasSubmit(f){
+  if(f.dataset.apiProvider){connectAPIKey(f);return}
   switch(f.id){
     case 'tag-definition':updateTagLibrary(f);break;
     case 'record-tags-form':saveRecordTags(f);break;

@@ -149,8 +149,11 @@ function conversationHistory(record) {
     (Array.isArray(turn.sentHistory)?'<details><summary>Отправленный контекст</summary><pre>'+esc(contextText(turn.sentHistory))+'</pre></details>':'')+'</section>').join('');
   if (readOnly) return history;
   const preview = contextText(conversationMessages(record).map(m=>({...m,content:cleanClinicalText(m.content)})));
+  const options = connectedProviders();
+  const sendLabel = options.length>1?'Подтвердить и отправить':options.length?'Подтвердить и отправить в '+providerNames[options[0]]:'Сохранить черновик';
   return history+'<form id="chatgpt-followup" class="edit-form" data-id="'+esc(record.id)+'"><label>Следующий вопрос<textarea name="question" rows="3" required>'+esc(record.nextQuestion || '')+'</textarea></label><details><summary>Какая переписка уйдёт вместе с вопросом</summary><pre data-chatgpt-context>'+esc(preview)+'</pre></details>'+transferHint()+
-    (chatGPT.connected?'<button class="button primary">Подтвердить и отправить в ChatGPT</button>':'<button class="button secondary" formnovalidate>Сохранить черновик</button>'+act('providers','Подключить личный ChatGPT','','button secondary'))+'<p role="status"></p></form>';
+    providerChoice((record.turns||[]).at(-1)?.provider||record.provider)+'<button class="button '+(options.length?'primary':'secondary')+'" '+(options.length?'':'formnovalidate')+'>'+esc(sendLabel)+'</button>'+
+    (options.length?'':act('providers','Подключить ИИ-провайдера','','button secondary'))+'<p role="status"></p></form>';
 }
 
 async function sendFollowup(form) {
@@ -158,12 +161,16 @@ async function sendFollowup(form) {
   const owner = person.id, profile = current(), record = profile.consultations.find(r => r.id===form.dataset.id);
   if (!record?.answer || providerJobs.has(record.id)) return;
   const field = form.elements.question, status = form.querySelector('[role=status]');
-  if (!chatGPT.connected && !form.pendingTurn) {
+  const choice=form.elements.provider,providerID=choice?.value;
+  if (!providerID && !form.pendingTurn) {
     const before = record.nextQuestion;
     record.nextQuestion = field.value.trim();
     if (saveState()) status.textContent='Черновик сохранён.';
     else {record.nextQuestion=before;status.textContent='Не удалось сохранить вопрос.'}
     return;
+  }
+  if(!form.pendingTurn&&!connectedProviders().includes(providerID)){
+    status.textContent='Подключите выбранного провайдера. Запрос сохранён.';return;
   }
   if (!reviewOutboundText(field,status) || !field.value.trim()) return;
   const previous = conversationMessages(record);
@@ -179,13 +186,14 @@ async function sendFollowup(form) {
   record.nextQuestion = question;
   if (!form.pendingTurn && !saveState()) { record.nextQuestion=before;status.textContent='Не удалось сохранить вопрос.'; return; }
   providerJobs.add(record.id); form.querySelector('button').disabled=true; field.readOnly=true;
+  if(choice)choice.disabled=true;
   try {
-    status.textContent='Ожидаем ответ ChatGPT…';
+    status.textContent=form.pendingTurn?'Сохраняем ответ…':'Ожидаем ответ '+providerNames[providerID]+'…';
     let turn = form.pendingTurn;
     if (!turn) {
       const transfer=transferEvent('provider');
-      const {answer,model}=await chatGPT.send(messages);
-      turn={id:uid(),time:new Date().toISOString(),question,answer,provider:'ChatGPT · '+model,transfers:[transfer]};
+      const {answer,model}=await requestProvider(providerID,messages);
+      turn={id:uid(),time:new Date().toISOString(),question,answer,provider:providerNames[providerID]+' · '+model,transfers:[transfer]};
       if (previous.some((message,i)=>message.content!==sentHistory[i].content)) turn.sentHistory=sentHistory;
     }
     if (prototypeState.profiles[owner] !== profile || !profile.consultations.includes(record) ||
@@ -202,5 +210,5 @@ async function sendFollowup(form) {
     delete form.pendingTurn;
     if (profile===current() && form.isConnected) consultRecord(record.id);
   } catch (error) { status.textContent=error.message; }
-  finally { providerJobs.delete(record.id);field.readOnly=Boolean(form.pendingTurn);form.querySelector('button').disabled=false; }
+  finally { providerJobs.delete(record.id);field.readOnly=Boolean(form.pendingTurn);form.querySelector('button').disabled=false;if(choice)choice.disabled=Boolean(form.pendingTurn); }
 }
