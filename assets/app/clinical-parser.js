@@ -1,19 +1,54 @@
 'use strict';
 
 const visitMonths=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const fieldSeparator='(?:[:·–—-]|\\.{2,}|[ \\t]{2,}|\\t)';
+const visitLabels={
+  episodeName:'эпизод(?: болезни)?|(?:(?:основной|предварительный|клинический) )?диагноз(?: при обращении| основной)?',
+  doctorName:'фио врача|врач[-\\s]+специалист|(?:лечащий |принимающий )?врач(?:\\s+при[её]ма)?',
+  specialty:'специальность|специализация|профиль специалиста',
+  title:'название визита|тип при[её]ма|вид посещения|визит',
+  note:'жалобы(?: пациента| при обращении| на момент осмотра)?|повод обращения|причина обращения|сведения о визите',
+  conclusion:'заключение(?: врача)?',
+  clinic:'клиника|учреждение|медицинская организация|организация здравоохранения|место при[её]ма'
+};
+
+function clinicalLines(raw){
+  return raw.split(/\r?\n/).map(line=>line.replace(/[\u00a0\u202f]/gu,' ').trim()).filter(Boolean);
+}
+
+function fieldLine(labels){
+  return new RegExp('^(?:'+labels+')\\s*(?:'+fieldSeparator+'\\s*(.*))?$','iu');
+}
+
+const clinicalHeading=fieldLine([...Object.values(visitLabels),
+  'пациент|фио|дата(?: [^:]{1,35})?|телефон|адрес|подпись(?: врача)?|результат(?:ы)?|анамнез|статус|осмотр|рекомендации(?: врача)?|лечение|назначения|описание|протокол'
+].join('|'));
+
+function labelledValue(lines,labels){
+  const field=fieldLine(labels),values=new Set();
+  for(const [index,line] of lines.entries()){
+    const match=line.match(field);
+    if(!match)continue;
+    const next=lines[index+1]||'';
+    const value=match[1]?.trim()||(!clinicalHeading.test(next)&&!/^[^:]{1,45}:|^\d{1,4}[./-]\d|^\d+\s+(?:из|\/)\s+\d+/u.test(next)?next:'');
+    if(value)values.add(value);
+  }
+  return values.size===1?[...values][0]:'';
+}
 
 function visitDateFrom(lines){
-  const datePattern=/(?:^|[^\d])(?:(\d{4})-(\d{2})-(\d{2})|(\d{1,2})[./](\d{1,2})[./](\d{4})|(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+(\d{4}))(?!\d)/giu;
+  const datePattern=/(?:^|[^\d])(?:(\d{4})-(\d{2})-(\d{2})|(\d{1,2})[./]\s*(\d{1,2})[./]\s*(\d{4})|(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+(\d{4}))(?!\d)/giu;
   const explicit=[],generic=[],alone=[];
   const excluded=/рожд|д\.\s*р\.|печат|дубликат|контрол[ья]|следующ|повторн(?:ый|ого) визит\s+(?:через|запланирован)|назначен на|действител|выдач|выдан|забор|взятия|результат|начал[ао]|окончан/iu;
   for(const [i,line] of lines.entries()){
     if(excluded.test(line)||(/^\d/u.test(line)&&excluded.test(lines[i-1]||'')&&!/\d/u.test(lines[i-1]||'')))continue;
-    const label=/^(?:(?:дата\s+(?:визита|при[её]ма|осмотра|консультации|посещения)|на при[её]ме|осмотрен[а]?|визит состоялся)(?=[:\s·–—-]|$)|(?:при[её]м|визит|консультация|осмотр)\s+(?:от\s+)?(?=\d))/iu.test(line);
+    const label=/^(?:(?:дата(?:\s+и\s+время)?\s+(?:визита|при[её]ма|осмотра|консультации|посещения|обращения)|на при[её]ме|осмотрен[а]?|визит состоялся)(?=[:\s·–—-]|$)|(?:при[её]м|визит|консультация|осмотр)\s+(?:от\s+)?(?=\d))/iu.test(line);
     const general=/^дата\s*[:·–—-]/iu.test(line);
-    const candidate=(label||general)&&/^(?:дата(?: визита| при[её]ма| осмотра| консультации| посещения)?|на при[её]ме)\s*[:·–—-]?$/iu.test(line) ? lines[i+1]||'' : line;
+    const candidate=(label||general)&&/^(?:дата(?: и время)?(?: визита| при[её]ма| осмотра| консультации| посещения| обращения)?|на при[её]ме)\s*[:·–—-]?$/iu.test(line) ? lines[i+1]||'' : line;
     if(!(label||general||/^\d{1,4}[./\s-]/u.test(line)))continue;
     const target=label?explicit:general?generic:alone;
     if(label||general)target.push(null); // An unreadable explicit value must not fall back to another date.
+    if(candidate!==line && excluded.test(candidate))continue;
     for(const m of candidate.matchAll(datePattern)){
       const year=m[1]||m[6]||m[9],month=m[2]||m[5]||String(visitMonths.indexOf(m[8].toLowerCase())+1);
       const iso=[year,month.padStart(2,'0'),(m[3]||m[4]||m[7]).padStart(2,'0')].join('-');
@@ -26,28 +61,26 @@ function visitDateFrom(lines){
 }
 
 function parseVisitHeader(raw){
-  const lines=raw.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-  function labelled(pattern){
-    for(let i=0;i<lines.length;i++){
-      const match=lines[i].match(pattern);
-      if(match)return (match[1]||(!/^[^:]{1,45}:/.test(lines[i+1]||'')&&lines[i+1])||'').trim();
-    }
-    return '';
-  }
-  const episodeName=labelled(/^(?:эпизод(?: болезни)?|(?:основной |предварительный |клинический )?диагноз)(?:\s*[:·–—-]\s*(.*)|\s*)$/iu);
-  const specialtyLine=lines.map(line=>line.match(/^((?:[а-яё-]+олог|терапевт|педиатр|хирург|врач общей практики|лор))\s*(?:[·:–—-]\s*|\s+)([\p{L}][\p{L}.'’\s-]+)$/iu)).find(Boolean);
-  const doctorName=labelled(/^(?:(?:лечащий )?врач(?:\s+при[её]ма)?|фио врача)\s*(?:[:·–—-]\s*(.*)|\s*)$/iu)||specialtyLine?.[2]||'';
-  const specialty=labelled(/^специальность\s*[:·–—-]\s*(.*)$/iu)||specialtyLine?.[1]||'';
-  const title=labelled(/^(?:название визита|тип при[её]ма|вид посещения|визит)\s*[:·–—-]\s*(.*)$/iu)||
-    lines.find(l=>/^(?:(?:первичный |повторный )?(?:при[её]м|консультация|осмотр)|выписка (?:о|из)|протокол (?:консультации|осмотра))\s+\p{L}/iu.test(l))||'';
-  const note=labelled(/^(?:жалобы(?: пациента)?|повод обращения|причина обращения|сведения о визите)(?:\s*[:·–—-]\s*(.*)|\s*)$/iu)||
-    labelled(/^заключение(?: врача)?(?:\s*[:·–—-]\s*(.*)|\s*)$/iu);
-  const clinic=labelled(/^(?:клиника|учреждение|медицинская организация|место при[её]ма)\s*[:·–—-]\s*(.*)$/iu)||
-    lines.find(l=>{
-      const institution=l.match(/^(?:(?:медицинский |диагностический )?центр|поликлиника|клиника|кабинет|бюро|больница)\s+(.+)$/iu);
-      return institution&&/^[«„"\p{Lu}№]/u.test(institution[1]);
-    })||'';
+  const lines=clinicalLines(raw);
+  const read=key=>labelledValue(lines,visitLabels[key]);
+  const episodeName=read('episodeName');
+  const clinician='(?:врач[-\\s]+)?([а-яё-]+олог|терапевт|педиатр|хирург|врач общей практики|лор)';
+  const pairPattern=new RegExp('^'+clinician+'(?:\\s*'+fieldSeparator+'\\s*|\\s+)(\\p{L}[\\p{L}.’\'\\s-]+)$','iu');
+  const reportedDoctor=read('doctorName');
+  const specialtyLine=reportedDoctor.match(pairPattern)||lines.map(line=>line.match(pairPattern)).find(match=>match&&/^\p{Lu}/u.test(match[2]));
+  const doctorName=specialtyLine&&(!reportedDoctor||reportedDoctor===specialtyLine[0])?specialtyLine[2].trim():reportedDoctor;
+  const specialty=read('specialty')||specialtyLine?.[1]||'';
+  const title=read('title')||lines.find(l=>/^(?:(?:первичный |повторный )?(?:при[её]м|консультация|осмотр)|выписка (?:о|из)|протокол (?:консультации|осмотра))\s+\p{L}/iu.test(l))||'';
+  const note=read('note')||read('conclusion');
+  const clinic=read('clinic')||printedClinic(lines);
   return {episodeName,doctorName,specialty,title,note,clinic:clinic.replace(/\s+(?:(?:лист|стр\.?)\s*)?\d{1,3}\s*(?:\/|из)\s*\d{1,3}\s*$/iu,''),date:visitDateFrom(lines)};
+}
+
+function printedClinic(lines){
+  return lines.slice(0,8).find(line=>{
+    const match=line.match(/^(?:(?:гу|уз|гув|чуп|ооо)\s+|(?:(?:медицинский |диагностический )?центр|поликлиника|клиника|кабинет|бюро|больница)\s+)(.+)$/iu);
+    return match&&/^[«„"\p{Lu}№]/u.test(match[1]);
+  })||'';
 }
 
 function recommendationText(raw){
@@ -107,7 +140,7 @@ function proposedMedicines(raw,issues=[]){
       if(hasActiveSection||!/^(?:жалобы|диагноз|осмотр)(?=[:.\s–—-]|$)/iu.test(line))active=false;
       continue;
     }
-    if(!line||!active||inactiveRxText.test(line)||rxRegimen.test(line))continue;
+    if(!line||!active||inactiveRxText.test(line)||rxRegimen.test(line)||(!explicit&&/^[^:]{1,45}:\s*\p{L}/u.test(line)))continue;
     if(/^(?:уход|диета|контроль|консультация|повторн\S*\s+при[её]м)(?=[:.\s]|$)/iu.test(line)){
       active=false;continue;
     }
@@ -311,30 +344,47 @@ const examMethodPatterns=[
 ];
 
 function parseExamProtocol(text){
-  const dates=new Set(),result={parameters:[],questions:[]},lines=text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-  const header=lines.filter(s=>!/^заключение|^рекомендации/iu.test(s)).slice(0,6).join('\n');
-  const method=examMethodPatterns.findIndex(re=>re.test(header));
+  const dates=new Set(),result={parameters:[],questions:[]},lines=clinicalLines(text);
+  const header=[];
+  for(const line of lines.slice(0,12)){
+    if(/^(?:описание|параметры|заключение|рекомендации)(?=\s|[:.—–-]|$)/iu.test(line))break;
+    if(!/^(?:направление|анамнез|показания|пациент|дата|фио|рекомендовано)(?=\s|[:.—–-]|$)/iu.test(line))header.push(line);
+  }
+  const methods=examMethodPatterns.map((re,i)=>header.some(line=>re.test(line))?i:-1).filter(i=>i>=0);
+  const method=methods.length===1?methods[0]:-1;
   if(method>=0)result.method=examMethods[method];
+  const dateLabels=fieldLine('дата(?:(?: и время)? (?:исследования|проведения|обследования|выполнения)(?: исследования)?)?');
+  const metadata=[['region','область(?: исследования| сканирования)?|зона исследования|орган|локализация исследования'],
+    ['doctor','врач(?:-диагност|-рентгенолог| ультразвуковой диагностики|, выполнивший исследование)?|специалист|фио врача'],['clinic',visitLabels.clinic]];
+  const headings=metadata.map(([,labels])=>fieldLine(labels));
+  const blockHeading=new RegExp('^(заключение(?: врача)?|описание(?: исследования)?|параметры(?: исследования)?|измерения)\\s*(?:'+fieldSeparator+'\\s*(.*))?$','iu');
+  for(const [key,labels] of metadata){
+    const value=labelledValue(lines,labels);
+    if(value)result[key]=value;
+  }
+  if(!result.clinic){const clinic=printedClinic(header);if(clinic)result.clinic=clinic}
   let section='';
-  for(const line of lines){
+  for(const [index,line] of lines.entries()){
     const pair=line.match(/^([^:]{1,90})\s*:\s*(.*)$/u);
     if(/^(?:страница\s+\d+|\d+\s+из\s+\d+|синтетические данные|дата печати|подпись врача|протокол подписан|приложение к протоколу)/iu.test(line)){section='';continue}
     const label=pair?.[1].trim()||'',value=pair?.[2].trim()||'';
-    if(/^дата(?:\s+(?:исследования|проведения|обследования|выполнения))?$/iu.test(label)){
-      const iso=value.match(/^(\d{4}-\d{2}-\d{2})(?:\s|$)/u),local=value.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})(?:\s|$)/u);
+    const day=line.match(dateLabels);
+    if(day){
+      const source=day[1]||lines[index+1]||'';
+      const iso=source.match(/^(\d{4}-\d{2}-\d{2})(?=\s|T|$)/u),local=source.match(/^(\d{1,2})[./]\s*(\d{1,2})[./]\s*(\d{4})(?=\s|[,;]|$)/u);
       const date=iso?.[1]||(local&&[local[3],local[2].padStart(2,'0'),local[1].padStart(2,'0')].join('-'));
       if(date&&Number.isFinite(Date.parse(date))&&new Date(date).toISOString().slice(0,10)===date)dates.add(date);
       section='';continue;
     }
-    const metadata=[['region',/^(?:область(?: исследования)?|зона исследования|орган)$/iu],['doctor',/^(?:врач(?:-диагност)?|специалист)$/iu],['clinic',/^(?:клиника|учреждение)$/iu]].find(([,re])=>re.test(label));
-    if(metadata){result[metadata[0]]=value;section='';continue}
-    if(/^(?:заключение|описание|параметры|измерения)\s*(?::|$)/iu.test(line)){
-      const name=line.split(':')[0].trim().toLowerCase();
-      section=name==='заключение'?'conclusion':name==='описание'?'description':'parameters';
-      if(value&&section!=='parameters')result[section]=[result[section],value].filter(Boolean).join('\n');
+    if(headings.some(pattern=>pattern.test(line))){section='';continue}
+    const heading=line.match(blockHeading);
+    if(heading){
+      const name=heading[1].toLowerCase();
+      section=name.startsWith('заключение')?'conclusion':name.startsWith('описание')?'description':'parameters';
+      if(heading[2]&&section!=='parameters')result[section]=[result[section],heading[2]].filter(Boolean).join('\n');
       continue;
     }
-    if(/^(?:пациент|фио|дата рождения|подпись|рекомендации)\s*:/iu.test(line)){section='';continue}
+    if(/^(?:пациент|фио|дата рождения|подпись|рекомендации|адрес|телефон)(?=\s|[:.—–-]|$)/iu.test(line)){section='';continue}
     const measure=line.match(/^(.{2,80}?)(?:\s*:\s*|\s+[–—-]\s+|\s+)([<>≤≥≈]?\s*\d+(?:[,.]\d+)?(?:\s*[×xх–-]\s*\d+(?:[,.]\d+)?)*)(?:\s*)(мм рт\.\s*ст\.?|мм|см|мл|мс|м\/с|см\/с|Гц|%|град(?:усов)?|°)\s*[.;]?$/iu);
     const descriptive=/^(?:контур|структур|эхоструктур|эхогенност|локализаци|положени|форм[аы]|подвижност|проходимост|васкуляризаци|кровоток|плотност|фракция выброса)/iu.test(label);
     if(section!=='conclusion'&&(measure||((section==='parameters'||descriptive)&&label&&value))){

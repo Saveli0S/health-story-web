@@ -17,7 +17,7 @@ function resumeVisit(id){
     '<div class="actions">'+act('readDraft','Распознать на устройстве',id,'button primary')+
     act('manualDraft','Заполнить вручную',id,'button secondary')+(!chatGPT.connected&&!routerKey?act('providers','Подключить ИИ-провайдера','','text-button'):'')+'</div>');
 }
-const visitImportRevision=3;
+const visitImportRevision=4;
 const visitHeaderFields=['episodeName','date','title','note','doctorName','specialty','clinic'];
 function reparseVisitDocument(d){
   const text=d.transcription??d.raw??'';
