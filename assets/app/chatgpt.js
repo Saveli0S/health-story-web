@@ -1,6 +1,7 @@
 'use strict';
 
 const chatGPT = {
+  checking: true,
   available: false,
   connected: false,
   quotaUnconfirmed: false,
@@ -26,12 +27,13 @@ const chatGPT = {
     return result;
   },
   async refresh() {
+    this.checking = true;
     this.available = false;
     this.connected = false;
     this.quotaUnconfirmed = false;
     this.account = '';
-    if (!this.endpoint || readOnly) return;
     try {
+      if (!this.endpoint || readOnly) return;
       const status = await this.request('status');
       // Hosted sessions must explicitly report that requests cannot overflow into credits.
       this.available = typeof status.connected === 'boolean';
@@ -39,6 +41,7 @@ const chatGPT = {
       this.quotaUnconfirmed = status.connected === true && !this.connected;
       this.account = this.connected ? status.account || '' : '';
     } catch { /* Keep the provider disconnected when the gateway is unreachable. */ }
+    finally { this.checking = false; }
   },
   async connect(button) {
     if (readOnly || !this.available || button.disabled) return;
@@ -71,7 +74,13 @@ const chatGPT = {
 };
 
 function chatGPTSettings() {
-  const details = chatGPT.connected ? 'Подключён аккаунт ' + chatGPT.account : chatGPT.quotaUnconfirmed ? 'Отправка ожидает подтверждения, что доступны только запросы в пределах включённой квоты.' : chatGPT.available ? 'Войдите и разрешите использование включённой квоты.' : 'Прямой вход доступен в локальной версии на Mac. Для опубликованного сайта подключение пока недоступно.';
+  let details;
+  if (chatGPT.connected) details = 'Подключён аккаунт ' + chatGPT.account;
+  else if (!chatGPT.endpoint) details = 'Подключение на сайте ожидает допуска OpenAI. Прямой вход доступен в локальном дневнике на Mac.';
+  else if (chatGPT.quotaUnconfirmed) details = 'Отправка ожидает подтверждения, что доступны только запросы в пределах включённой квоты.';
+  else if (chatGPT.available) details = 'Войдите и разрешите использование включённой квоты.';
+  else if (chatGPT.checking) details = 'Проверяем подключение ChatGPT…';
+  else details = 'Сервис подключения ChatGPT недоступен. Обновите страницу и повторите.';
   const button = chatGPT.connected ? act('disconnectChatGPT','Отключить аккаунт','','button secondary') : chatGPT.available ? act('connectChatGPT','Продолжить с ChatGPT','','button primary') : '';
   return '<section class="plain-card"><h3>Личный ChatGPT</h3><p>'+esc(details)+'</p><p>Ответы сохраняются в выбранном профиле. Условия квоты и использование кредитов можно проверить в настройках ChatGPT.</p>'+button+external('https://chatgpt.com/settings/usage','Управление квотой ChatGPT')+'<p id="chatgpt-status" role="status"></p></section>';
 }

@@ -298,7 +298,9 @@ if(workingFamily)document.querySelector('.bar-actions .demo')?.remove();
 document.querySelector('.bar-actions').inert=false;
 render();
 chatGPT.refresh().then(()=>{
-  if(!chatGPT.available)return;
+  if(!chatGPT.endpoint||readOnly)return;
+  const settingsStatus=main.querySelector('.settings-menu [data-action="providers"] small');
+  if(settingsStatus)settingsStatus.textContent=providerStatus();
   if(routes.at(-1)?.name==='providers')providers();
   if(!panel.open && section==='consults')render();
   if(routes.at(-1)?.name==='consultRecord' && !document.querySelector('#consult-answer :focus, #chatgpt-followup :focus'))consultRecord(routes.at(-1).id);

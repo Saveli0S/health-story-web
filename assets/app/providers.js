@@ -6,7 +6,15 @@ const providerJobs=new Set();
 function providerFacts(account,delivery){
   return '<dl class="provider-status"><dt>Вход</dt><dd>'+esc(account)+'</dd><dt>Отправка запросов</dt><dd>'+esc(delivery)+'</dd></dl>';
 }
-function providerStatus(){return chatGPT.connected?'Личный ChatGPT подключён':routerKey?'OpenRouter подключён на эту сессию':'Личный ChatGPT не подключён'}
+function providerStatus(){
+  if(chatGPT.connected)return 'Личный ChatGPT подключён';
+  if(routerKey)return 'OpenRouter подключён на эту сессию';
+  if(!chatGPT.endpoint)return 'Подключение ChatGPT на сайте пока недоступно';
+  if(chatGPT.checking)return 'Проверяем подключение ChatGPT…';
+  if(chatGPT.quotaUnconfirmed)return 'Подключено · доступ к квоте уточняется';
+  if(!chatGPT.available)return 'Сервис подключения ChatGPT недоступен';
+  return 'Личный ChatGPT не подключён';
+}
 function providers(){
   const eligible=Boolean(globalThis.crypto?.subtle)&&!readOnly;
   openPanel('Настройки','ИИ-провайдеры',`${chatGPTSettings()}
