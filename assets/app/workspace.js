@@ -101,6 +101,7 @@ function appExtrasClick(action,id,button){
   if(action==='consultCopy')copyConsult(button.form);
 }
 function appExtrasChange(el){
+  if(el.id==='provider-preference'){saveProviderPreference(el);return}
   if(el.closest('#upload-form')&&['category','visit'].includes(el.name)){
     if(el.name==='category')for(const select of el.form.querySelectorAll('[data-file-index]'))select.value=el.value;
     uploadOptions(el.form);
@@ -116,7 +117,7 @@ function appExtrasChange(el){
     fields.hidden=!['dose','replace'].includes(el.value);fields.querySelector('[name=changeName]').readOnly=el.value==='dose';
   }
   if(el.closest('#visit-form')&&['episode','date'].includes(el.name))refreshPreviousFields(el.form);
-  if(!readOnly&&el.closest('#chatgpt-followup')){const record=current().consultations.find(r=>r.id===el.form.dataset.id);if(record){record.nextQuestion=el.value;saveState()}}
+  if(!readOnly&&el.name==='question'&&el.closest('#chatgpt-followup')){const record=current().consultations.find(r=>r.id===el.form.dataset.id);if(record){record.nextQuestion=el.value;saveState()}}
   if(el.closest('#consult-answer')){
     const f=el.form,r=current().consultations.find(r=>r.id===f.dataset.id);
     if(r&&!r.answer&&['prompt','answer'].includes(el.name)){if(!r.sentAt)r.prompt=cleanClinicalText(f.elements.prompt.value);r.replyDraft=f.elements.answer.value;saveState()}
