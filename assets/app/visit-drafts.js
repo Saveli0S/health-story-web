@@ -17,7 +17,7 @@ function resumeVisit(id){
     '<div class="actions">'+act('readDraft','Распознать на устройстве',id,'button primary')+
     act('manualDraft','Заполнить вручную',id,'button secondary')+(!chatGPT.connected&&!routerKey?act('providers','Подключить ИИ-провайдера','','text-button'):'')+'</div>');
 }
-const visitImportRevision=2;
+const visitImportRevision=3;
 const visitHeaderFields=['episodeName','date','title','note','doctorName','specialty','clinic'];
 function reparseVisitDocument(d){
   const text=d.transcription??d.raw??'';
@@ -87,7 +87,7 @@ async function openImportDraft(id,mode){
 function restoreVisitFields(form,photo){
   const draft=current().visitDrafts.find(d=>d.id===photo?.draftId);if(!draft?.fields)return;
   for(const [key,value] of Object.entries(draft.fields))if(form.elements[key])form.elements[key].value=value;
-  const rows=form.querySelector('#rx-rows');if(rows&&draft.manualMeds)rows.innerHTML=draft.manualMeds.map(medicineInputs).join('');
+  const rows=form.querySelector('#rx-rows');if(rows&&draft.manualMeds)rows.innerHTML=draft.manualMeds.map(m=>medicineInputs(m)).join('');
   toggleVisitInputs();refreshPreviousFields(form);
 }
 async function replaceImportOriginal(input,file){

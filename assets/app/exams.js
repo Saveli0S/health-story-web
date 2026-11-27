@@ -50,16 +50,19 @@ function editExam(id,visit='',resume=''){
   const draftId=draft?.id||uid(),sourceList=structuredClone(draft?.sources||[]);
   const available=allFiles().filter(f=>['Заключения','Снимки'].includes(f.category)&&!savedExam?.attachments.some(a=>a.id===f.id)&&!sourceList.some(s=>s.id===f.id));
   const customMethod=e?.customMethod||(e?.method&&!examMethods.includes(e.method)?e.method:'');
-  const fields=(name,label,type='text')=>`<label>${label}<input name="${name}" type="${type}" ${name==='date'?'required':''} value="${esc(e?.[name])}"></label>`;
+  let dateDefault=!e?.date||draft?.dateDefault===true;
+  const fields=(name,label)=>`<label>${label}<input name="${name}" value="${esc(e?.[name])}"></label>`;
   openPanel(person.name,id?'Редактировать обследование':'Новое обследование',`<form id="exam-form" class="edit-form">
-    <label>Протокол врача · PDF, фото или TXT<input type="file" name="protocol" accept="application/pdf,image/*,.txt" multiple></label>
-    <label>Снимки · фото, PDF или DICOM в ZIP<input type="file" name="images" accept="image/*,application/pdf,.zip" multiple></label>
+    <label>Протокол врача · PDF, фото или TXT<input type="file" name="protocol" accept="application/pdf,${photoAccept},.txt" multiple></label>
+    <label>Снимки · фото, PDF или DICOM в ZIP<input type="file" name="images" accept="${photoAccept},application/pdf,.zip" multiple></label>
     <p class="hint">${originalTransferHint()}</p>
     ${available.length?'<details><summary>Выбрать из документов профиля</summary><label>Документ<select name="existing">'+available.map(f=>'<option value="'+esc(f.id)+'">'+esc(f.name+' · '+preventionDate(f.date))+'</option>').join('')+'</select></label><button type="button" class="text-button" data-existing>Приложить выбранный документ</button></details>':''}
     ${!workingFamily&&!id?'<button class="text-button" type="button" data-example>Загрузить учебный протокол УЗИ</button>':''}
     <div data-originals></div><p class="hint" data-status role="status"></p><label>Вид обследования<select required name="method"><option value="">Выберите вид</option>${examMethods.map(m=>'<option '+((customMethod?'Другое':e?.method)===m?'selected':'')+'>'+m+'</option>').join('')}</select></label>
     <label data-custom-method ${customMethod?'':'hidden'}>Название вида обследования<input name="customMethod" value="${esc(customMethod)}" placeholder="Например, эластография"></label>
-    ${fields('region','Область исследования')}${fields('date','Дата обследования','date')}${fields('clinic','Клиника')}${fields('doctor','Врач')}
+    ${fields('region','Область исследования')}
+    <label>Дата обследования<input name="date" type="date" value="${esc(e?.date||todayLocal())}"><small data-date-default ${dateDefault?'':'hidden'}>По умолчанию используется сегодняшняя дата. Её можно изменить.</small></label>
+    ${fields('clinic','Клиника')}${fields('doctor','Врач')}
     <label>Связанный визит<select name="visit"><option value="">Без привязки</option>${person.visits.map(v=>'<option value="'+esc(v[0])+'" '+((e?.visit||visit)===v[0]?'selected':'')+'>'+esc(preventionDate(v[1])+' · '+v[2])+'</option>').join('')}</select></label>
     <div data-parameters>${(e?.parameters||[]).map(examParameter).join('')}</div><button class="text-button" data-add type="button">Добавить параметр</button>
     <label>Описание<textarea name="description">${esc(e?.description)}</textarea></label><label>Заключение врача<textarea name="conclusion">${esc(e?.conclusion)}</textarea></label>
@@ -72,13 +75,14 @@ function editExam(id,visit='',resume=''){
   let position=draft?.position||{},reading=false,saving=false;
   const fieldsNow=()=>Object.fromEntries(fieldNames.map(k=>[k,form.elements[k].value]));
   const listParams=()=>Array.from(params.children,r=>({id:r.dataset.id,name:r.querySelector('[name=paramName]').value.trim(),value:r.querySelector('[name=paramValue]').value.trim(),unit:r.querySelector('[name=paramUnit]').value.trim()}));
-  const review=form.elements.reviewed;
+  const review=form.elements.reviewed,dateHint=form.querySelector('[data-date-default]');
+  function setDateDefault(value){dateDefault=value;dateHint.hidden=!value}
   review.required=Boolean(draft?.needsReview);review.checked=Boolean(draft?.reviewed);
   form.querySelector('[data-review]').hidden=!review.required;
   function persist(){
     if(!active()||saving)return false;
     const before=profile.examDrafts;
-    const next={id:draftId,exam:id||'',fields:fieldsNow(),parameters:listParams(),sources:structuredClone(sourceList),needsReview:review.required,reviewed:review.checked,position:{...position}};
+    const next={id:draftId,exam:id||'',fields:fieldsNow(),dateDefault,parameters:listParams(),sources:structuredClone(sourceList),needsReview:review.required,reviewed:review.checked,position:{...position}};
     profile.examDrafts=before.filter(d=>d.id!==draftId).concat(next);
     if(!saveState()){
       profile.examDrafts=before;
@@ -91,9 +95,15 @@ function editExam(id,visit='',resume=''){
     if(!fieldNames.includes(target.name)&&!['paramName','paramValue','paramUnit','reviewed'].includes(target.name))return;
     position={...position,field:target.name,parameter:target.closest('.exam-parameter')?.dataset.id||''};
   }
-  form.oninput=ev=>{if(ev.target.name&&ev.target.type!=='file'){rememberFocus(document.activeElement);persist()}};
+  form.oninput=ev=>{
+    if(ev.target===form.elements.date)setDateDefault(!ev.target.value);
+    if(ev.target.name&&ev.target.type!=='file'){rememberFocus(document.activeElement);persist()}
+  };
   form.addEventListener('focusin',ev=>{rememberFocus(ev.target);if(profile.examDrafts.some(d=>d.id===draftId))persist()});
-  form.onchange=ev=>{if(fieldNames.includes(ev.target.name)||ev.target===review)persist()};
+  form.onchange=ev=>{
+    if(ev.target===form.elements.date)setDateDefault(!ev.target.value);
+    if(fieldNames.includes(ev.target.name)||ev.target===review)persist();
+  };
   form.elements.method.onchange=()=>{form.querySelector('[data-custom-method]').hidden=form.elements.method.value!=='Другое'};
   form.querySelector('[data-add]').onclick=()=>{params.insertAdjacentHTML('beforeend',examParameter());params.lastElementChild.querySelector('input').focus();persist()};
   params.onclick=ev=>{if(ev.target.closest('[data-drop]')){ev.target.closest('fieldset').remove();persist()}};
@@ -147,7 +157,8 @@ function editExam(id,visit='',resume=''){
     for(const key of ['method','region','date','clinic','doctor','description','conclusion']){
       if(!parsed[key])continue;
       const field=form.elements[key];
-      if(!field.value)field.value=parsed[key];
+      if(key==='date' && (dateDefault||!field.value)){field.value=parsed[key];setDateDefault(false)}
+      else if(!field.value)field.value=parsed[key];
       else if(field.value!==parsed[key])questions.push(field.labels[0].firstChild.textContent.trim()+' — '+parsed[key]);
     }
     for(const p of parsed.parameters)if(!listParams().some(r=>r.name===p.name&&r.value===p.value&&r.unit===p.unit))params.insertAdjacentHTML('beforeend',examParameter(p));
@@ -223,7 +234,7 @@ function editExam(id,visit='',resume=''){
     if(!active()||reading||saving||!form.reportValidity())return;
     const parameters=listParams();
     if(parameters.some(p=>!p.name||!p.value)){error.textContent='Введите название и значение каждого параметра.';return}
-    const values=fieldsNow();if(values.method==='Другое'&&values.customMethod.trim())values.method=values.customMethod.trim();delete values.customMethod;
+    const values=fieldsNow();values.date||=todayLocal();if(values.method==='Другое'&&values.customMethod.trim())values.method=values.customMethod.trim();delete values.customMethod;
     if(!values.description.trim()&&!values.conclusion.trim()&&!parameters.length&&!sourceList.length&&!savedExam?.attachments.length){error.textContent='Добавьте снимок, протокол, параметр или текст результата.';return}
     const key=examIdentity({...values,parameters});
     const snapshot=latestProfile(),focusId=id||draftId;

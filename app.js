@@ -40,10 +40,15 @@ function transferHistory(record){
 }
 function mayChangeConsent(){return !readOnly&&(person.id===viewerPerson.id||(viewer==='admin'&&person.role==='Ребёнок'))}
 let person=accessibleProfiles().find(p=>p.id===params.get('profile'))||viewerPerson;
-let section=Object.hasOwn(sectionNames,params.get('section'))?params.get('section'):'overview';
+function sectionFrom(params){const key=params.get('section');return Object.hasOwn(sectionNames,key)?key:'overview'}
+let section=sectionFrom(params);
 if(section==='labs'&&params.get('view')==='prevention')analysisMode='prevention';
 let sectionQuery='', labFilter='Все', routes=[], returnFocus;
-const main=document.querySelector('main'),panel=document.querySelector('#panel'),panelBody=document.querySelector('#panel-body');
+const main=document.querySelector('main'),panel=document.querySelector('#panel'),panelHeading=document.querySelector('#panel-heading'),panelBody=document.querySelector('#panel-body');
+const panelHeader=panelHeading.parentElement;
+new ResizeObserver(()=>{
+  panel.style.setProperty('--panel-header-height',panelHeader.offsetHeight+'px');
+}).observe(panelHeader);
 function announce(message){document.querySelector('#announcement').textContent=message}
 function dateLabel(value,options={day:'numeric',month:'long'}){
   const date=new Date(value+'T12:00:00Z');
@@ -75,16 +80,20 @@ function pageSection(){
 }
 function render(){
   const stats=[ageText(yearsAt(todayLocal())),field('height')?'Рост '+field('height'):'',field('weight')?'Вес '+field('weight'):''].filter(Boolean);
-  main.innerHTML=`<nav class="crumbs" aria-label="Навигация"><button data-action="family">${esc(family.name)}</button>${icon('right',true)}<span>${section==='overview'?'Обзор профиля':esc(person.name)}</span></nav>
-  <section class="hero ${section==='overview'?'':'compact-hero'}"><img alt="" class="foliage" src="assets/ginkgo.png"><div class="hero-body">
-  <p class="hero-label">${icon('book')}Профиль здоровья</p><h1>${esc(person.name)}</h1><div class="quick-stats">${stats.map(s=>'<span>'+esc(s)+'</span>').join('')}</div>
-  ${act('medical','Открыть медкарту','','button hero-btn','book')}</div></section>${sectionNav()}${pageSection()}`;
+  main.innerHTML=`<nav class="crumbs${workingFamily?'':' crumbs-demo'}" aria-label="Навигация"><button data-action="family">${esc(family.name)}</button>${icon('right',true)}<span>${esc(person.name)}</span></nav>
+  <section class="hero"><img alt="" class="foliage" src="assets/ginkgo.png"><div class="hero-body">
+  <div><p class="hero-label">${icon('book')}Профиль здоровья</p><h1>${esc(person.name)}</h1>
+  <div class="quick-stats">${stats.map(s=>'<span>'+esc(s)+'</span>').join('')}</div></div>
+  ${act('medical','Открыть медкарту','','button hero-btn','book')}</div></section>${sectionNav()}
+  <div class="workspace-content">${pageSection()}</div>`;
 }
 function openPanel(label,title,body){
-  if(!panel.open)returnFocus=document.activeElement;
-  panelBody.innerHTML=(routes.length>1?act('back','‹ Назад','','back-link'):'')+'<p class="panel-label">'+esc(label)+'</p><h2 id="panel-title" tabindex="-1">'+esc(title)+'</h2>'+body;
+  if(!panel.open)returnFocus??=actionTarget(document.activeElement);
+  panelHeading.innerHTML=(routes.length>1?act('back','‹ Назад','','back-link'):'')+
+    '<p class="panel-label">'+esc(label)+'</p><h2 id="panel-title" tabindex="-1">'+esc(title)+'</h2>';
+  panelBody.innerHTML=body;
   if(!panel.open)panel.showModal();
-  panel.scrollTop=0;panelBody.querySelector('h2').focus({preventScroll:true});
+  panel.scrollTop=0;panelHeading.querySelector('h2').focus({preventScroll:true});
 }
 function showFamily(){
   const available=accessibleProfiles();
@@ -124,8 +133,8 @@ function saveVisitClinic(form){
 }
 function storeVisitEdit(form,v,updated){
   const latest=latestProfile().addedVisits.find(row=>row[0]===v[0])||v,expected=form.visitBase||v;
-  const fields=form.id==='visit-clinic-form'?[9]:[1,2,3,5,9];
-  if(fields.some(i=>latest[i]!==expected[i])){
+  const fields=form.id==='visit-clinic-form'?[9]:['visit-rx-form','edit-medicine-form'].includes(form.id)?[8]:[1,2,3,5,9];
+  if(fields.some(i=>JSON.stringify(latest[i])!==JSON.stringify(expected[i]))){
     form.querySelector('.error').textContent='Визит уже изменился. Откройте актуальную карточку перед сохранением.';return;
   }
   const id=v[0],rows=current().addedVisits,idx=rows.findIndex(r=>r[0]===id),match=sameVisit(updated);
@@ -140,22 +149,25 @@ function storeVisitEdit(form,v,updated){
   render();goBack();
 }
 function showVisit(id){
-  const v=visitById(id),meds=prescribedForReview(id),files=allFiles().filter(f=>f.visit===id),linked=labs().filter(l=>l.visit===id);
+  const v=visitById(id),meds=prescribedForReview(id),{files,reports:linked,medicines}=visitLinkedRecords(id);
   const reviews=current().reviews.filter(r=>r.visit===id).slice().reverse(),notes=current().notes.filter(n=>n.visit===id);
   openPanel(person.name,v[2],`
     <p class="detail-meta">${icon('calendar')}${dateLabel(v[1],{day:'numeric',month:'long',year:'numeric'})}</p>
     <p class="detail-meta">${visitClinic(v)?'Клиника · '+esc(visitClinic(v)):''} ${readOnly?'':act('editVisitClinic',visitClinic(v)?'Изменить клинику':'Указать клинику',id,'text-button')}</p>
     ${tagStrip('visit',id)}<div class="visit-links">${v[7]?act('episode',v[4],v[7],'chip-link','folder'):''}${person.doctors[v[3]]?act('doctor',doctorLabel(v[3]),v[3],'chip-link','scope'):''}</div><p class="visit-summary">${esc(v[5])}</p>
     ${readOnly?'':act('editVisit','Редактировать визит',id,'button secondary','edit')}
+    ${readOnly?'':act('visitPrescriptions','Назначения врача',id,'button secondary','pill')}
+    ${readOnly?'':act('visitLinksEditor','Связанные записи',id,'button secondary','clip')}
     ${readOnly?'':act('intake',intakeFiles(id).some(f=>!f.checked)?'Продолжить сверку назначений':'Документы и сверка назначений',id,'button secondary','clip')}
     <div class="visit-options">${v[7]?act('brief','Сводка к приёму',v[7],'chip-link','book'):''}${readOnly?'':act('consult','Обсудить с ИИ','visit:'+id,'chip-link','spark')}
     ${!readOnly&&previousMeds(v[7],v[1],id).length?act('therapy','Пересмотреть предыдущую схему',id,'text-button','pill'):''}</div>
     ${current().changes.filter(c=>c.visit===id).map(c=>'<p class="fact-note">'+esc(decisionText(c))+'</p>').join('')}
     <nav class="visit-jumps"  aria-label="Содержание визита">${meds.length?act('jump','Назначения · '+meds.length,'visit-meds','jump-link'):''}${act('jump','Анализы · '+linked.length,'visit-labs','jump-link')}${act('jump','Вложения · '+files.length,'visit-files','jump-link')}${act('jump','Пометки · '+notes.length,'visit-notes','jump-link')}</nav>
     ${meds.length||reviews.length?`<section class="ai-box"><div><h3>${icon('spark')} Разбор лечения</h3><small>${intakeFiles(id).length||id!==person.course?.visit?'Один запрос по сверенным сведениям визита':'Деморежим · данные обрабатываются локально'}</small></div>
-    ${readOnly?'':reviewReady(id)?act('analyze','Сделать ИИ-анализ лечения',id,'button primary'):'<p class="hint">Для нового разбора завершите сверку назначений.</p>'}${!readOnly&&current().auto&&reviewReady(id)&&!intakeFiles(id).length?act('manual','Разобрать в своём ChatGPT',id,'inline-action'):''}${reviews[0]?act('review','Последний разбор · '+stamp(reviews[0].time),reviews[0].id,'inline-action'):''}
+    ${readOnly?'':reviewReady(id)?act('analyze','Сделать ИИ-анализ лечения',id,'button primary'):'<p class="hint">'+(meds.some(m=>m.strengthUnspecified)?'Для разбора нужно уточнить дозировку.':'Для нового разбора завершите сверку назначений.')+'</p>'}${!readOnly&&current().auto&&reviewReady(id)&&!intakeFiles(id).length?act('manual','Разобрать в своём ChatGPT',id,'inline-action'):''}${reviews[0]?act('review','Последний разбор · '+stamp(reviews[0].time),reviews[0].id,'inline-action'):''}
     ${reviews.length>1?'<details><summary>Предыдущие разборы ('+(reviews.length-1)+')</summary>'+reviews.slice(1).map(r=>act('review',stamp(r.time),r.id,'text-button')).join('')+'</details>':''}</section>
     <section id="visit-meds" class="panel-section"><h3>Назначения врача</h3><div class="prescription-list">${meds.map((m,i)=>drugBlock(m,i,true,id)).join('')}</div></section>`:'<p class="fact-note">Пока нет сверенных лекарственных назначений.</p>'}
+    ${medicines.length?'<section class="panel-section"><h3>Связанные лекарства</h3>'+medicines.map(m=>resultRow('linkedVisitMedicine',m.id,m.title,m.detail,'pill')).join('')+'</section>':''}
     <section class="panel-section"><h3>Рекомендации врача</h3>${recommendationsSection(id)}</section>
     <section id="visit-labs" class="panel-section"><h3>Лабораторные анализы</h3>${linked.length?linked.map(l=>resultRow('lab',l.id,reportInfo(l).name,dateLabel(reportInfo(l).date),'lab')).join(''):'<p class="hint">Нет связанных бланков.</p>'}</section>
     <section class="panel-section"><h3>Результаты обследований</h3>${examListing(current().exams.filter(e=>e.visit===id))||'<p class="hint">Нет связанных обследований.</p>'}${readOnly?'':act('newExam','Добавить обследование',id,'text-button','plus')}</section>
@@ -172,19 +184,58 @@ function addNote(id){
   openPanel('Пометка к визиту',visitById(id)[2],`<form id="note-form" class="edit-form" data-id="${id}"><label>Текст пометки<textarea required name="note" maxlength="800"></textarea></label><p class="hint">Увидят все, кому доступна карточка ${esc(person.name)}.</p><button class="button primary">Сохранить пометку</button></form>`);
 }
 const pages={manageRecords,removeRecord,resumeExam:id=>editExam(null,'',id),exam:showExam,newExam:visit=>editExam(null,visit),editExam:id=>editExam(id),editVisitClinic:visitClinicEditor,editVisit:visitEditor,editEpisode:showNewEpisode,drive:drivePanel,deviceUpdate:updateDevicePanel,joinDevice:joinDevicePanel,grantDevice:grantDevicePanel,revokeDevice:revokeDevicePanel,newFamily:()=>familyForm(true),newMember:()=>familyForm(false),recommendVisit:recommendationEditor,readDraft:id=>openImportDraft(id,'local'),manualDraft:id=>openImportDraft(id,'manual'),prevent:preventCard,editPrevent:preventionForm,completePrevent,tagLibrary,tagDefinition,removeTag:tagRemoval,recordTags:tagEditor,family:showFamily,medical:showMedical,visit:showVisit,doctor:showDoctor,episode:episodeCard,field:showField,removeField:showDelete,
-  search:showSearch,lab:labCard,trend:indicatorView,file:showFile,upload:selectUpload,period:showPeriod,finish:showFinish,consent:showConsent,
+  search:showSearch,lab:labCard,trend:indicatorView,file:showFile,upload:selectUpload,period:showPeriod,editMedicine:showMedicineEdit,finish:showFinish,consent:showConsent,visitLinksEditor,linkedVisitMedicine,visitPrescriptions,
   review:showReview,manual:showManual,directTreatment:directTreatmentForm,therapy:therapyEditor,brief:visitBrief,measure:measureForm,measureChart,measurePoint,consult:newConsult,consultRecord,
   providers,prompts:promptManager,template:templateForm,resetTemplate:id=>changeTemplate(id,true,false),deleteTemplate:id=>changeTemplate(id,false,false),
   devices:familyDevices,archive:archivePanel,exportBackup:exportForm,importBackup:importForm,linkDocument,verifyLab,resumeVisit,analogs:showAnalogs,addNote,newEpisode:showNewEpisode,newVisit:showNewVisit,photoVisit:showPhotoVisit,intake:showIntake,verifyFile:showVerification};
-const restricted=new Set(['manageRecords','removeRecord','resumeExam','newExam','editExam','applyVisitTranscript','refreshRxDraft','editVisitClinic','editVisit','editEpisode','recommendVisit','readDraft','manualDraft','queueTreatment','editPrevent','completePrevent','tagDefinition','removeTag','recordTags','confirmTagRemoval','resumeVisit','directTreatment','therapy','verifyLab','linkDocument','measure','consult','providers','prompts','template','resetTemplate','deleteTemplate','exportBackup','importBackup','field','removeField','confirmDelete','finish','period','upload','analyze','consent','run','addNote','manual','copyPrompt','newEpisode','newVisit','photoVisit','visitMode','sampleVisit','intake','verifyFile','sampleRx','retryRead','appendMed','dropMed','deferVerify','intakeAnalyze']);
+const restricted=new Set(['manageRecords','removeRecord','resumeExam','newExam','editExam','applyVisitTranscript','refreshRxDraft','editVisitClinic','editVisit','visitLinksEditor','visitPrescriptions','editEpisode','recommendVisit','readDraft','manualDraft','queueTreatment','editPrevent','completePrevent','tagDefinition','removeTag','recordTags','confirmTagRemoval','resumeVisit','directTreatment','therapy','verifyLab','linkDocument','measure','consult','providers','prompts','template','resetTemplate','deleteTemplate','exportBackup','importBackup','field','removeField','confirmDelete','finish','period','editMedicine','upload','analyze','consent','run','addNote','manual','copyPrompt','newEpisode','newVisit','photoVisit','visitMode','sampleVisit','intake','verifyFile','sampleRx','retryRead','appendMed','dropMed','deferVerify','intakeAnalyze']);
 function displayRoute(){clearFileURL();const r=routes.at(-1);pages[r.name](r.id)}
-function go(name,id=''){routes.push({name,id});displayRoute()}
-function replaceRoute(name,id){routes.pop();go(name,id)}
-function goBack(){if(routes.length<=1){panel.close();return}routes.pop();displayRoute()}
+function actionTarget(control,root=control?.closest('main,header')){
+  if(!root?.contains(control)||!control.hasAttribute('data-action'))return ()=>control?.isConnected?control:null;
+  const {action,id}=control.dataset;
+  const matches=()=>[...root.querySelectorAll('[data-action]')].filter(el=>el.dataset.action===action&&el.dataset.id===id);
+  const index=matches().indexOf(control);
+  return ()=>control.isConnected?control:matches()[index];
+}
+function go(name,id='',trigger=document.activeElement){
+  const parent=routes.at(-1);
+  if(!panel.open)returnFocus=actionTarget(trigger);
+  else if(parent)parent.view={scroll:panel.scrollTop,results:panel.querySelector('#hits')?.scrollTop,focus:actionTarget(trigger,panel)};
+  routes.push({name,id});displayRoute();
+}
+function replaceRoute(name,id){routes.pop();routes.push({name,id});displayRoute()}
+function goBack(){
+  if(routes.length<=1){panel.close();return}
+  routes.pop();const parent=routes.at(-1),view=parent.view;
+  delete parent.view;displayRoute();
+  if(!view)return;
+  panel.scrollTop=view.scroll;
+  const hits=panel.querySelector('#hits');if(hits)hits.scrollTop=view.results??0;
+  view.focus()?.focus({preventScroll:true});
+}
 panel.addEventListener('close',()=>{
   if(['newExam','editExam','resumeExam'].includes(routes.at(-1)?.name))render();
   clearFileURL();routes=[];
-  if(returnFocus?.isConnected)returnFocus.focus({preventScroll:true});else main.focus({preventScroll:true});
+  const target=returnFocus?.()||main;returnFocus=null;target.focus({preventScroll:true});
+});
+function sectionAddress(id,profileId){
+  const url=new URL(location.href);
+  for(const key of ['new','mode','example','visit','brief','connect','view'])url.searchParams.delete(key);
+  url.searchParams.set('section',id);
+  if(profileId)url.searchParams.set('profile',profileId);
+  if(id==='labs'&&analysisMode==='prevention')url.searchParams.set('view','prevention');
+  return url;
+}
+window.addEventListener('popstate',()=>{
+  const address=new URLSearchParams(location.search);
+  const profile=accessibleProfiles().find(p=>p.id===address.get('profile'))||viewerPerson;
+  const next=sectionFrom(address),prevention=next==='labs'&&address.get('view')==='prevention';
+  if(profile===person&&next===section&&(!prevention||analysisMode==='prevention'))return;
+  if(profile!==person){person=profile;labFilter='Все'}
+  section=next;sectionQuery='';
+  if(prevention)analysisMode='prevention';
+  if(panel.open)panel.close();
+  render();
 });
 panel.addEventListener('click',e=>{
   if(e.target!==panel)return;const r=panel.getBoundingClientRect();
@@ -194,7 +245,7 @@ document.addEventListener('click',e=>{
   const button=e.target.closest('[data-action]');if(!button)return;
   const {action,id=''}=button.dataset;
   if(readOnly&&restricted.has(action))return;
-  if(Object.hasOwn(pages,action)){go(action,id|| (action==='search'?'any':''));return}
+  if(Object.hasOwn(pages,action)){go(action,id|| (action==='search'?'any':''),button);return}
   appExtrasClick(action,id,button);
   switch(action){
     case 'pinFile':case 'pinEpisode':deviceSync.pin(action==='pinEpisode',id,button);break;
@@ -204,14 +255,14 @@ document.addEventListener('click',e=>{
     case 'sampleVisit':exampleForVisit(button);break;
     case 'deferVisit':{
       const draft=routes.at(-1)?.photo;
-      if(!readOnly&&draft){keepVisitFields(button.form,draft);section='overview';render();panel.close()}break;
+      if(!readOnly&&draft){keepVisitFields(button.form,draft);section='overview';history.replaceState(null,'',sectionAddress(section));render();panel.close()}break;
     }
     case 'visitMode':switchVisitMode(button.dataset.mode,id);break;
     case 'retryRead':retryRecognition(id);break;
     case 'applyVisitTranscript':applyVisitTranscript();break;
     case 'refreshRxDraft':refreshRxDraft(id);break;
     case 'appendMed':{
-      document.querySelector('#rx-rows').insertAdjacentHTML('beforeend',medicineInputs({}));
+      document.querySelector('#rx-rows').insertAdjacentHTML('beforeend',medicineInputs({},button.form?.id==='visit-rx-form'));
       const none=document.querySelector('#verify-form [name=none]');if(none)none.checked=false;
       document.querySelector('#rx-rows fieldset:last-child input').focus();break;
     }
@@ -223,11 +274,16 @@ document.addEventListener('click',e=>{
     case 'jump':{
       const target=document.getElementById(id);target.tabIndex=-1;target.focus({preventScroll:true});target.scrollIntoView({block:'start'});break;
     }
-    case 'section':section=id;sectionQuery='';render();break;
-    case 'labFilter':labFilter=id;render();break;
+    case 'section':{
+      const restoreFocus=button.matches('.section-nav button:focus');
+      if(section!==id)history.pushState(null,'',sectionAddress(id));
+      section=id;sectionQuery='';render();
+      if(restoreFocus)main.querySelector('.section-nav [aria-current="page"]').focus({preventScroll:true});
+      break;
+    }
     case 'select':{
       const next=accessibleProfiles().find(p=>p.id===id);if(!next)return;
-      if(workingFamily)history.replaceState(null,'','?space=family&profile='+encodeURIComponent(next.id));
+      history.replaceState(null,'',sectionAddress('overview',next.id));
       person=next;labFilter='Все';section='overview';sectionQuery='';render();panel.close();break;
     }
     case 'confirmDelete':current().fields=current().fields.filter(f=>f.id!==id);saveState();render();routes=routes.filter(r=>r.name!=='field'&&r.name!=='removeField');displayRoute();break;
@@ -275,6 +331,9 @@ document.addEventListener('submit',e=>{
     case 'episode-form':submitEpisode(f);break;
     case 'visit-clinic-form':saveVisitClinic(f);break;
     case 'visit-edit-form':saveVisitEdit(f);break;
+    case 'visit-links-form':saveVisitLinks(f);break;
+    case 'visit-rx-form':saveVisitPrescriptions(f);break;
+    case 'edit-medicine-form':saveMedicineEdit(f);break;
     case 'visit-form':submitVisit(f,e.submitter?.value);break;
     case 'verify-form':storeVerification(f);break;
     case 'period-form':savePeriod(f);break;
@@ -294,7 +353,6 @@ if(!workingFamily&&person.id==='anna'&&!current().reviews.length){
   const sample=createReview(person.course.visit);
   sample.time='2026-11-18T12:00:00+03:00';current().reviews.push(sample);saveState();
 }
-if(workingFamily)document.querySelector('.bar-actions .demo')?.remove();
 document.querySelector('.bar-actions').inert=false;
 render();
 const returningFromChatGPT=chatGPT.usesBroker&&new URLSearchParams(location.hash.slice(1)).has('chatgpt');

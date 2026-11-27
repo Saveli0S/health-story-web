@@ -45,6 +45,20 @@ function consultPage(){
     (!readOnly?'<p class="listing-hint">'+providerStatus()+' · '+act('providers',chatGPT.connected||routerKey?'Управлять подключением':'Подключить ИИ','','inline-action')+'</p>':'')+
     (person.id==='anna'&&!readOnly?act('consult','Пример оценки риска','risk-demo','button secondary','spark'):'')+'<h3>История профиля</h3>'+(rows.map(r=>resultRow('consultRecord',r.id,r.question,stamp(r.time)+' · '+(r.answer?'Ответ сохранён':'Запрос подготовлен'),'spark')).join('')||'<p class="empty">Здесь появятся запросы и ответы для '+esc(person.name)+'.</p>')+'</section>';
 }
+function consultTemplatePicker(templates,selected){
+  const options=[{id:'',name:'Свой запрос'},...templates];
+  const initial=options.find(t=>t.id===selected)||options[0];
+  return `<div class="prompt-field">
+    <span id="prompt-picker-label">Промпт</span>
+    <input type="hidden" name="template" value="${esc(initial.id)}">
+    <details class="prompt-picker">
+      <summary aria-labelledby="prompt-picker-label prompt-picker-value"><span id="prompt-picker-value">${esc(initial.name)}</span>${icon('down',true)}</summary>
+      <div class="prompt-options" role="group" aria-label="Варианты промпта">
+        ${options.map(t=>`<button type="button" data-prompt-option="${esc(t.id)}" aria-pressed="${t.id===initial.id}">${icon('check',true)}<span>${esc(t.name)}</span></button>`).join('')}
+      </div>
+    </details>
+  </div>`;
+}
 function newConsult(initial){
   if(readOnly)return;
   const demo=initial==='risk-demo'&&person.id==='anna';
@@ -59,12 +73,26 @@ function newConsult(initial){
   }
   const templates=promptLibrary();
   if(prior?.template?.id&&!templates.some(t=>t.id===prior.template.id))templates.push(prior.template);
-  const picker=consultSourcePicker(consultSourceGroups(),seed);
-  openPanel(person.name,'Новая ИИ-консультация',`<form id="consult-form" class="edit-form"><label>Промпт<select name="template"><option value="">Свой запрос</option>${templates.map(t=>'<option value="'+esc(t.id)+'" '+((demo?'risk-factors':prior?.template?.id)===t.id?'selected':'')+'>'+esc(t.name)+'</option>').join('')}</select></label>
+  const sources=consultSourcePicker(consultSourceGroups(),seed);
+  const prompt=consultTemplatePicker(templates,demo?'risk-factors':prior?.template?.id);
+  openPanel(person.name,'Новая ИИ-консультация',`<form id="consult-form" class="edit-form">${prompt}
     <details id="template-details"><summary>Инструкция для ИИ</summary><p id="template-preview" class="hint"></p></details><label>Что нужно разобрать?<textarea name="question" maxlength="15000" placeholder="Например, что изменилось между двумя анализами?">${esc(demo?'Оцени риск диабета 2-го типа за ближайшие 10 лет. Каких данных не хватает?':prior?.question||'')}</textarea></label>
-    ${demo?'<p class="fact-note">Выберите тег «Терапевт» и визит «Плановый осмотр» от 30 октября. Затем смените тег на «Анализ крови» и добавьте «Биохимия крови» от 28 октября.</p>':''}${picker}
+    ${demo?'<p class="fact-note">Выберите тег «Терапевт» и визит «Плановый осмотр» от 30 октября. Затем смените тег на «Анализ крови» и добавьте «Биохимия крови» от 28 октября.</p>':''}${sources}
     <button class="button primary">Проверить запрос</button></form>`);
   const form=document.querySelector('#consult-form');form.templateOptions=templates;updateConsultTemplate(form);filterConsultSources(form);
+  const picker=form.querySelector('.prompt-picker'),toggle=picker.querySelector('summary');
+  function closePicker(){picker.open=false;toggle.focus()}
+  picker.onclick=event=>{
+    const option=event.target.closest('[data-prompt-option]');if(!option)return;
+    form.elements.template.value=option.dataset.promptOption;
+    toggle.querySelector('#prompt-picker-value').textContent=option.textContent;
+    for(const button of picker.querySelectorAll('[data-prompt-option]'))button.setAttribute('aria-pressed',button===option);
+    updateConsultTemplate(form);closePicker();
+  };
+  picker.onkeydown=event=>{
+    if(event.key!=='Escape'||!picker.open)return;
+    event.preventDefault();closePicker();
+  };
   form.querySelector('#selected-sources').onclick=e=>{
     const remove=e.target.closest('[data-unselect]');if(!remove)return;
     const input=[...form.querySelectorAll('[name=source]')].find(el=>el.value===remove.dataset.unselect);

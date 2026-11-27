@@ -77,6 +77,14 @@ const recordRemoval=(()=>{
   function remove(profile,spec){
     const p=JSON.parse(JSON.stringify(profile)),{group,id,index,other}=spec;
     const drop=(key,match)=>{if(Array.isArray(p[key]))p[key]=p[key].filter(r=>!match(r))};
+    const forgetMarket=criteriaId=>drop('marketFindings',r=>r.criteriaId===criteriaId);
+    const forgetMedicine=(visit,med)=>{
+      drop('visitLinks',r=>r.kind==='med'&&r.source===visit&&r.target===med);
+      if(!med)return;
+      const key=visit+'/'+med;
+      drop('marketCriteria',r=>r.id===key);
+      forgetMarket(key);
+    };
     const forget=(kind,ids)=>{
       const refs=new Set((references[kind]||[]).flatMap(tag=>ids.map(id=>tag+':'+id)));
       if(!refs.size)return;
@@ -89,8 +97,11 @@ const recordRemoval=(()=>{
     };
     const files=ids=>{
       const removed=new Set(ids);
+      for(const f of list(p,'files').filter(f=>removed.has(f.id)))
+        for(const med of list(f,'meds'))forgetMedicine(f.visit,med.id);
       drop('files',f=>removed.has(f.id));
       drop('docLinks',r=>removed.has(r.id)||removed.has(r.other));
+      drop('visitLinks',r=>['file','lab'].includes(r.kind)&&removed.has(r.target));
       drop('recommendations',r=>removed.has(r.source));
       for(const e of list(p,'exams'))e.attachments=list(e,'attachments').filter(a=>!removed.has(a.id));
       for(const d of list(p,'examDrafts'))d.sources=list(d,'sources').filter(a=>!removed.has(a.id));
@@ -107,6 +118,8 @@ const recordRemoval=(()=>{
         else if(Array.isArray(p[key]))p[key]=[];
       }
       p.periods=[];p.sampleAliases={};
+      if(Array.isArray(p.visitLinks))p.visitLinks=[];
+      if(Array.isArray(p.marketFindings))p.marketFindings=[];
       delete p.savedConflicts;
       return p;
     }
@@ -119,11 +132,19 @@ const recordRemoval=(()=>{
         values.splice(index);delete row.nextQuestion;
       }else values.splice(index,1);
       if(group==='visitMeds'||group==='fileMeds'){
-        if(med.id)drop('changes',r=>r.source===visit&&r.medId===med.id);
-        if(med.id)drop('marketCriteria',r=>r.id===visit+'/'+med.id);
+        if(med.id){
+          forgetMedicine(visit,med.id);
+          drop('changes',r=>{
+            if(r.source!==visit||r.medId!==med.id)return false;
+            if(r.replacement?.id)forgetMedicine(r.visit,r.replacement.id);
+            return true;
+          });
+        }
       }
       if((group==='labRows'||group==='labDraftRows')&&!values.length){
-        if(group==='labRows')delete row.lab;else delete row.labDraft;
+        if(group==='labRows'){
+          delete row.lab;drop('visitLinks',r=>r.kind==='lab'&&r.target===id);
+        }else delete row.labDraft;
       }
     }else if(group==='prompts')delete p.prompts[id];
     else if(group==='files')files([id]);
@@ -131,10 +152,12 @@ const recordRemoval=(()=>{
     else if(group==='visitDrafts')drop(group,r=>r.id===id||r.parent===id);
     else if(group==='addedVisits'){
       drop(group,r=>r[0]===id);
+      drop('visitLinks',r=>r.visit===id||(r.kind==='med'&&r.source===id));
       for(const key of ['notes','recommendations','reviews'])drop(key,r=>r.visit===id);
       drop('treatmentQueue',r=>r.id===id);
       drop('changes',r=>r.visit===id);
       drop('marketCriteria',r=>r.visit===id||r.id?.startsWith(id+'/'));
+      drop('marketFindings',r=>r.visit===id);
       if(p.prompts)delete p.prompts[id];
       for(const r of list(p,'changes'))if(r.source===id)r.source='';
       for(const key of ['files','exams'])for(const row of list(p,key))if(row.visit===id)row.visit='';
@@ -154,7 +177,14 @@ const recordRemoval=(()=>{
       drop(group,r=>r.id===id);
       examDraft(list(p,'examDrafts').filter(r=>r.exam===id).map(r=>r.id));
       for(const f of list(p,'files'))if(f.examId===id)delete f.examId;
-    }else drop(group,r=>r.id===id&&(group!=='docLinks'||r.other===other));
+    }else{
+      if(group==='marketCriteria')forgetMarket(id);
+      if(group==='changes'){
+        const change=list(p,group).find(r=>r.id===id);
+        if(change?.replacement?.id)forgetMedicine(change.visit,change.replacement.id);
+      }
+      drop(group,r=>r.id===id&&(group!=='docLinks'||r.other===other));
+    }
     forget(group,[id]);
     return p;
   }

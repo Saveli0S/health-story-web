@@ -66,7 +66,7 @@ const deviceSync=(()=>{
     let canvas,pdf;
     try{
       if(isPdf(item)){pdf=await openLocalPdf(blob);canvas=await drawPaper(await pdf.getPage(1),144)}
-      else canvas=await photoCanvas(blob,144);
+      else canvas=await photoCanvas(blob,144,item);
       const image=canvas.toDataURL('image/jpeg',0.58);
       if(image.length<24000)item.thumbnail=image;
     }catch{/* Unsupported image formats keep their original. */}
@@ -454,7 +454,13 @@ const deviceSync=(()=>{
   function draw(){
     const root=document.querySelector('#sync-view');if(!root||!workingFamily)return;
     const data=readJson(familyStateKey),ctx=config(data);
-    if(!ctx){root.innerHTML=viewer==='admin'?(cloudHosted?'<label>Код подключения семейного сервера<input id="sync-setup" type="password" autocomplete="off"></label>':'<p>Можно подключить эту семью к серверу обмена по адресу дневника.</p>')+'<button class="button secondary" data-sync="enable">Включить обмен между устройствами</button>':'<p>Для подключения обмена получите новый файл доступа у администратора.</p>'}
+    if(!ctx){
+      const setup=cloudHosted?'<label>Код подключения семейного сервера<input id="sync-setup" type="password" autocomplete="off"></label>'
+        :'<p>Можно подключить эту семью к серверу обмена по адресу дневника.</p>';
+      root.innerHTML=viewer==='admin'?`<div class="edit-form sync-connect">${setup}
+        <button class="button secondary" data-sync="enable">Включить обмен между устройствами</button></div>`
+        :'<p>Для подключения обмена получите новый файл доступа у администратора.</p>';
+    }
     else{
       const names=pending(data).map(id=>{
         const p=data.profiles[id],b=ctx.profiles[id].base.records?.value||{},changes=[];
@@ -477,8 +483,11 @@ const deviceSync=(()=>{
         const title=document.createElement('p'),record=c.path[1]?.id;
         const labels={fields:'Медкарта',addedVisits:'Визит',notes:'Пометка',files:'Документ',measurements:'Измерение',episodes:'Эпизод',consultations:'Консультация',auto:'Автоанализ',directAuto:'Автоотправка в OpenRouter',chatGPTAuto:'Автоотправка в ChatGPT'};
         const item=c.path[0]==='fields'?p.fields.find(f=>f.id===record)?.label:c.path[0]==='addedVisits'?p.addedVisits.find(v=>v[0]===record)?.[2]:null;
-        title.textContent='Расхождение · '+data.family.members.find(m=>m.id===id)?.name+' · '+(labels[c.path[0]]||'Запись')+(item?' · '+item:'');root.append(title);
+        title.textContent='Расхождение · '+data.family.members.find(m=>m.id===id)?.name+' · '+(labels[c.path[0]]||'Запись')+(item?' · '+item:'');
         const editable=!readOnly&&(c.lane!=='consent'||!data.access||data.access.member===id);
+        const conflict=document.createElement('div'),options=document.createElement('div');
+        conflict.className='sync-conflict';options.className=editable?'actions archive-actions':'sync-conflict';
+        conflict.append(title,options);root.append(conflict);
         for(const side of ['local','remote']){
           const candidate=c[side],node=document.createElement(editable?'button':'p');
           const value=typeof candidate.value==='object'?JSON.stringify(candidate.value):String(candidate.value??'');
@@ -491,7 +500,7 @@ const deviceSync=(()=>{
               syncMerge.choose(local,held.path,held[side]);local.savedConflicts=local.savedConflicts.filter(x=>x.id!==c.id);
               commit(raw,fresh,true);
             }
-          })}root.append(node);
+          })}options.append(node);
         }
       }
     }

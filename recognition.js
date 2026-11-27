@@ -29,18 +29,58 @@ async function drawPaper(page,longSide){
   return canvas;
 }
 function isTextFile(file){return file.type==='text/plain'||/\.txt$/i.test(file.name||'')}
-function isPhoto(file){return /^image\//.test(file.type)||/\.(?:png|jpe?g|webp|heic|heif)$/i.test(file.name||'')}
+const photoAccept='image/*,.heic,.heif';
+function isHeif(file){return /^image\/hei[cf](?:-sequence)?$/i.test(file.type||'')||/\.hei[cf]$/i.test(file.name||'')}
+function isPhoto(file){return /^image\//.test(file.type)||/\.(?:png|jpe?g|webp)$/i.test(file.name||'')||isHeif(file)}
 function isPdf(file){return file.type==='application/pdf'||/\.pdf$/i.test(file.name||'')}
-async function photoCanvas(blob,longSide=2600){
+async function loadBrowserPhoto(blob){
   const url=URL.createObjectURL(blob),image=new Image();
   try{
-    image.src=url;await image.decode();
-    const ratio=Math.min(1,longSide/Math.max(image.naturalWidth,image.naturalHeight));
-    const canvas=document.createElement('canvas');
-    canvas.width=Math.round(image.naturalWidth*ratio);canvas.height=Math.round(image.naturalHeight*ratio);
-    const context=canvas.getContext('2d');context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);
-    context.drawImage(image,0,0,canvas.width,canvas.height);return canvas;
+    image.src=url;await image.decode();return image;
   }finally{URL.revokeObjectURL(url)}
+}
+let heifDecodeQueue=Promise.resolve();
+function loadHeifPhoto(blob,longSide){
+  // A full-resolution decode can use substantial memory. Run one at a time off the UI thread.
+  const job=heifDecodeQueue.then(()=>new Promise((resolve,reject)=>{
+    const worker=new Worker(new URL('heif-worker.js',recognitionRoot),{type:'module'});
+    const failed=()=>finish(null);
+    const timeout=setTimeout(failed,30000);
+    function finish(bitmap){
+      clearTimeout(timeout);worker.terminate();
+      if(bitmap)resolve(bitmap);
+      else reject(Error('Не удалось преобразовать HEIC или HEIF.'));
+    }
+    worker.onmessage=event=>finish(event.data);
+    worker.onerror=failed;
+    worker.onmessageerror=failed;
+    worker.postMessage({blob,longSide});
+  }));
+  heifDecodeQueue=job.then(()=>{},()=>{});
+  return job;
+}
+function drawPhoto(image,width,height,longSide){
+  const ratio=Math.min(1,longSide/Math.max(width,height));
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.max(1,Math.round(width*ratio));
+  canvas.height=Math.max(1,Math.round(height*ratio));
+  const context=canvas.getContext('2d');
+  context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);
+  context.drawImage(image,0,0,canvas.width,canvas.height);
+  return canvas;
+}
+async function openPhoto(blob,metadata=blob,longSide=2600){
+  try{return await loadBrowserPhoto(blob)}
+  catch(error){
+    if(!isHeif(metadata)&&!isHeif(blob))throw error;
+    const bitmap=await loadHeifPhoto(blob,longSide);
+    try{return drawPhoto(bitmap,bitmap.width,bitmap.height,longSide)}
+    finally{bitmap.close()}
+  }
+}
+async function photoCanvas(blob,longSide=2600,metadata=blob){
+  const photo=await openPhoto(blob,metadata,longSide);
+  return photo instanceof HTMLCanvasElement?photo:drawPhoto(photo,photo.naturalWidth,photo.naturalHeight,longSide);
 }
 // Tesseract TSV gives word confidence for raster pages. Keep questionable lines local for review.
 function uncertainLines(tsv,page){

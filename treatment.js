@@ -1,19 +1,24 @@
 'use strict';
 
 function coursePeriod(p) {
+  if(p.unconfirmed)return 'Приём не подтверждён';
   const end=p.closed ? (p.end?dateLabel(p.end):'дата неизвестна') : (p.planned?dateLabel(p.planned):'окончание не указано');
   return (p.start?dateLabel(p.start):'начало не указано')+' — '+end+(p.closed?' · завершён':' · по плану');
 }
 function drugBlock(m,i,detail=false,visit) {
-  const key=m.continuedFrom&&Object.hasOwn(m,'sourceKey')?m.sourceKey:medKey(visit,i), review=current().reviews.filter(r=>r.visit===visit).at(-1);
+  const continued=m.continuedFrom&&Object.hasOwn(m,'sourceKey');
+  const key=continued?m.sourceKey:medKey(visit,i),review=current().reviews.filter(r=>r.visit===visit).at(-1);
+  const source=continued&&key!==null?medFromKey(key):{visit,med:m};
+  const editKey=source.med?.id?JSON.stringify([source.visit,source.med.id]):null;
   const status=m.endedBy?({dose:'Дозировка изменена',replace:'Препарат заменён',stop:'Препарат отменён'}[m.endedBy.kind]||'Схема изменена'):'';
   const item=effectiveReviewItems(review)[i], snapshot=review?.payload?.назначения?.[i];
-  const matches=snapshot?.название===m.name && snapshot?.дозировка===m.strength && snapshot?.схема===m.instructions;
+  const matches=snapshot?.название===m.name&&snapshot?.дозировка===m.strength&&snapshot?.форма===m.form&&snapshot?.схема===m.instructions;
   return `<div class="medication">
-    <div class="drug">${icon(m.fixture?(i?'drop':'spray'):'pill')}<div><strong>${esc(m.name)} · ${esc(m.strength)}</strong><small>${esc([m.form,m.pack].filter(Boolean).join(' · '))}</small></div></div>
+    <div class="drug">${icon(m.fixture?(i?'drop':'spray'):'pill')}<div><strong>${esc(m.name)} · ${esc(m.strengthUnspecified?'дозировка не указана':m.strength)}</strong><small>${esc([m.form,m.pack].filter(Boolean).join(' · '))}</small></div></div>
     <p class="regimen">${esc(m.instructions)}</p>
     <div class="period-line">${icon('calendar',true)}<span>${coursePeriod(m.period)}${m.endedBy?' · '+status+' '+dateLabel(m.endedBy.date)+' · '+esc(doctorLabel(m.endedBy.doctor)):''}</span>
-    ${readOnly||key===null?'':act('period','Изменить даты',key,'inline-action')}</div>
+    ${readOnly||key===null?'':'<span class="period-actions">'+(editKey?act('editMedicine','Редактировать',editKey,'inline-action'):'')+
+      act('period','Изменить даты',key,'inline-action')+'</span>'}</div>
     ${detail?`<div class="med-links"><span class="rating">${esc((matches?(item?.label||(review?.kind==='provider'?'См. ответ провайдера':review?.kind==='manual'?'См. ответ из ChatGPT':'')):'')||'Ожидает разбора')}</span>${key===null?external(pharmacySearch([m.name,m.strength,m.form].filter(Boolean).join(' ')),'Искать на tabletka.by'):act('analogs','Найти аналоги',key,'inline-action')}</div>`:''}
   </div>`;
 }
@@ -50,7 +55,9 @@ function savePeriod(f) {
   const d=new FormData(f), closed=d.get('closed')==='yes', start=d.get('start'), planned=d.get('planned');
   const end=closed?d.get('end')||'':'', unknown=closed && d.has('unknown');
   if((planned && planned<start) || (end && end<start)) {f.querySelector('.error').textContent='Окончание должно быть в день начала курса или позже.';return}
-  Object.assign(medFromKey(f.dataset.id).med.period,{start,planned,end,closed,unknown,note:d.get('note').trim()});
+  const period=medFromKey(f.dataset.id).med.period;
+  Object.assign(period,{start,planned,end,closed,unknown,note:d.get('note').trim()});
+  if(start||end||!closed)delete period.unconfirmed;
   saveState();render();goBack();
 }
 function showFinish(id) {
@@ -245,87 +252,250 @@ function validCatalogPackage(p){
   return p&&/^\d{1,12}$/.test(p.id)&&typeof p.name==='string'&&typeof p.form==='string'&&p.name&&p.form&&
     typeof p.substance==='string'&&Number.isFinite(p.min)&&Number.isFinite(p.max)&&p.min>0&&p.max>=p.min;
 }
-function liveMarket(m,city,criteria){
-  const root=document.querySelector('#live-market');if(!root)return;
-  const groupNames={exact:'Назначенная упаковка',analogue:'Совпадают состав и характеристики',otherPack:'Другие упаковки этого препарата',unverified:'Требуют сверки',different:'Отличаются от назначения'};
-  async function query(name,region){
-    const response=await fetch('https://health-story-sync.xzx89s.workers.dev/pharmacy/search',{method:'POST',credentials:'omit',referrerPolicy:'no-referrer',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,region}),signal:AbortSignal.timeout(15000)});
-    if(!response.ok)throw Error();
-    const data=await response.json();
-    if(data.region!==region||!Array.isArray(data.packages)||data.packages.some(p=>!validCatalogPackage(p))||
-      !Number.isFinite(Date.parse(data.checked))||Math.abs(Date.now()-Date.parse(data.checked))>30*60*1000)throw Error();
-    return data;
+function packageFromPrescription(visit,med){
+  if(med.pack)return med.pack;
+  const dose=marketDoseKey(med.strength),name=marketNorm(med.name);
+  if(!dose||!name)return '';
+  const sources=[...confirmedRecommendations(visit).map(r=>r.text),
+    ...intakeFiles(visit).filter(f=>f.checked).map(f=>f.transcription||f.raw||'')];
+  const packages=new Set();
+  for(const raw of sources){
+    for(const line of raw.split(/\r?\n/)){
+      const text=marketNorm(stripRxBullet(line.replace(/^\s*рекомендации по (?:медикаментозному )?лечению\s*:\s*/iu,'')));
+      if(!text.startsWith(name)||!/^[:\s·,(–—-]/u.test(text.slice(name.length)))continue;
+      const facts=marketDescription(text.slice(name.length));
+      if(facts.pack&&marketDoseKey(facts.strength)===dose)packages.add(marketPackKey(facts.pack));
+    }
   }
-  const run=async(region)=>{
-    root.replaceChildren();root.textContent='Проверяем предложения на tabletka.by…';
-    const names=[...new Set([criteria.trade||m.name,criteria.substance].filter(Boolean).map(n=>n.trim()))];
-    if(names.some(n=>!safeMarketQuery(n))){root.textContent='Уточните название или МНН для поиска в каталоге.';return}
-    const place=region==='0'?'Вся Беларусь':city;
-    try{
-      const responses=await Promise.allSettled(names.map(n=>query(n,region)));
-      if(!root.isConnected)return;
-      const data=responses.filter(r=>r.status==='fulfilled').map(r=>r.value);
-      if(!data.length)throw Error();
-      const checked=data.map(d=>Date.parse(d.checked));
-      const packages=[...new Map(data.flatMap(d=>d.packages).map(p=>[p.id,p])).values()];
-      root.innerHTML='<p>'+esc(place)+' · '+esc(stamp(Math.min(...checked)))+'</p>';
-      if(data.some(r=>r.partial))root.insertAdjacentHTML('beforeend','<p>У части строк каталога не удалось подтвердить цену или наличие.</p>');
-      if(data.length<responses.length)root.insertAdjacentHTML('beforeend','<p>Один из поисков недоступен. Список может быть неполным.</p>');
-      if(!packages.length)root.insertAdjacentHTML('beforeend','<p>В выбранном регионе подтверждённых предложений нет.</p>');
-      const groups=new Map(),catalogPrices=new Map();
-      for(const p of packages){
-        const assessment=packageAssessment(p,m,criteria),group=groups.get(assessment.group)||[];
-        const link=new URL('https://tabletka.by/result/');link.searchParams.set('ls',p.id);if(region!=='0')link.searchParams.set('region',region);
-        const displayPrice=['exact','analogue','otherPack'].includes(assessment.group);
-        const price=esc(p.min.toFixed(2)+' – '+p.max.toFixed(2))+' BYN';
-        const canInspect=assessment.group==='unverified'&&p.pharmacyCount>0&&assessment.facts.strength&&assessment.facts.form&&assessment.facts.pack;
-        if(canInspect)catalogPrices.set(p.id,price);
-        const selected=canInspect?'<button class="text-button" data-catalog-price="'+esc(p.id)+'">Посмотреть цену этой упаковки</button>':'';
-        group.push('<div class="market-row"><div><strong>'+esc(p.name)+'</strong><small>'+esc([p.form,p.manufacturer,p.substance].filter(Boolean).join(' · '))+'</small><small>'+esc(assessment.why)+'</small></div><div>'+
-          (displayPrice?price+' ':selected)+external(link.href,'Наличие')+'</div></div>');
-        groups.set(assessment.group,group);
-      }
-      for(const [key,label] of Object.entries(groupNames)){
-        const rows=groups.get(key);if(!rows)continue;
-        const summary=esc(label)+' · '+rows.length;
-        root.insertAdjacentHTML('beforeend',['different','unverified'].includes(key)?'<details><summary>'+summary+'</summary>'+rows.join('')+'</details>':'<h3>'+summary+'</h3>'+rows.join(''));
-      }
-      for(const button of root.querySelectorAll('[data-catalog-price]'))button.onclick=()=>{
-        const display=document.createElement('p');
-        display.textContent='Выбранная упаковка каталога · '+catalogPrices.get(button.dataset.catalogPrice)+' · '+place+' · '+stamp(Math.min(...checked));
-        button.replaceWith(display);
-      };
-    }catch{if(root.isConnected)root.textContent='Сейчас получить цены из каталога не удалось. Поиск на tabletka.by доступен по ссылке.'}
-    if(region!=='0'&&root.isConnected){const b=document.createElement('button');b.className='text-button';b.textContent='Искать по всей Беларуси';b.onclick=()=>run('0');root.append(b)}
-  };
-  root.querySelector('button').onclick=()=>run(pharmacyRegions[city]);
+  return packages.size===1?[...packages][0]:'';
 }
+
+function catalogSubstance(packages,med,criteria){
+  const target=marketDescription(med.form||criteria.form),dose=marketDoseKey(med.strength);
+  if(!target.form||!dose)return '';
+  const matches=packages.filter(p=>{
+    const facts=marketDescription(p.form);
+    return marketNorm(p.name)===marketNorm(criteria.trade||med.name)&&
+      facts.form===target.form&&marketDoseKey(facts.strength)===dose;
+  });
+  if(matches.some(p=>!safeMarketQuery(p.substance)))return '';
+  const substances=new Map(matches.map(p=>[marketNorm(p.substance),p.substance]));
+  return substances.size===1?[...substances.values()][0]:'';
+}
+
+async function queryMarket(name,region){
+  const response=await fetch('https://health-story-sync.xzx89s.workers.dev/pharmacy/search',{
+    method:'POST',credentials:'omit',referrerPolicy:'no-referrer',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name,region}),signal:AbortSignal.timeout(15000)
+  });
+  if(!response.ok)throw Error();
+  const data=await response.json();
+  if(data.region!==region||!Array.isArray(data.packages)||data.packages.some(p=>!validCatalogPackage(p))||
+    !Number.isFinite(Date.parse(data.checked))||Math.abs(Date.now()-Date.parse(data.checked))>30*60*1000)throw Error();
+  return data;
+}
+
+async function searchMarket(med,criteria,region){
+  const trade=criteria.trade||med.name;
+  const names=[...new Set([trade,criteria.substance].filter(Boolean))];
+  const attempts=await Promise.allSettled(names.map(name=>queryMarket(name,region)));
+  if(!criteria.substance&&attempts[0]?.status==='fulfilled'){
+    const substance=catalogSubstance(attempts[0].value.packages,med,criteria);
+    if(substance&&marketNorm(substance)!==marketNorm(trade)){
+      criteria.substance=substance;
+      criteria.substanceFromCatalog=true;
+      attempts.push(...await Promise.allSettled([queryMarket(substance,region)]));
+    }
+  }
+  const responses=attempts.filter(r=>r.status==='fulfilled').map(r=>r.value);
+  if(!responses.length)throw Error();
+  const packages=[...new Map(responses.flatMap(r=>r.packages).map(p=>[String(p.id),p])).values()];
+  const snapshots=packages.slice(0,80).map(({id,name,form,manufacturer,substance,min,max,pharmacyCount})=>
+    ({id,name,form,manufacturer,substance,min,max,pharmacyCount}));
+  const {lastSearch,...snapshotCriteria}=criteria;
+  return {region,checked:new Date(Math.min(...responses.map(r=>Date.parse(r.checked)))).toISOString(),
+    partial:responses.some(r=>r.partial),incomplete:responses.length<attempts.length,
+    limited:snapshots.length<packages.length,packages:snapshots,criteria:snapshotCriteria};
+}
+
+function marketPlace(region){
+  return region==='0'?'Вся Беларусь':Object.keys(pharmacyRegions).find(city=>pharmacyRegions[city]===region)||'Регион поиска';
+}
+
+function marketFindingRows(search,criteriaId,visit,prescription){
+  if(!Array.isArray(search?.packages)||!Number.isFinite(Date.parse(search.checked)))return [];
+  const {region,checked}=search;
+  return search.packages.filter(validCatalogPackage).map(p=>({
+    id:JSON.stringify([criteriaId,prescription,region,String(p.id)]),criteriaId,visit,prescription,
+    observation:JSON.stringify({...p,id:String(p.id),region,checked})
+  }));
+}
+
+function mergeMarketFindings(existing,incoming){
+  const rows=new Map(existing.map(row=>[row.id,row]));
+  for(const row of incoming){
+    const old=rows.get(row.id);
+    if(!old||Date.parse(savedMarketSearch(row.observation)?.checked)>Date.parse(savedMarketSearch(old.observation)?.checked))rows.set(row.id,row);
+  }
+  return [...rows.values()];
+}
+
+function showMarketResults(root,med,search,criteria,findings,findNationwide){
+  if(!search&&!findings.length)return;
+  const observations=findings.map(row=>savedMarketSearch(row.observation))
+    .filter(p=>validCatalogPackage(p)&&Number.isFinite(Date.parse(p.checked)))
+    .sort((a,b)=>Date.parse(b.checked)-Date.parse(a.checked));
+  const packages=new Map();
+  for(const p of observations){
+    if(!packages.has(p.id))packages.set(p.id,[]);
+    packages.get(p.id).push(p);
+  }
+  const groupNames={exact:'Назначенная упаковка',analogue:'Совпадают состав и характеристики',otherPack:'Другие упаковки этого препарата',unverified:'Требуют сверки',different:'Отличаются от назначения'};
+  root.innerHTML=(search?'<h3>Последний поиск</h3><p>'+esc(marketPlace(search.region))+' · '+esc(stamp(search.checked))+'</p>':'')+
+    (search?.partial?'<p>У части строк каталога не удалось подтвердить цену или наличие.</p>':'')+
+    (search?.incomplete?'<p>Один из поисков недоступен. Список может быть неполным.</p>':'')+
+    (search?.limited?'<p>Сохранены первые 80 предложений этого поиска.</p>':'')+
+    (search&&(search.packageCount??search.packages?.length)===0?'<p>В выбранном регионе подтверждённых предложений нет.</p>':'')+
+    (packages.size?'<h3>Сохранённые результаты · '+packages.size+'</h3>':'');
+  const groups=new Map(),catalogPrices=new Map();
+  for(const entries of packages.values()){
+    const [p]=entries;
+    const assessment=packageAssessment(p,med,criteria),group=groups.get(assessment.group)||[];
+    const displayPrice=['exact','analogue','otherPack'].includes(assessment.group);
+    const canInspect=assessment.group==='unverified'&&p.pharmacyCount>0&&assessment.facts.strength&&assessment.facts.form&&assessment.facts.pack;
+    const regionalPrices=withPrice=>entries.map(offer=>{
+      const link=new URL('https://tabletka.by/result/');
+      link.searchParams.set('ls',offer.id);
+      if(offer.region!=='0')link.searchParams.set('region',offer.region);
+      const price=offer.min.toFixed(2)+' – '+offer.max.toFixed(2)+' BYN';
+      const details=[withPrice?price:'',marketPlace(offer.region),stamp(offer.checked)].filter(Boolean).join(' · ');
+      return '<div class="market-price">'+esc(details)+' '+external(link.href,'Наличие')+'</div>';
+    }).join('');
+    if(canInspect)catalogPrices.set(p.id,regionalPrices(true));
+    const selected=canInspect?'<button type="button" class="text-button" data-catalog-price="'+esc(p.id)+'">Посмотреть цену этой упаковки</button>':'';
+    group.push('<div class="market-row" data-package-id="'+esc(p.id)+'"><div><strong>'+esc(p.name)+'</strong>'+
+      '<small class="market-substance">'+esc(p.substance?'Действующее вещество · '+p.substance:'Действующее вещество не указано')+'</small>'+
+      '<small>'+esc([p.form,p.manufacturer].filter(Boolean).join(' · '))+'</small><small>'+esc(assessment.why)+'</small></div>'+
+      '<div class="market-prices">'+selected+regionalPrices(displayPrice)+'</div></div>');
+    groups.set(assessment.group,group);
+  }
+  for(const [key,label] of Object.entries(groupNames)){
+    const rows=groups.get(key);if(!rows)continue;
+    const summary=esc(label)+' · '+rows.length;
+    const expanded=key==='unverified'&&!['exact','analogue','otherPack'].some(group=>groups.has(group));
+    root.insertAdjacentHTML('beforeend',['different','unverified'].includes(key)?
+      '<details'+(expanded?' open':'')+'><summary>'+summary+'</summary>'+rows.join('')+'</details>':'<h4>'+summary+'</h4>'+rows.join(''));
+  }
+  for(const button of root.querySelectorAll('[data-catalog-price]'))button.onclick=()=>{
+    button.parentElement.innerHTML='<strong>Выбранная упаковка каталога</strong>'+catalogPrices.get(button.dataset.catalogPrice);
+  };
+  if(search&&search.region!=='0'){
+    const nationwide=document.createElement('button');
+    nationwide.type='button';nationwide.className='text-button';nationwide.textContent='Искать по всей Беларуси';
+    nationwide.onclick=findNationwide;
+    root.append(nationwide);
+  }
+}
+
+function savedMarketSearch(value){
+  if(typeof value!=='string')return null;
+  try{return JSON.parse(value)}catch{return null}
+}
+
 function showAnalogs(id){
   const {visit,index,med:m}=medFromKey(id);if(!m)return;
-  const key=visit+'/'+(m.id||medicineSignature(m)),city=prototypeState.city,profile=current();
+  const key=visit+'/'+(m.id||medicineSignature(m)),city=prototypeState.city,region=pharmacyRegions[city],profile=current();
+  const prescription=marketPrescriptionKey(m);
   const original=marketDescription(m.form),fixture=m.fixture&&index===0;
-  const criteria=profile.marketCriteria?.find(c=>c.id===key&&c.prescription===marketPrescriptionKey(m))||{id:key,visit,trade:m.name,form:m.form,substance:fixture?'Мометазон':'',pack:m.pack||'',route:original.route,release:fixture?'Обычное':original.release,alternative:fixture?'Флутиказон':''};
-  const search=[criteria.trade||m.name,m.strength,m.form||criteria.form,criteria.pack].filter(Boolean).join(' ');
+  const criteriaFor=data=>data.marketCriteria?.find(c=>c.id===key&&c.prescription===prescription);
+  const saved=criteriaFor(latestProfile());
+  let criteria=saved?Object.fromEntries(Object.entries(saved).filter(([k])=>!['id','visit','prescription','lastSearch'].includes(k))):{trade:m.name,form:m.form,substance:fixture?'Мометазон':'',pack:packageFromPrescription(visit,m),
+    route:original.route,release:fixture?'Обычное':original.release,alternative:fixture?'Флутиказон':''};
   const fields=[['trade','Торговое название'],['substance','Действующее вещество / МНН'],['form','Лекарственная форма'],['pack','Размер упаковки'],['route','Путь введения'],['release','Тип высвобождения'],['alternative','Другой вариант, указанный врачом']];
-  const editor=readOnly?'':'<details><summary>Уточнить данные для поиска</summary><form class="edit-form" id="market-criteria">'+fields.map(([k,l])=>'<label>'+l+'<input name="'+k+'" maxlength="90" value="'+esc(criteria[k])+'" '+(k==='form'&&m.form||k==='route'&&original.route||k==='release'&&original.release?'readonly':'')+'></label>').join('')+'<button class="button secondary">Сохранить данные поиска</button><p role="status"></p></form></details>';
-  const alternate=safeMarketQuery(criteria.alternative);
-  openPanel('Сравнение препаратов','Аналоги и цены','<p class="dialog-sub">'+esc(search)+'</p>'+editor+
-    '<p class="hint">Для сравнения нужны МНН, дозировка, форма, путь введения и высвобождение. Для цены назначенной упаковки нужен её размер.</p>'+
-    '<div id="live-market"><button class="button secondary">Проверить текущие цены</button><small>В каталог отправляются торговое название или МНН и выбранный регион.</small></div>'+
-    (alternate?'<div class="summary-sheet"><strong>Отдельный вариант от врача</strong><p>'+esc(alternate)+'</p>'+external(pharmacySearch(alternate),'Искать вариант врача')+'</div>':'')+
-    (safeMarketQuery(criteria.trade||m.name)&&cleanClinicalText(search)===search?'<div class="panel-section">'+external(pharmacySearch(search),'Искать на tabletka.by · '+city)+'<br>'+external(pharmacySearch(search,false),'Искать по всей Беларуси')+'</div>':'<p>Уточните поисковые данные по оригиналу.</p>'));
-  const form=document.querySelector('#market-criteria');
-  if(form)form.onsubmit=e=>{
+  const input=(k,l)=>'<label>'+l+'<input name="'+k+'" maxlength="90" value="'+esc(criteria[k])+'" '+(k==='form'&&m.form||k==='route'&&original.route||k==='release'&&original.release?'readonly':'')+'></label>';
+  openPanel('Сравнение препаратов','Аналоги и цены','<p class="dialog-sub">'+esc([m.name,m.strength,m.form,criteria.pack].filter(Boolean).join(' · '))+'</p>'+
+    '<p id="market-substance" class="dialog-sub"></p>'+
+    '<form class="edit-form" id="market-criteria"><div class="actions left"><button class="button primary" value="find">Найти аналоги и цены</button></div>'+
+    (readOnly?'':'<details><summary>Уточнить данные для поиска</summary><fieldset class="rx-inputs"><label>Дозировка из назначения<input name="strength" readonly value="'+esc(m.strength)+'"></label>'+fields.map(([k,l])=>input(k,l)).join('')+
+      '<button class="button secondary" value="save">Сохранить данные поиска</button></fieldset></details>')+
+    '<p class="hint" id="market-status" role="status"></p></form>'+
+    '<p class="hint">Для сравнения нужны действующее вещество, дозировка, форма, путь введения и тип высвобождения.</p>'+
+    '<div id="live-market" class="panel-section"></div><div id="market-links"></div>');
+  const form=document.querySelector('#market-criteria'),status=form.querySelector('#market-status'),root=document.querySelector('#live-market');
+  const controls=form.querySelector('fieldset'),find=form.querySelector('[value=find]'),substance=document.querySelector('#market-substance');
+  const rowsFrom=search=>marketFindingRows(search,key,visit,prescription);
+  const belongs=row=>row.criteriaId===key&&row.prescription===prescription;
+  let lastSearch=savedMarketSearch(saved?.lastSearch),findings=[],busy=false;
+  function savedFindings(data){
+    return mergeMarketFindings((data.marketFindings||[]).filter(belongs),rowsFrom(savedMarketSearch(criteriaFor(data)?.lastSearch)));
+  }
+  function refresh(){
+    substance.textContent=criteria.substance?'Действующее вещество · '+criteria.substance:'Действующее вещество пока не определено';
+    find.textContent=lastSearch?'Повторить поиск':'Найти аналоги и цены';
+    linkSection(criteria);
+    showMarketResults(root,m,lastSearch,criteria,findings,()=>run('0'));
+  }
+  function linkSection(values){
+    const search=[values.trade||m.name,m.strength,m.form||values.form,values.pack].filter(Boolean).join(' ');
+    const other=safeMarketQuery(values.alternative);
+    form.parentElement.querySelector('#market-links').innerHTML=
+      (other?'<div class="summary-sheet"><strong>Отдельный вариант от врача</strong><p>'+esc(other)+'</p>'+external(pharmacySearch(other),'Искать вариант врача')+'</div>':'')+
+      (safeMarketQuery(values.trade||m.name)&&cleanClinicalText(search)===search?'<div class="panel-section">'+external(pharmacySearch(search),'Искать на tabletka.by · '+city)+'<br>'+
+        external(pharmacySearch(search,false),'Искать по всей Беларуси на tabletka.by')+'</div>':'');
+  }
+  function readCriteria(){
+    const values=readOnly?{...criteria}:Object.fromEntries(fields.map(([k])=>[k,form.elements[k].value.trim()]));
+    if([values.trade||m.name,values.substance,values.alternative].some(v=>v&&!safeMarketQuery(v))){
+      status.textContent='Проверьте поисковые названия и уберите личные сведения.';return null;
+    }
+    if(criteria.substanceFromCatalog&&marketNorm(values.substance)===marketNorm(criteria.substance))values.substanceFromCatalog=true;
+    return values;
+  }
+  function store(values,search,rows){
+    if(current()!==profile||readOnly)return false;
+    const previous=profile.marketCriteria,previousFindings=profile.marketFindings;
+    // The region, prices and timestamp belong to one snapshot during synchronization.
+    profile.marketCriteria=[...previous.filter(c=>c.id!==key),{...values,id:key,visit,prescription,
+      ...(search?{lastSearch:JSON.stringify(search)}:{})}];
+    if(rows?.length)profile.marketFindings=mergeMarketFindings(previousFindings,rows);
+    if(saveState())return true;
+    profile.marketCriteria=previous;
+    profile.marketFindings=previousFindings;
+    return false;
+  }
+  async function run(searchRegion){
+    if(busy)return;
+    const values=readCriteria();if(!values)return;
+    busy=true;find.disabled=true;if(controls)controls.disabled=true;
+    status.textContent='Проверяем предложения на tabletka.by…';
+    try{
+      const result=await searchMarket(m,values,searchRegion);
+      if(!form.isConnected||current()!==profile)return;
+      const latest=latestProfile();
+      const rows=mergeMarketFindings(savedFindings(latest),rowsFrom(result));
+      const {packages,...summary}=result;
+      lastSearch={...summary,packageCount:packages.length};
+      const persisted=store(values,lastSearch,rows);
+      findings=persisted?savedFindings(latestProfile()):rows;
+      if(controls&&values.substanceFromCatalog)form.elements.substance.value=values.substance;
+      criteria=values;
+      refresh();
+      status.textContent=(values.substanceFromCatalog?'МНН заполнено по каталогу. ':'')+
+        (persisted?'Поиск сохранён.':readOnly?'':'Не удалось сохранить поиск.');
+    }catch{
+      if(form.isConnected)status.textContent='Сейчас получить цены из каталога не удалось. Поиск на tabletka.by доступен по ссылке.';
+    }finally{busy=false;find.disabled=false;if(controls)controls.disabled=false}
+  }
+  form.onsubmit=e=>{
     e.preventDefault();
-    const values=Object.fromEntries(new FormData(form));for(const k in values)values[k]=values[k].trim();
-    if([values.trade,values.substance,values.alternative].some(v=>v&&!safeMarketQuery(v))){form.querySelector('[role=status]').textContent='Проверьте поисковые названия и удалите личные сведения.';return}
-    if(current()!==profile||readOnly)return;
-    const previous=profile.marketCriteria||[];
-    profile.marketCriteria=[...previous.filter(c=>c.id!==key),{...values,id:key,visit,prescription:marketPrescriptionKey(m)}];
-    if(!saveState()){profile.marketCriteria=previous;form.querySelector('[role=status]').textContent='Не удалось сохранить.';return}
-    showAnalogs(id);
+    if(e.submitter?.value!=='save'){run(region);return}
+    const values=readCriteria();if(!values)return;
+    const currentSearch=savedMarketSearch(criteriaFor(latestProfile())?.lastSearch);
+    const persisted=store(values,currentSearch);
+    if(persisted){criteria=values;lastSearch=currentSearch;findings=savedFindings(latestProfile());refresh()}
+    status.textContent=persisted?'Данные поиска сохранены.':'Не удалось сохранить.';
   };
-  liveMarket(m,city,criteria);
+  findings=savedFindings(latestProfile());refresh();
 }
 
 function showManual(id){

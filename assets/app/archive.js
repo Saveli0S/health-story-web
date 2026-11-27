@@ -8,16 +8,33 @@ function familyDevices(){
 }
 function archivePanel(){
   const canCrypt=Boolean(globalThis.crypto?.subtle);
-  const offline=window.isSecureContext&&'serviceWorker' in navigator?act('offlineKit','Скачать распознавание для работы без сети','','button secondary','clip')+'<p role="status" id="offline-result"></p>':'';
+  const offline=window.isSecureContext&&'serviceWorker' in navigator;
+  const backupNote=viewer!=='admin'?'Семейный архив доступен администратору.':canCrypt
+    ?'Семейная копия включает записи всех профилей и оригиналы. Ключ восстановления храните отдельно от файла.'
+    :'Создание и восстановление зашифрованной копии доступны по HTTPS или на localhost.';
+  const utilities=(driveAllowed()?act('drive','Google Диск','','button secondary','folder'):'')+
+    (offline?act('offlineKit','Скачать распознавание для работы без сети','','button secondary','clip'):'');
   const demoNote=!workingFamily&&viewer==='admin'&&canCrypt
     ?'<p class="hint">Открыты демоданные. Ключ учебной копии появится в форме «Создать зашифрованный бэкап». Для личной копии откройте свой архив в браузере, где создали семью.</p>'+
       act('family','Профили семьи','','text-button')
     :'';
-  const recoveryDetails=workingFamily&&viewer==='admin'&&canCrypt?'<details id="family-recovery-key" class="panel-section"><summary>Ключ восстановления семьи</summary>'+
+  openPanel('Настройки','Синхронизация и резервная копия',`<div class="archive-panel">
+    <div class="summary-sheet archive-sync"><strong>Сохранено в этом браузере</strong><div id="sync-view"></div></div>
+    <div class="archive-backup">
+      ${demoNote || '<p>'+backupNote+'</p>'}
+      ${viewer==='admin'&&canCrypt?`<div class="actions archive-actions">
+        ${act('exportBackup','Создать зашифрованный бэкап','','button primary')}
+        ${act('importBackup','Проверить или восстановить копию','','button secondary')}
+      </div>`:''}
+      ${workingFamily&&viewer==='admin'&&canCrypt?'<details id="family-recovery-key" class="panel-section"><summary>Ключ восстановления семьи</summary>'+
         '<p>Используйте этот ключ для копий, созданных дневником с ключом семьи. Если при выгрузке указали другой ключ, понадобится тот ключ.</p>'+
-        '<code></code></details>':'';
-  openPanel('Настройки','Синхронизация и резервная копия','<div class="summary-sheet"><strong>Сохранено в этом браузере</strong><div id="sync-view"></div></div>'+
-    (viewer==='admin'?(canCrypt?(demoNote||'<p>Семейная копия включает записи всех профилей и оригиналы. Ключ восстановления храните отдельно от файла.</p>')+'<div class="actions left">'+act('exportBackup','Создать зашифрованный бэкап','','button primary')+act('importBackup','Проверить или восстановить копию','','button secondary')+'</div>':'<p>Создание и восстановление зашифрованной копии доступны по HTTPS или на localhost.</p>'):'<p>Семейный архив доступен администратору.</p>')+(driveAllowed()?act('drive','Google Диск','','button secondary','folder'):'')+recoveryDetails+offline);
+        '<code></code></details>':''}
+    </div>
+    ${utilities?`<div class="archive-utilities">
+      <div class="actions archive-actions">${utilities}</div>
+      ${offline?'<p class="hint" role="status" id="offline-result"></p>':''}
+    </div>`:''}
+  </div>`);
   const keyDetails=document.querySelector('#family-recovery-key');
   if(keyDetails)keyDetails.ontoggle=()=>{
     keyDetails.querySelector('code').textContent=keyDetails.open?deviceAuthority(family.id).recovery:'';

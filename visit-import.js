@@ -20,13 +20,14 @@ function switchVisitMode(mode,episodeId){
   for(const key of ['episode','episodeName','date','title','note','doctor','doctorName','specialty','clinic','recommendation']){
     if(Object.hasOwn(saved.fields,key))restored.elements[key].value=saved.fields[key];
   }
-  const rows=restored.querySelector('#rx-rows');if(rows)rows.innerHTML=saved.meds.map(medicineInputs).join('');
+  const rows=restored.querySelector('#rx-rows');if(rows)rows.innerHTML=saved.meds.map(m=>medicineInputs(m)).join('');
   toggleVisitInputs();
 }
-const importAccept='image/*,application/pdf,.pdf,text/plain,.txt';
+const importAccept=photoAccept+',application/pdf,.pdf,text/plain,.txt';
 const importKinds=['Назначения','Рекомендации','Лаборатория','Снимки','Заключения','Другое'];
 function suggestImportKind(name,raw=''){
   const blood=/анализ (?:крови|мочи)|лаборатор|гемоглобин|биохими|\bcbc\b/iu;
+  if(hasTreatmentRecommendations(raw))return 'Назначения';
   if(/рекомендац/iu.test(name))return 'Рекомендации';
   if(blood.test(name))return 'Лаборатория';
   if(/снимок|рентген/iu.test(name))return 'Снимки';

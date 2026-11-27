@@ -10,3 +10,10 @@ The LSTM WebAssembly build here runs without SIMD and without external scripts.
 
 Russian and English LSTM data from @tesseract.js-data/rus and @tesseract.js-data/eng 1.0.0,
 4.0.0_best_int distributions from https://github.com/naptha/tessdata
+
+libheif-js 1.23.5, upstream ES module WebAssembly bundle (LGPL-3.0)
+https://github.com/catdad-experiments/libheif-js/tree/1.23.5
+https://github.com/strukturag/libheif/tree/v1.23.5
+https://www.npmjs.com/package/libheif-js/v/1.23.5
+Original package path: libheif-wasm/libheif-bundle.mjs
+SHA-256: 095194187be00d3e36335b8ad7f5552d70655e5e2159486d7d36cd4daa47bba9

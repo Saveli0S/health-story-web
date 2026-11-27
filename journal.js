@@ -31,11 +31,15 @@ function searchResults(query, scope) {
 }
 function showSearch(scope='any'){
   const s=routes.at(-1);s.query??='';s.filter??=scope;
-  openPanel(person.name,'Поиск по профилю',`<div class="search-tools"><label class="searchbox">${icon('search')}<input type="search" id="global-search" placeholder="Врач, показатель, препарат…" aria-label="Поиск по профилю" value="${esc(s.query)}"></label>
-    <select id="search-kind" aria-label="Тип записи">${Object.entries({any:'Все разделы',...groups}).map(([k,v])=>'<option value="'+k+'" '+(k===s.filter?'selected':'')+'>'+v+'</option>').join('')}</select></div>
-    <div id="hits">${searchResults(s.query,s.filter)}</div>`);document.querySelector('#global-search').focus();
+  openPanel(person.name,'Поиск по профилю',`<div class="profile-search"><div class="search-tools"><label class="searchbox">${icon('search')}<input type="search" id="global-search" placeholder="Врач, показатель, препарат…" aria-label="Поиск по профилю" value="${esc(s.query)}"></label>
+    <div class="search-kind"><select id="search-kind" aria-label="Тип записи">${Object.entries({any:'Все разделы',...groups}).map(([k,v])=>'<option value="'+k+'" '+(k===s.filter?'selected':'')+'>'+v+'</option>').join('')}</select>${icon('down',true)}</div></div>
+    <div id="hits">${searchResults(s.query,s.filter)}</div></div>`);document.querySelector('#global-search').focus({preventScroll:true});
 }
-function filterSearch(){const s=routes.at(-1);s.query=document.querySelector('#global-search').value;s.filter=document.querySelector('#search-kind').value;document.querySelector('#hits').innerHTML=searchResults(s.query,s.filter)}
+function filterSearch(){
+  const s=routes.at(-1),hits=document.querySelector('#hits');
+  s.query=document.querySelector('#global-search').value;s.filter=document.querySelector('#search-kind').value;
+  hits.innerHTML=searchResults(s.query,s.filter);hits.scrollTop=0;
+}
 function medicalFieldValue(f) {
   return ['birthday','measured'].includes(f.id) && /^\d{4}-\d\d-\d\d$/.test(f.value)?dateLabel(f.value,{day:'numeric',month:'long',year:'numeric'}):f.value;
 }
@@ -90,12 +94,11 @@ async function showFile(id){
     }catch{if(route===routes.at(-1))openPanel('Вложение',f.name,deviceSync.thumb(f)+(f.syncLocalOnly?'<p>Оригинал превышает предел обмена 128 МиБ. Откройте его на устройстве добавления или восстановите полную локальную копию.</p>':'<p>Оригинал сейчас недоступен. Проверьте связь или откройте предварительно сохранённую копию.</p>'));return}
   }
   const ext=(f.file||f.name).split('.').at(-1).toUpperCase(),pdf=isPdf(f)||ext==='PDF',photo=isPhoto(f)||/\.(png|jpe?g|webp)$/i.test(f.file||'');
-  const area=photo?'<img class="paper-preview" src="'+esc(url)+'" alt="Предпросмотр документа">':
-    pdf||isTextFile(f)?'<div id="file-paper" class="source-preview"></div>':'<p class="hint">Этот формат можно открыть во внешнем просмотрщике.</p>';
+  const area=photo||pdf||isTextFile(f)?'<div id="file-paper" class="source-preview"></div>':
+    '<p class="hint">Этот формат можно открыть во внешнем просмотрщике.</p>';
   openPanel('Вложение · '+f.category,f.name,`<p class="dialog-sub">${dateLabel(f.date)} · ${esc(ext)}</p>
     ${tagStrip(f.category==='Лаборатория'?'lab':'file',id)}${area}
     <div class="actions">${f.visit?act('visit','К визиту',f.visit,'button secondary'):''}${pdf?external(url,'Открыть PDF','button secondary'):''}<a class="button primary" download="${esc(f.name)}" href="${esc(url)}">Скачать оригинал</a></div>${documentLinks(f)}${!readOnly&&f.category==='Лаборатория'&&!f.file?act('verifyLab','Сверить результаты',f.id,'button secondary'):''}${!readOnly&&f.intake&&!jobs.has(id)?act('verifyFile','Сверить документ',id,'button secondary'):''}${deletionButton('files',id,'Удалить документ')}`);
-  const image=panelBody.querySelector('img.paper-preview');if(image)image.onerror=()=>{image.replaceWith(document.createTextNode('Браузер не может показать этот формат фото. Оригинал доступен для скачивания.'))};
   const paper=document.querySelector('#file-paper');
   if(paper){
     try{const source=blob||(await fetch(url)).blob();await previewOriginal(f,paper,await source)}
@@ -192,7 +195,7 @@ async function saveUpload(form){
 }
 function showSettings(){
   const canAuto=mayChangeConsent();
-  return `<section class="section-page"><h2>Настройки</h2>${settingsMenu()}<div class="settings-grid"><article class="plain-card"><h3>Разбор лечения</h3>
+  return `<section class="section-page"><div class="section-head"><h2>Настройки</h2></div>${settingsMenu()}<div class="settings-grid"><article class="plain-card"><h3>Разбор лечения</h3>
     <p>Параметры профиля · ${esc(person.name)}</p><label class="switch-line"><input type="checkbox" id="auto-analysis" ${current().auto?'checked':''} ${canAuto?'':'disabled'}>Без подключённого ИИ сразу открывать разбор по сохранённым данным</label>
     <label class="switch-line"><input type="checkbox" id="direct-auto" ${current().directAuto?'checked':''} ${canAuto?'':'disabled'}>Автоматически отправлять сверенное лечение в подключённый OpenRouter</label>
     <label class="switch-line"><input type="checkbox" id="chatgpt-auto" ${current().chatGPTAuto===true?'checked':''} ${canAuto?'':'disabled'}>Автоматически отправлять сверенное лечение в подключённый личный ChatGPT</label>

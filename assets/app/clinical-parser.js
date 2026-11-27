@@ -62,16 +62,22 @@ function recommendationText(raw){
   return block.join('\n').trim();
 }
 
-const activeRxHeading=/^(?:(?:лекарственные |врачебные |новые |текущие )?назначения(?: врача)?|лист назначений|(?:медикаментозное |назначенное |рекомендованное )?лечение|(?:новая |текущая )схема(?: лечения)?|назначено|назначен[аы]?|принимать)\s*(?=[:.·–—-]|$)[:.·–—-]*\s*/iu;
+const treatmentRecommendationHeading=/^рекомендации\s+по\s+(?:медикаментозному\s+)?лечению\s*(?=[:.·–—-]|$)/iu;
+const activeRxHeading=/^(?:рекомендации по (?:медикаментозному )?лечению|(?:лекарственные |врачебные |новые |текущие )?назначения(?: врача)?|лист назначений|(?:медикаментозное |назначенное |рекомендованное )?лечение|(?:новая |текущая )схема(?: лечения)?|назначено|назначен[аы]?|принимать)\s*(?=[:.·–—-]|$)[:.·–—-]*\s*/iu;
 const historyRxHeading=/^(?:аллерги[яию]|аллергологический анамнез|аллерг\.\s*анамнез|побочные реакции|нежелательные реакции|лекарственная (?:аллергия|непереносимость)|непереносимость|анамнез|медикаментозный анамнез|история (?:лекарств|лечения|назначений)|отмен(?:а|ить)(?: препаратов)?|предыдущ(?:ая|ее|ие) (?:схема|лечение|назначения)|(?:отмен[её]нные|прежние) (?:лекарства|назначения|препараты)|ранее (?:принимал[аи]?|назначено|применял[аи]?)|принимал[аи]? ранее)(?=[:.\s–—-]|$)/iu;
 const inactiveRxText=/(?:аллерги[яиюч]|непереносим|противопоказан|отмен[еёяи]|прекрат(?:ить|ил|ила)|исключить|не\s+(?:приним|назнач|примен|использ)|(?:ранее|в прошлом)\s+(?:приним|назнач|примен|получ))/iu;
 const otherRxHeading=/^(?:рекомендации(?: врача)?|рекомендовано|жалобы|заключение|обследование|диагноз|результаты|подпись|осмотр|показатели|лабораторные исследования)(?=[:.\s–—-]|$)/iu;
 const rxDose=/\d+(?:[.,]\d+)?(?:\s*\/\s*\d+(?:[.,]\d+)?)?\s*(?:мкг|мг|мл|ме|ед|г|%|mcg|mg|ml|iu)(?![\p{L}])(?:\s*\/\s*(?:доза|дозу|дозы|мл|табл\.?|ml))?/iu;
 const rxUnknown=/[?？�]+\s*(?:мкг|мг|мл|г|%|mg|ml)?|неразборчиво(?:\s+(?:мкг|мг|мл|г|%))?/iu;
-const rxForm=/(?<!\p{L})(?:назальный спрей|спрей|таблетк[аиуы]?|табл\.?|раствор|сироп|капсул[аы]?|крем|мазь|капли|гель)(?!\p{L})/iu;
+const rxForm=/(?<!\p{L})(?:назальный спрей|спрей|таблетк[аиуеы]?|табл\.?|раствор|сироп|капсул[аы]?|крем|мазь|капли|гель)(?!\p{L})/iu;
 const rxRegimen=/^(?:по\s|принимать\s|наносить\s|закапывать\s|внутрь|\d+\s*(?:раз|табл|капс))/iu;
 const cleanRxEdge=t=>t.replace(/^[\s©®·,:;–—-]+|[\s·,:;–—-]+$/gu,'').trim();
+const stripRxBullet=t=>t.trim().replace(/^(?:(?:[•*–—-]|\d+[.)])\s*)+/u,'');
 const ocrLineKey=s=>s.toLowerCase().replace(/[^\p{L}\d?]/gu,'');
+
+function hasTreatmentRecommendations(raw){
+  return raw.split(/\r?\n/).some(line=>treatmentRecommendationHeading.test(stripRxBullet(line)));
+}
 
 function historyMedicationLines(raw){
   const notes=[];
@@ -90,34 +96,53 @@ function historyMedicationLines(raw){
 }
 function proposedMedicines(raw,issues=[]){
   const lines=raw.split(/\r?\n/).map(s=>s.trim()).filter(Boolean),meds=[];
-  const hasActiveSection=lines.some(s=>activeRxHeading.test(s));
-  let active=!hasActiveSection;
+  const hasActiveSection=lines.some(s=>activeRxHeading.test(stripRxBullet(s)));
+  let active=!hasActiveSection, explicit=false;
   for(let i=0;i<lines.length;i++){
     const source=lines[i];
-    let line=source.replace(/^\s*(?:[•–—-]|\d+[.)])\s*/u,'');
+    let line=stripRxBullet(source);
     if(historyRxHeading.test(line)){active=false;continue}
-    if(activeRxHeading.test(line)){active=true;line=line.replace(activeRxHeading,'')}
+    if(activeRxHeading.test(line)){active=explicit=true;line=stripRxBullet(line.replace(activeRxHeading,''))}
     else if(otherRxHeading.test(line)){
       if(hasActiveSection||!/^(?:жалобы|диагноз|осмотр)(?=[:.\s–—-]|$)/iu.test(line))active=false;
       continue;
     }
     if(!line||!active||inactiveRxText.test(line)||rxRegimen.test(line))continue;
+    if(/^(?:уход|диета|контроль|консультация|повторн\S*\s+при[её]м)(?=[:.\s]|$)/iu.test(line)){
+      active=false;continue;
+    }
     if(/^(?:отмен[её]н[аоы]?|отменить|прекратить|не принимать)(?:\s+(?:ранее|врачом|сегодня|на прошлом визите))?\s*[.!]?$/iu.test(lines[i+1]||''))continue;
+    let followingIndex=i+1;
+    if(explicit&&/\([^)]*$/u.test(line)&&/^[\p{L}+\s-]+\)(?:\s|$)/u.test(lines[followingIndex]||''))
+      line+=' '+lines[followingIndex++];
+    if(explicit&&/^(?:мазь|крем|гель)(?=\s|$)/iu.test(lines[followingIndex]||'')&&
+        !rxDose.test(line)&&!rxUnknown.test(line))line+=' '+lines[followingIndex++];
+    const following=rxRegimen.test(lines[followingIndex]||'')?lines[followingIndex]:'';
     const dose=line.match(rxDose),unknown=line.match(rxUnknown);
     // An unclear token wins if it is where the dose should be, before a later quantity.
     const match=unknown&&(!dose||unknown.index<=dose.index)?unknown:dose;
-    if(!match)continue;
+    if(!match){
+      const topical=explicit&&line.match(/^([\p{L}\d][\p{L}\d-]+)\s*(?:\([^)]*\)\s*)?((?:мазь|крем|гель)(?:\s+или\s+(?:мазь|крем|гель))?)(?:\s+\d+(?:[.,]\d+)?)?\s*[–—-]*$/iu);
+      if(topical&&/^наносить\s/iu.test(following)){
+        meds.push({id:uid(),name:topical[1],strength:'',strengthUnspecified:true,form:topical[2],instructions:cleanRxEdge(following)});
+        i=followingIndex;
+      }
+      continue;
+    }
     const prefix=line.slice(0,match.index),form=line.match(rxForm)?.[0]||'';
     const name=cleanRxEdge(prefix.replace(rxForm,''));
     if(!name||name.length>90||!/[\p{L}]/u.test(name))continue;
     const tail=cleanRxEdge(line.slice(match.index+match[0].length));
-    const tailWithoutForm=cleanRxEdge(tail.replace(new RegExp('^(?:'+rxForm.source+')','iu'),''));
+    const tailWithoutForm=cleanRxEdge(tail.replace(new RegExp('^(?:'+rxForm.source+')','iu'),'')
+      .replace(/^[N№]\s*\d+\s*(\([^)]*\))?\s*[–—-]\s*/iu,(_,qualifier)=>qualifier?qualifier+' ':''));
     const inline=/[\p{L}\d]/u.test(tailWithoutForm)?tailWithoutForm:'';
-    const following=rxRegimen.test(lines[i+1]||'')?lines[i+1]:'';
+    const continuation=!following&&inline&&/^в\s+(?:день|сутки|неделю)(?=\s|[;–—-]|$)/iu.test(lines[i+1]||'')?lines[i+1]:'';
     const issue=issues.find(x=>ocrLineKey(x.text)===ocrLineKey(source));
     const uncertainDose=issue&&(!issue.words?.length||issue.words.some(w=>w.confidence<65&&(
       /\d|[?？�]/u.test(w.text)||/^(?:мг|мкг|мл|г|ед|ме|mg|ml|mcg|iu|%)\W*$/iu.test(w.text))));
-    meds.push({id:uid(),name,strength:uncertainDose?'':match[0],form,instructions:[inline,following].filter(Boolean).join(' ')});
+    meds.push({id:uid(),name,strength:uncertainDose?'':match[0],form:form.replace(/^таблетке$/iu,'таблетки'),
+      instructions:[inline,following,continuation].filter(Boolean).map(cleanRxEdge).join(' ')});
+    if(following||continuation)i=following?followingIndex:i+1;
   }
   return meds;
 }

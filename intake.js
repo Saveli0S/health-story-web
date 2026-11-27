@@ -88,7 +88,7 @@ async function submitVisit(f,next){
   const visit=[uid(),val('date'),val('title'),doctor?.id||foundDoctor||val('doctor'),episode.name,val('note'),'scope',episode.id];
   let decisions;try{decisions=readTherapyChanges(f,visit)}catch(e){f.querySelector('.error').textContent=e.message;return}
   const meds=medicineValues(f);
-  if(meds.some(m=>!m.name||!m.strength||!m.instructions||[m.name,m.strength,m.instructions].some(unclearRxField))){
+  if(meds.some(incompleteMedicine)){
     f.querySelector('.error').textContent='Уточните название, дозировку и схему каждого препарата.';return;
   }
   if(val('clinic')){visit[8]=[];visit[9]=val('clinic')}
@@ -144,7 +144,10 @@ async function submitVisit(f,next){
 }
 function intakeFiles(visit){return current().files.filter(f=>f.visit===visit&&f.intake)}
 function pendingVisitLabs(id){return current().files.filter(f=>f.visit===id&&f.category==='Лаборатория'&&(!f.lab||f.labDraft))}
-function reviewReady(id){return prescribedForReview(id).length>0 && !intakeFiles(id).some(f=>!f.checked) && !pendingVisitLabs(id).length && !visitBusy(person.id,id)}
+function reviewReady(id){
+  const meds=prescribedForReview(id);
+  return meds.length>0&&!meds.some(m=>m.strengthUnspecified)&&!intakeFiles(id).some(f=>!f.checked)&&!pendingVisitLabs(id).length&&!visitBusy(person.id,id);
+}
 const jobs=new Map(), intakeErrors=new Map();
 let archiveQueue=Promise.resolve(),workQueue=Promise.resolve();
 function visitBusy(patient,id){return [...jobs.values()].some(j=>j.patient===patient&&j.visit===id)}
@@ -160,13 +163,35 @@ function intakeFileRows(visit){
 }
 function showIntake(visit){
   const v=visitById(visit);if(!v)return;
-  const busy=visitBusy(person.id,visit),files=intakeFiles(visit),done=files.filter(f=>f.checked).length;
-  openPanel(v[2],'Назначение и вложения',workflowSteps(2)+`<p class="dialog-sub">Приложите лист назначения или заключение. Распознавание выполняется на этом устройстве. Для прототипа используйте тестовые документы.</p>
-    <div class="upload-zone"><span class="upload-icon">${icon('clip')}</span><strong>Документы визита</strong>
+  const busy=visitBusy(person.id,visit),reviewFiles=intakeFiles(visit),done=reviewFiles.filter(f=>f.checked).length;
+  const meds=prescribedForReview(visit),recommendations=confirmedRecommendations(visit),pending=pendingVisitLabs(visit);
+  const {files,reports,medicines}=visitLinkedRecords(visit);
+  const exams=examListing(current().exams.filter(e=>e.visit===visit));
+  const pendingIds=new Set(pending.map(f=>f.id)),reviewIds=new Set(reviewFiles.map(f=>f.id));
+  const labIds=new Set(reports.map(f=>f.id));
+  const labRows=reports.filter(f=>!pendingIds.has(f.id)).map(f=>{
+    const report=reportInfo(f);
+    return resultRow('lab',f.id,report.name,preventionDate(report.date),'lab');
+  }).join('');
+  const documentRows=files.filter(f=>!reviewIds.has(f.id)&&!pendingIds.has(f.id)&&!labIds.has(f.id))
+    .map(f=>resultRow('file',f.id,f.name,f.category,'clip')).join('');
+  openPanel(v[2],'Назначение и вложения',workflowSteps(2)+`
+    <section class="panel-section" id="intake-visit-data"><h3>Из карточки визита</h3>
+    ${meds.length?'<div class="prescription-list">'+meds.map((m,i)=>drugBlock(m,i,false,visit)).join('')+'</div>':''}
+    ${act('visitPrescriptions',meds.length?'Редактировать назначения':'Добавить назначения',visit,'text-button','pill')}
+    ${medicines.length?'<h4>Связанные лекарства</h4>'+medicines.map(m=>resultRow('linkedVisitMedicine',m.id,m.title,m.detail,'pill')).join(''):''}
+    ${recommendations.length?'<details><summary>Рекомендации врача</summary>'+recommendationsSection(visit)+'</details>':''}
+    ${labRows?'<h4>Анализы</h4>'+labRows:''}
+    ${exams?'<h4>Обследования</h4>'+exams:''}
+    ${documentRows?'<h4>Документы</h4>'+documentRows:''}
+    ${act('visitLinksEditor','Выбрать из профиля',visit,'button secondary','clip')}</section>
+    <div id="intake-list">${intakeFileRows(visit)}${pending.map(f=>resultRow('verifyLab',f.id,f.name,'Сверить лабораторный бланк','lab')).join('')}</div>
+    ${busy||reviewFiles.length?`<p class="hint" role="status">${busy?'Идёт локальное распознавание.':'Сверено документов: '+done+' из '+reviewFiles.length+'.'}</p>`:''}
+    <div class="upload-zone"><span class="upload-icon">${icon('clip')}</span><strong>Добавить документы</strong>
     ${act('upload','Выбрать документы','rx:'+visit,'button primary','clip')}
+    <p class="hint">Можно выбрать несколько файлов. Распознавание выполняется на устройстве.</p>
     ${act('sampleRx','Попробовать с примером PDF',visit,'text-button')}</div>
-    <div id="intake-list">${intakeFileRows(visit)}${pendingVisitLabs(visit).map(f=>resultRow('verifyLab',f.id,f.name,'Сверить лабораторный бланк','lab')).join('')}</div>
-    <p class="hint" role="status">${busy?'Идёт локальное распознавание.':files.length?'Сверено документов: '+done+' из '+files.length+'.':'Можно выбрать несколько документов за один раз.'}</p>
+    ${meds.some(m=>m.strengthUnspecified)?'<p class="hint">Для разбора уточните дозировку в назначениях.</p>':''}
     <p class="error" role="alert">${esc(intakeErrors.get(person.id+'/'+visit)||'')}</p>
     <div class="actions">${act('visitHome','К карточке визита',visit,'button secondary')}
     <button type="button" class="button primary" data-action="intakeAnalyze" data-id="${esc(visit)}" ${reviewReady(visit)?'':'disabled'}>Сохранить и перейти к анализу</button></div>`);
@@ -249,19 +274,20 @@ async function addExample(visit,button){
   }catch{intakeErrors.set(patient+'/'+visit,'Не удалось открыть пример. Можно выбрать свой файл.');refreshIntake(patient,visit)}
   finally{button.disabled=false}
 }
-function medicineInputs(m){
+function medicineInputs(m,allowUnspecified=false,removable=true){
   return `<fieldset class="rx-inputs" data-med="${esc(m.id||uid())}"><legend>Препарат</legend>
     <div class="intake-pair"><label>Название<input name="drug" maxlength="120" value="${esc(m.name)}" required></label>
-    <label>Дозировка<input name="strength" maxlength="100" value="${esc(m.strength)}" required placeholder="Как в назначении"></label></div>
+    <label>Дозировка<input name="strength" maxlength="100" value="${esc(m.strength)}" ${allowUnspecified||m.strengthUnspecified?'':'required'} placeholder="Как в назначении"></label></div>
+    ${allowUnspecified||m.strengthUnspecified?`<label class="unknown"><input type="checkbox" name="strengthUnspecified" ${m.strengthUnspecified?'checked':''}>Дозировка не указана в назначении</label>`:''}
     <label>Форма выпуска <small>если указана</small><input name="form" maxlength="100" value="${esc(m.form)}"></label>
     <label>Схема приёма<input name="instructions" maxlength="400" value="${esc(m.instructions)}" placeholder="Разовая доза, частота, длительность" required></label>
-    ${act('dropMed','Убрать строку','','inline-action')}</fieldset>`;
+    ${removable?act('dropMed','Убрать строку','','inline-action'):''}</fieldset>`;
 }
 function refreshRxDraft(id){
   const f=current().files.find(row=>row.id===id);
   const form=document.querySelector('#verify-form');if(readOnly||!form||!f||f.checked||f.category!=='Назначения')return;
   const fresh=proposedMedicines(f.transcription??f.raw??'',f.issues||[]);
-  form.querySelector('#rx-rows').innerHTML=fresh.map(medicineInputs).join('');
+  form.querySelector('#rx-rows').innerHTML=fresh.map(m=>medicineInputs(m)).join('');
   form.elements.none.checked=false;
   form.refreshClarifications?.();
 }
@@ -281,7 +307,7 @@ function showVerification(id){
     ${f.transcription?'<details><summary>Внесённый после сверки текст</summary><pre class="source-text">'+esc(f.transcription)+'</pre></details>':''}
     <form class="edit-form" id="verify-form" data-id="${esc(id)}">
     <label>Рекомендации врача<textarea name="recommendation" maxlength="3600" ${rec?'required':''}>${esc(f.draft?.recommendation??f.recommendation??(recommendationText(clinical)||(rec?clinical:'')))}</textarea></label>
-    <div ${rec?'hidden':''}><div id="rx-rows">${meds.map(medicineInputs).join('')}</div>
+    <div ${rec?'hidden':''}><div id="rx-rows">${meds.map(m=>medicineInputs(m)).join('')}</div>
     ${act('appendMed','Добавить препарат','','button secondary','plus')}
     ${auto&&f.draft?'<p class="hint">В этом черновике сохранены правки по прежней версии разбора. Сверьте список с действующими назначениями на оригинале.</p>'+act('refreshRxDraft','Заменить список препаратов по исходному тексту',f.id,'text-button'):''}
     <label class="unknown"><input type="checkbox" name="none" ${rec||(f.checked&&!meds.length)||f.draft?.none?'checked':''}>В документе нет лекарственных назначений</label></div>
@@ -301,9 +327,15 @@ async function previewOriginal(f,container,original,pageNumber=1){
       const pre=document.createElement('pre');pre.className='source-text';pre.textContent=await blob.text();container.replaceChildren(pre);return;
     }
     if(!isPdf(f)&&!isPdf(blob)){
-      const url=URL.createObjectURL(blob);
-      const img=new Image();img.alt='Исходное фото';img.className='paper-preview';img.onload=()=>URL.revokeObjectURL(url);img.onerror=()=>{URL.revokeObjectURL(url);container.textContent='Браузер не может показать этот формат фото.'};img.src=url;
-      container.replaceChildren(img);return;
+      const photo=await openPhoto(blob,f,1800);
+      if(!container.isConnected||!panel.open)return;
+      if(photo instanceof HTMLImageElement)photo.alt='Исходное фото';
+      else{
+        photo.setAttribute('role','img');
+        photo.setAttribute('aria-label','Исходное фото');
+      }
+      photo.className='paper-preview';
+      container.replaceChildren(photo);return;
     }
     const pdf=await openLocalPdf(blob);
     const select=document.createElement('select');select.setAttribute('aria-label','Страница оригинала');
@@ -318,7 +350,7 @@ async function previewOriginal(f,container,original,pageNumber=1){
     container.replaceChildren(select,paper);
     const draw=async()=>{const n=Number(select.value);try{const canvas=await drawPaper(await pdf.getPage(n),1100);if(n===Number(select.value)&&paper.isConnected)paper.replaceChildren(canvas)}catch{if(paper.isConnected)paper.textContent='Не удалось открыть страницу.'}};
     select.onchange=draw;await draw();
-  }catch{if(container.isConnected)container.textContent='Предпросмотр недоступен. Оригинал можно скачать из вложений визита.'}
+  }catch{if(container.isConnected)container.textContent='Предпросмотр недоступен. Оригинал можно скачать из вложений.'}
 }
 function emptyPeriod(){return {start:'',planned:'',end:'',unknown:false,closed:false}}
 function needsClarification(value){return /[?？�]|неразборчив|неизвестн|уточнить|не\s*указан/i.test(value)}
@@ -327,8 +359,110 @@ function medicineValues(form){
   return [...form.querySelectorAll('[data-med]')].map(row=>{
     const result={id:row.dataset.med};
     for(const [field,name] of [['name','drug'],['strength','strength'],['form','form'],['instructions','instructions']])result[field]=row.querySelector('[name="'+name+'"]').value.trim();
+    if(!result.strength&&row.querySelector('[name=strengthUnspecified]')?.checked)result.strengthUnspecified=true;
     return result;
   });
+}
+function incompleteMedicine(m){
+  return [m.name,m.instructions].some(unclearRxField)||(!m.strengthUnspecified&&unclearRxField(m.strength));
+}
+function prescriptionSlot(profile,visit,id){
+  const change=profile.changes.findLast(c=>c.visit===visit&&c.replacement?.id===id);
+  if(change)return {container:change,key:'replacement'};
+  for(const f of profile.files.slice().reverse()){
+    if(f.visit!==visit||!(f.checked||f.lastConfirmed))continue;
+    const index=f.meds?.findIndex(m=>m.id===id)??-1;
+    if(index>=0)return {container:f.meds,key:index};
+  }
+  const meds=profile.addedVisits.find(row=>row[0]===visit)?.[8];
+  const index=meds?.findIndex(m=>m.id===id)??-1;
+  return index<0?null:{container:meds,key:index};
+}
+function prescriptionFields(m){
+  return [m.name,m.strength,m.form,m.instructions,m.strengthUnspecified===true];
+}
+function applyPrescriptionFields(before,values){
+  const updated={...before,...values};
+  if(before.name&&values.name!==before.name)updated.sourceName=before.sourceName||before.name;
+  if(!values.strengthUnspecified)delete updated.strengthUnspecified;
+  return updated;
+}
+function showMedicineEdit(key){
+  if(readOnly)return;
+  const [visit,id]=JSON.parse(key),v=visitById(visit);
+  const med=courseAt(visit)?.meds.find(row=>row.id===id);
+  if(!v||!med)return;
+  const slot=prescriptionSlot(current(),visit,id);
+  if(!slot&&!med.fixture)return;
+  openPanel(v[2],'Редактировать назначение',`<form id="edit-medicine-form" class="edit-form" data-visit="${esc(visit)}">
+    ${medicineInputs(med,true,false)}
+    <p class="error" role="alert"></p><button class="button primary">Сохранить изменения</button></form>`);
+  const form=document.querySelector('#edit-medicine-form');
+  form.prescriptionBase=prescriptionFields(med);
+  form.visitBase=v;
+  form.fromFixture=!slot;
+}
+function saveMedicineEdit(form){
+  const visit=form.dataset.visit,v=visitById(visit);
+  if(readOnly||!v)return;
+  const [values]=medicineValues(form),profile=current(),latest=latestProfile();
+  const error=message=>{form.querySelector('.error').textContent=message};
+  if(!values||incompleteMedicine(values)){
+    error('Уточните название, схему и дозировку препарата.');return;
+  }
+  const slot=prescriptionSlot(profile,visit,values.id);
+  const newest=prescriptionSlot(latest,visit,values.id);
+  if(form.fromFixture?Boolean(newest):(!slot||!newest||
+      JSON.stringify(prescriptionFields(newest.container[newest.key]))!==JSON.stringify(form.prescriptionBase))){
+    error('Назначение изменилось. Обновите профиль перед сохранением.');return;
+  }
+  if(courseAt(visit)?.meds.some(m=>m.id!==values.id&&medicineSignature(m)===medicineSignature(values))){
+    error('В этом визите уже есть такое назначение.');return;
+  }
+  if(form.fromFixture){
+    const updated=v.slice();
+    updated[8]=[...(v[8]||[]),applyPrescriptionFields({name:form.prescriptionBase[0]},values)];
+    return storeVisitEdit(form,v,updated);
+  }
+  const {container,key}=slot,before=container[key];
+  container[key]=applyPrescriptionFields(before,values);
+  if(!saveState()){container[key]=before;error('Не удалось сохранить назначение.');return}
+  render();goBack();
+}
+function visitPrescriptions(id){
+  const v=visitById(id);if(!v||readOnly)return;
+  const sources=confirmedRecommendations(id).map(row=>row.text).filter(Boolean);
+  const existing=v[8]||[],knownNames=new Set(prescribedForReview(id).flatMap(m=>[m.name,m.sourceName].filter(Boolean).map(identityText)));
+  const suggested=hasTreatmentRecommendations(sources.join('\n'))?proposedMedicines(sources.join('\n')).filter(m=>{
+    const name=identityText(m.name);if(knownNames.has(name))return false;
+    knownNames.add(name);return true;
+  }):[];
+  openPanel(v[2],'Назначения врача',`<form id="visit-rx-form" data-id="${esc(id)}" class="edit-form">
+    ${suggested.length?'<p class="hint">Сверьте предложения по рекомендациям врача. Для новых строк даты и факт приёма пока не указаны.</p>':''}
+    ${sources.length?'<details><summary>Рекомендации врача</summary><pre class="source-text">'+esc(sources.join('\n\n'))+'</pre></details>':''}
+    <div id="rx-rows">${[...existing,...suggested].map(m=>medicineInputs(m,true)).join('')}</div>
+    ${act('appendMed','Добавить препарат','','button secondary','plus')}
+    ${suggested.length?'<label class="unknown"><input type="checkbox" name="verified" required>Я сверил(а) назначения с рекомендациями врача</label>':''}
+    <p class="error" role="alert"></p><button class="button primary">Сохранить назначения</button></form>`);
+  document.querySelector('#visit-rx-form').visitBase=v;
+}
+function saveVisitPrescriptions(form){
+  const v=visitById(form.dataset.id);if(!v||readOnly)return;
+  const meds=medicineValues(form),previous=v[8]||[];
+  if(form.elements.verified&&!form.elements.verified.checked)return;
+  if(meds.some(incompleteMedicine)){
+    form.querySelector('.error').textContent='Сверьте название, схему и дозировку каждого препарата.';return;
+  }
+  if(new Set(meds.map(medicineSignature)).size!==meds.length){
+    form.querySelector('.error').textContent='Уберите повторяющиеся назначения.';return;
+  }
+  const updated=v.slice();
+  updated[8]=meds.map(m=>{
+    const old=previous.find(row=>row.id===m.id)||{};
+    return {...applyPrescriptionFields(old,m),
+      period:old.period||{...emptyPeriod(),closed:true,unknown:true,unconfirmed:true}};
+  });
+  storeVisitEdit(form,v,updated);
 }
 function storeVerification(form,defer=false){
   const file=current().files.find(f=>f.id===form.dataset.id);if(!file)return;
@@ -339,13 +473,16 @@ function storeVerification(form,defer=false){
     file.draft={...values,position};file.checked=false;
   }else{
     if(!form.elements.verified.checked)return;
-    if(values.none===Boolean(values.meds.length)||values.meds.some(m=>!m.name||!m.strength||!m.instructions)){
+    if(values.none===Boolean(values.meds.length)||values.meds.some(incompleteMedicine)){
       form.querySelector('.error').textContent='Заполните назначение для каждой строки или оставьте список пустым и отметьте отсутствие препаратов.';return;
     }
-    if(needsClarification(values.recommendation)||values.meds.some(m=>[m.name,m.strength,m.instructions].some(unclearRxField))){
+    if(needsClarification(values.recommendation)){
       form.querySelector('.error').textContent='Сведения требуют уточнения. Исправьте отмеченные поля по оригиналу или выберите «Уточнить позже».';return;
     }
-    file.meds=values.meds.map(m=>({...m,period:file.meds.find(old=>old.id===m.id)?.period||emptyPeriod()}));
+    file.meds=values.meds.map(m=>{
+      const old=file.meds.find(row=>row.id===m.id)||{};
+      return {...applyPrescriptionFields(old,m),period:old.period||emptyPeriod()};
+    });
     file.recommendation=values.recommendation;file.context=values.context;file.checked=true;file.lastConfirmed=new Date().toISOString();delete file.draft;
   }
   if(!saveState()){

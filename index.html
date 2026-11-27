@@ -26,6 +26,7 @@
   <script type="application/x-health-script" data-app-src="assets/app/visit-drafts.js"></script>
   <script type="application/x-health-script" data-app-src="assets/app/source-view.js"></script>
   <script type="application/x-health-script" data-app-src="assets/app/laboratory.js"></script>
+  <script type="application/x-health-script" data-app-src="assets/app/visit-links.js"></script>
   <script type="application/x-health-script" data-app-src="assets/app/exams.js"></script>
   <script type="application/x-health-script" data-app-src="assets/app/episodes.js"></script>
   <script type="application/x-health-script" data-app-src="assets/app/tags.js"></script>
@@ -49,12 +50,15 @@
   <a class="skip" href="#main">К содержанию</a>
   <header class="top"><div class="wrap bar">
     <div class="brand"><span class="brandmark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M8 24v-8c0-6 5-10 16-10v7c0 8-6 12-13 12"/><path d="m8 25 12-14m-7 9v-5m1 3h5"/></svg></span>Лист здоровья</div>
-    <div class="bar-actions" inert><span class="demo">Демо</span><button class="settings-gear" data-action="section" data-id="settings" aria-label="Настройки" title="Настройки"><span data-icon="settings"></span></button><button type="button" class="family" data-action="family"><span class="icon" data-icon="users"></span><span>Профили<span class="wide"> семьи</span></span><span class="icon small" data-icon="down"></span></button></div>
+    <div class="bar-actions" inert><button class="settings-gear" data-action="section" data-id="settings" aria-label="Настройки" title="Настройки"><span data-icon="settings"></span></button><button type="button" class="family" data-action="family"><span class="icon" data-icon="users"></span><span>Профили<span class="wide"> семьи</span></span><span class="icon small" data-icon="down"></span></button></div>
   </div></header>
   <div class="wrap refresh-notice" id="refresh-notice" role="status" hidden>Записи изменились в другой вкладке. <button class="text-button" id="refresh-local">Открыть актуальную версию</button></div>
   <main class="wrap" id="main" tabindex="-1"><p role="status">Открываем дневник…</p></main>
   <dialog id="panel" aria-labelledby="panel-title"><div class="dialog-content">
-    <button type="button" class="close" aria-label="Закрыть" data-action="close"><span class="icon" data-icon="x"></span></button>
+    <div class="dialog-heading">
+      <div id="panel-heading"></div>
+      <button type="button" class="close" aria-label="Закрыть" data-action="close"><span class="icon" data-icon="x"></span></button>
+    </div>
     <div id="panel-body"></div>
   </div></dialog>
   <div id="announcement" aria-live="polite" class="sr"></div>

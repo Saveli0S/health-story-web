@@ -80,7 +80,7 @@ const initialTags=[
 function makeState(p) {
   return {fields:fieldSpecs.map(([id,label])=>({id,label,value:p[id]||''})),
     periods:(p.course?.meds || []).map((_,i)=>({start:p.course.start,planned:medicineDetails[i].term,end:'',closed:false,unknown:false})),
-    auto:false,directAuto:false,notes:[],reviews:[],files:[],exams:[],examDrafts:[],episodes:[],addedVisits:[],addedDoctors:[],prompts:{},consultations:[],templates:[],measurements:[],changes:[],questions:[],marketCriteria:[],docLinks:[],visitDrafts:[],sampleAliases:{},prevention:[],tagEdits:[],recommendations:[],treatmentQueue:[]};
+    auto:false,directAuto:false,notes:[],reviews:[],files:[],exams:[],examDrafts:[],episodes:[],addedVisits:[],addedDoctors:[],prompts:{},consultations:[],templates:[],measurements:[],changes:[],questions:[],marketCriteria:[],marketFindings:[],docLinks:[],visitLinks:[],visitDrafts:[],sampleAliases:{},prevention:[],tagEdits:[],recommendations:[],treatmentQueue:[]};
 }
 function readJson(key) {
   if(key===familyStateKey){
@@ -100,7 +100,7 @@ if (previous?.profiles) {
   for(const p of people) {
     const data=previous.profiles[p.id], target=prototypeState.profiles[p.id];
     if(!data) continue;
-    for(const key of ['fields','notes','reviews','files','exams','examDrafts','episodes','addedVisits','addedDoctors','consultations','templates','measurements','changes','questions','marketCriteria','docLinks','visitDrafts','prevention','tagEdits','recommendations','treatmentQueue']) if(Array.isArray(data[key])) target[key]=data[key];
+    for(const key of ['fields','notes','reviews','files','exams','examDrafts','episodes','addedVisits','addedDoctors','consultations','templates','measurements','changes','questions','marketCriteria','marketFindings','docLinks','visitLinks','visitDrafts','prevention','tagEdits','recommendations','treatmentQueue']) if(Array.isArray(data[key])) target[key]=data[key];
     if(Array.isArray(data.savedConflicts))target.savedConflicts=data.savedConflicts;
     if(!workingFamily&&Array.isArray(data.hiddenDemoPrevention))target.hiddenDemoPrevention=data.hiddenDemoPrevention;
     if(data.sampleAliases)target.sampleAliases=data.sampleAliases;
@@ -201,6 +201,7 @@ function duplicateCard(form,kind,id,caption) {
 // Apply this tab's changes to the latest archive to preserve independent edits in another tab.
 let savedView=JSON.stringify(previous?.profiles?previous:prototypeState);
 function mergeLocalChanges(base,local,disk,key){
+  if((key==='visitLinks'||key==='marketFindings')&&base===undefined)base=[];
   if(JSON.stringify(base)===JSON.stringify(local))return disk;
   if(base==null||disk==null||typeof local!=='object'||local==null)return local;
   if(Array.isArray(local)){
@@ -307,8 +308,13 @@ function prescribedForReview(id){
   return meds;
 }
 function courseAt(id){
-  const meds=person.course?.visit===id?person.course.meds.map((m,i)=>({...m,id:'fixture-'+i,...medicineDetails[i],period:current().periods[i],fixture:true})):[];
-  meds.push(...(visitById(id)?.[8]||[]));
+  const direct=visitById(id)?.[8]||[];
+  const meds=person.course?.visit===id?person.course.meds.map((m,i)=>{
+    const fixtureId='fixture-'+i,edit=direct.find(row=>row.id===fixtureId);
+    return {...m,id:fixtureId,...medicineDetails[i],...edit,period:current().periods[i],fixture:true};
+  }):[];
+  const fixtureIds=new Set(meds.map(m=>m.id));
+  meds.push(...direct.filter(m=>!fixtureIds.has(m.id)));
   for(const f of current().files)if(f.visit===id && (f.checked||f.lastConfirmed))meds.push(...(f.meds||[]));
   for(const c of current().changes)if(c.visit===id&&c.replacement)meds.push(c.replacement);
   const history=current().changes.filter(c=>c.source===id&&c.kind!=='continue');

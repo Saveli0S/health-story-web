@@ -8,16 +8,32 @@ function deletionButton(group,id,title='Удалить карточку'){
 function manageRecords(){
   if(readOnly)return;
   const items=recordRemoval.entries(current()),categories=[...new Set(items.map(row=>row.category))];
-  openPanel(person.name,'Управление данными',`<label>Поиск записи<input type="search" id="remove-search"></label>
-    <label>Тип записи<select id="remove-category"><option value="">Все записи</option>${categories.map(c=>'<option>'+esc(c)+'</option>').join('')}</select></label>
-    <div id="remove-list"></div>${workingFamily?act('removeRecord','Очистить медицинские данные профиля','{"group":"profile"}','text-button danger'):''}`);
+  openPanel(person.name,'Управление данными',`<div class="record-manager">
+    <div class="edit-form record-filters">
+      <div class="record-filter">
+        <label for="remove-search">Поиск записи</label>
+        <input type="search" id="remove-search">
+      </div>
+      <div class="record-filter">
+        <label for="remove-category">Тип записи</label>
+        <div class="record-type">
+          <select id="remove-category"><option value="">Все записи</option>${categories.map(c=>'<option>'+esc(c)+'</option>').join('')}</select>
+          ${icon('down',true)}
+        </div>
+      </div>
+    </div>
+    <div id="remove-list"></div>
+    ${workingFamily?act('removeRecord','Очистить медицинские данные профиля','{"group":"profile"}','button danger'):''}
+  </div>`);
   const search=panelBody.querySelector('#remove-search'),category=panelBody.querySelector('#remove-category');
   const list=panelBody.querySelector('#remove-list');
   function draw(){
     const shown=items.filter(r=>(!category.value||r.category===category.value)&&norm([r.title,r.context,r.category].join(' ')).includes(norm(search.value)));
-    list.innerHTML=shown.map(r=>'<div class="field-line"><div><small>'+esc(r.category)+'</small><br>'+esc(r.title)+
-      (r.context?'<br><small>'+esc(r.context)+'</small>':'')+'</div>'+
-      act('removeRecord','Удалить',JSON.stringify({group:r.group,id:r.id,index:r.index,other:r.other}),'text-button danger')+'</div>').join('')||'<p class="hint">Нет подходящих записей.</p>';
+    const rows=shown.map(r=>`<li class="record-row">
+      <div class="record-info"><small>${esc(r.category)}</small><span>${esc(r.title)}</span>${r.context?`<small>${esc(r.context)}</small>`:''}</div>
+      ${act('removeRecord','Удалить',JSON.stringify({group:r.group,id:r.id,index:r.index,other:r.other}),'button danger')}
+    </li>`).join('');
+    list.innerHTML=rows?`<ul class="record-list" role="list">${rows}</ul>`:'<p class="hint">Нет подходящих записей.</p>';
   }
   search.oninput=draw;category.onchange=draw;draw();
 }

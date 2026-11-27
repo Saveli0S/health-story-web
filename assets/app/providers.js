@@ -17,10 +17,11 @@ function providerStatus(){
 }
 function providers(){
   const eligible=Boolean(globalThis.crypto?.subtle)&&!readOnly;
-  openPanel('Настройки','ИИ-провайдеры',`${chatGPTSettings()}
+  openPanel('Настройки','ИИ-провайдеры',`<div class="provider-cards">
+    ${chatGPTSettings()}
     <section class="plain-card"><h3>OpenRouter</h3>${providerFacts(routerKey?'Аккаунт подключён в этой вкладке.':'Аккаунт не подключён.',routerKey?(routerDelivery||'Бесплатная модель. Доступность квоты ещё не проверялась.'):'Для отправки в бесплатную модель подключите аккаунт.')}
     ${routerKey?act('disconnectAI','Отключить в этой вкладке','','button secondary'):eligible?act('beginAI','Авторизоваться в OpenRouter','','button primary'):'<p class="hint">Для подключения на этом устройстве нужен HTTPS или localhost и роль взрослого.</p>'}
-    <div id="auth-step"></div></section>`);
+    <div id="auth-step"></div></section></div>`);
 }
 function base64url(bytes){return btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'')}
 async function beginProvider(){
