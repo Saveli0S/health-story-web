@@ -42,7 +42,7 @@ function medicalFieldValue(f) {
 function showMedical(){
   openPanel('Медкарта',person.name,`<div class="field-list">${current().fields.map(f=>`<div class="field-line"><div><small>${esc(f.label)}</small><strong>${esc(medicalFieldValue(f))}</strong></div>
     ${readOnly?'':act('field','Изменить',f.id,'inline-action','edit')}</div>`).join('')}</div>
-    ${readOnly?'':act('field','Добавить поле','','button secondary','plus')}
+    ${readOnly?'':act('field','Добавить поле','','button secondary','plus')+act('manageRecords','Управление данными','','button secondary')}
     <section class="panel-section"><div class="section-head"><h3>Прививки и профилактика</h3>${readOnly?'':act('editPrevent','Добавить запись','','text-button','plus')}</div>${preventionListing()}</section>
     <div class="panel-section"><h3>Текущее лечение</h3>${allCourses().filter(c=>c.meds.some(isActiveMed)).map(c=>act('visit',c.meds.filter(isActiveMed).map(m=>m.name).join(', '),c.visit,'text-button')).join('')||'<p>Активных курсов нет.</p>'}</div>`);
 }
@@ -94,7 +94,7 @@ async function showFile(id){
     pdf||isTextFile(f)?'<div id="file-paper" class="source-preview"></div>':'<p class="hint">Этот формат можно открыть во внешнем просмотрщике.</p>';
   openPanel('Вложение · '+f.category,f.name,`<p class="dialog-sub">${dateLabel(f.date)} · ${esc(ext)}</p>
     ${tagStrip(f.category==='Лаборатория'?'lab':'file',id)}${area}
-    <div class="actions">${f.visit?act('visit','К визиту',f.visit,'button secondary'):''}${pdf?external(url,'Открыть PDF','button secondary'):''}<a class="button primary" download="${esc(f.name)}" href="${esc(url)}">Скачать оригинал</a></div>${documentLinks(f)}${!readOnly&&f.category==='Лаборатория'&&!f.file?act('verifyLab','Сверить результаты',f.id,'button secondary'):''}${!readOnly&&f.intake&&!jobs.has(id)?act('verifyFile','Сверить документ',id,'button secondary'):''}`);
+    <div class="actions">${f.visit?act('visit','К визиту',f.visit,'button secondary'):''}${pdf?external(url,'Открыть PDF','button secondary'):''}<a class="button primary" download="${esc(f.name)}" href="${esc(url)}">Скачать оригинал</a></div>${documentLinks(f)}${!readOnly&&f.category==='Лаборатория'&&!f.file?act('verifyLab','Сверить результаты',f.id,'button secondary'):''}${!readOnly&&f.intake&&!jobs.has(id)?act('verifyFile','Сверить документ',id,'button secondary'):''}${deletionButton('files',id,'Удалить документ')}`);
   const image=panelBody.querySelector('img.paper-preview');if(image)image.onerror=()=>{image.replaceWith(document.createTextNode('Браузер не может показать этот формат фото. Оригинал доступен для скачивания.'))};
   const paper=document.querySelector('#file-paper');
   if(paper){
@@ -154,21 +154,39 @@ async function saveUpload(form){
     error.textContent='Проверьте типы файлов. ZIP можно приложить как снимок, заключение или другой документ.';return;
   }
   form.dataset.busy='true';const submit=form.querySelector('button.primary');submit.disabled=true;
+  const accepted=[],seenLabs=new Set();let existingLab;
   try{
-    for(const [i,f] of files.entries()){await fileBlob(patient+'/'+rows[i].id,f);staged.push(rows[i])}
-    profile.files.push(...rows);if(!saveState())throw Error();
+    for(const [i,f] of files.entries()){
+      const row=rows[i];
+      if(row.category==='Лаборатория'){
+        const digest=await sourceDigest(f);
+        if(patient!==person.id||!form.isConnected||readOnly)throw Error();
+        const duplicate=await matchingOriginal(patient,f,digest,latestProfile().files.filter(x=>x.category==='Лаборатория'));
+        if(duplicate){existingLab=duplicate;continue}
+        if(seenLabs.has(digest))continue;
+        seenLabs.add(digest);row.sourceDigest=digest;
+      }
+      if(patient!==person.id||!form.isConnected||readOnly)throw Error();
+      await fileBlob(patient+'/'+row.id,f);staged.push(row);accepted.push([row,f]);
+    }
+    if(!accepted.length&&existingLab){
+      duplicateCard(form,existingLab.lab?'lab':'verifyLab',existingLab.id,'Открыть существующий бланк');
+      submit.disabled=false;delete form.dataset.busy;return;
+    }
+    profile.files.push(...staged);if(!saveState())throw Error();
   }catch{
     profile.files=profile.files.filter(f=>!rows.includes(f));await Promise.allSettled(staged.map(f=>removeBlob(patient+'/'+f.id)));
     error.textContent='Не удалось сохранить комплект. Проверьте свободное место и повторите загрузку.';submit.disabled=false;delete form.dataset.busy;return;
   }
-  for(const [i,row] of rows.entries())if(row.intake){
+  for(const [row,file] of accepted)if(row.intake){
     const job={patient,visit,row,status:'В очереди на распознавание'};jobs.set(row.id,job);
     workQueue=workQueue.then(async()=>{
-      try{await readIntakeFile(row,files[i],job)}finally{jobs.delete(row.id);refreshIntake(patient,visit);if(patient===person.id)render()}
+      try{await readIntakeFile(row,file,job)}finally{jobs.delete(row.id);refreshIntake(patient,visit);if(patient===person.id)render()}
     });
   }
   if(form.isConnected&&patient===person.id){
-    render();const first=rows[0];
+    render();const first=staged[0];
+    if(existingLab)announce('Повторный лабораторный бланк пропущен.');
     replaceRoute(first.intake?'intake':first.category==='Лаборатория'?'verifyLab':'file',first.intake?visit:first.id);
   }
 }

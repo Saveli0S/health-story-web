@@ -102,6 +102,7 @@ if (previous?.profiles) {
     if(!data) continue;
     for(const key of ['fields','notes','reviews','files','exams','examDrafts','episodes','addedVisits','addedDoctors','consultations','templates','measurements','changes','questions','marketCriteria','docLinks','visitDrafts','prevention','tagEdits','recommendations','treatmentQueue']) if(Array.isArray(data[key])) target[key]=data[key];
     if(Array.isArray(data.savedConflicts))target.savedConflicts=data.savedConflicts;
+    if(!workingFamily&&Array.isArray(data.hiddenDemoPrevention))target.hiddenDemoPrevention=data.hiddenDemoPrevention;
     if(data.sampleAliases)target.sampleAliases=data.sampleAliases;
     if(data.prompts && typeof data.prompts==='object')target.prompts=data.prompts;
     if(Array.isArray(data.periods) && data.periods.length===target.periods.length) target.periods=data.periods;
@@ -135,7 +136,7 @@ const demoPrevention=[
 ];
 for(const {id,kind,title,date,source} of workingFamily?[]:demoPrevention){
   const list=prototypeState.profiles.anna.prevention;
-  if(!list.some(p=>p.id===id))list.push({id,kind,title,next:'',period:'',note:'',
+  if(!prototypeState.profiles.anna.hiddenDemoPrevention?.includes(id)&&!list.some(p=>p.id===id))list.push({id,kind,title,next:'',period:'',note:'',
     history:[{id:id+'-done',date,source,note:'Демонстрационная запись'}]});
 }
 function confirmedRecommendations(id){
@@ -143,6 +144,60 @@ function confirmedRecommendations(id){
     ...current().files.filter(f=>f.visit===id&&f.checked&&f.recommendation).map(f=>({text:f.recommendation,source:f.id}))];
 }
 function current() {return prototypeState.profiles[person.id]}
+function identityText(value) {
+  return String(value??'').normalize('NFC').trim().replace(/\s+/gu,' ').toLocaleLowerCase('ru');
+}
+function identityRows(rows,keys) {
+  return (Array.isArray(rows)?rows:[]).map(row=>JSON.stringify(keys.map(key=>identityText(row?.[key])))).sort();
+}
+function visitIdentity(row,doctors) {
+  const doctor=doctors[row[3]]||[];
+  return JSON.stringify([row[1],row[2],doctor[0]||row[3],doctor[1],row[9]??doctor[2],row[5]].map(identityText)
+    .concat([identityRows(row[8],['name','strength','form','instructions'])]));
+}
+function examIdentity(row) {
+  if(!row.description?.trim()&&!row.conclusion?.trim()&&!row.parameters?.length)return '';
+  return JSON.stringify(['date','method','region','clinic','doctor','description','conclusion'].map(key=>identityText(row[key]))
+    .concat([identityRows(row.parameters,['name','value','unit'])]));
+}
+function labIdentity(row) {
+  return JSON.stringify(['date','name','laboratory'].map(key=>identityText(row[key]))
+    .concat([identityRows(row.rows,['name','value','unit','range','specimen'])]));
+}
+function latestProfile() {
+  const saved=readJson(stateKey)?.profiles?.[person.id];
+  return saved?{...current(),...saved}:current();
+}
+function visitSource(row) {
+  return row.category==='Назначения'&&(row.visitSource||row.visitImportRevision||!row.intake&&row.raw);
+}
+function sameVisit(row,doctors={}) {
+  const profile=latestProfile(),lookup={...person.doctors,...Object.fromEntries(profile.addedDoctors.map(d=>[d.id,d.values])),...doctors};
+  const rows=new Map([...person.visits,...profile.addedVisits].map(v=>[v[0],v]));
+  const key=visitIdentity(row,lookup);
+  return Array.from(rows.values()).find(v=>v[0]!==row[0]&&visitIdentity(v,lookup)===key);
+}
+async function sourceDigest(blob) {
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer())),byte=>byte.toString(16).padStart(2,'0')).join('');
+}
+async function matchingOriginal(owner,file,digest,rows) {
+  for(const row of rows) {
+    if(row.sourceDigest){
+      if(row.sourceDigest===digest)return row;
+      continue;
+    }
+    if(identityText(row.name)!==identityText(file.name))continue;
+    const original=await fileBlob(owner+'/'+row.id);
+    if(original?.size===file.size&&await sourceDigest(original)===digest)return row;
+  }
+}
+function duplicateCard(form,kind,id,caption) {
+  const error=form.querySelector('.error');
+  const visible=kind==='visit'?visitById(id):kind==='exam'?current().exams.some(e=>e.id===id):
+    kind==='episode'?current().episodes.some(e=>e.id===id):current().files.some(f=>f.id===id);
+  if(!visible){error.textContent='Такая карточка сохранена в другой вкладке. Обновите профиль, чтобы открыть её.';return}
+  error.innerHTML='В этом профиле уже есть карточка с такими данными. '+act(kind,caption||'Открыть существующую карточку',id,'text-button');
+}
 // Apply this tab's changes to the latest archive to preserve independent edits in another tab.
 let savedView=JSON.stringify(previous?.profiles?previous:prototypeState);
 function mergeLocalChanges(base,local,disk,key){
@@ -285,10 +340,11 @@ function storageDB(state=prototypeState) {
     req.onerror=()=>reject(req.error);
   });
 }
-async function removeBlob(id,state=prototypeState){
-  authorizeOriginal(id,state,true);
+async function removeBlob(id,state=prototypeState,cacheOnly=false){
+  authorizeOriginal(id,state,!cacheOnly);
   const db=await storageDB(state);
   try{await new Promise((resolve,reject)=>{
+    if(cacheOnly&&state.generation!==readJson(familyStateKey)?.generation){resolve();return}
     const tx=db.transaction('documents','readwrite');tx.objectStore('documents').delete(id);
     tx.oncomplete=resolve;tx.onabort=tx.onerror=()=>reject(tx.error);
   })}finally{db.close()}

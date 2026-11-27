@@ -25,7 +25,7 @@ function showExam(id){
     ${e.description?'<h3>Описание</h3><p class="exam-text">'+esc(e.description)+'</p>':''}
     <h3>Заключение врача</h3><p class="exam-text">${esc(e.conclusion||'Заключение пока не добавлено.')}</p>
     ${originals.length?'<h3>Протокол и снимки</h3>'+originals.map(f=>resultRow('file',f.id,f.name,f.category,'clip')).join(''):''}
-    ${readOnly?'':'<div class="actions">'+act('editExam','Редактировать',id,'button secondary','edit')+act('consult','Обсудить с ИИ','exam:'+id,'button secondary','spark')+'</div>'}`);
+    ${readOnly?'':'<div class="actions">'+act('editExam','Редактировать',id,'button secondary','edit')+act('consult','Обсудить с ИИ','exam:'+id,'button secondary','spark')+'</div>'}${deletionButton('exams',id,'Удалить обследование')}`);
 }
 function examParameter(p={}){
   return `<fieldset class="rx-inputs exam-parameter" data-id="${esc(p.id||uid())}"><legend>Параметр</legend>
@@ -165,11 +165,23 @@ function editExam(id,visit='',resume=''){
       const batch=[];
       for(const file of files){
         if(!active())return;
+        const digest=existing?.sourceDigest||await sourceDigest(file);
+        if(!active())return;
+        const linkedIds=new Set([...(savedExam?.attachments||[]),...sourceList].map(s=>s.id));
+        if(await matchingOriginal(owner,file,digest,profile.files.filter(f=>linkedIds.has(f.id))))continue;
+        if(!id&&!existing&&files.length===1&&!sourceList.length){
+          const snapshot=latestProfile();
+          const usedIds=new Set(snapshot.exams.flatMap(e=>e.attachments.map(a=>a.id)));
+          const used=await matchingOriginal(owner,file,digest,snapshot.files.filter(f=>usedIds.has(f.id)));
+          const card=used&&snapshot.exams.find(e=>e.attachments.some(a=>a.id===used.id));
+          if(card&&active()){duplicateCard(form,'exam',card.id,'Открыть обследование с этим документом');return}
+        }
+        if(!active())return;
         const source={id:existing?.id||uid(),name:existing?.name||file.name,type:file.type,protocol,existing:Boolean(existing)};
         if(!existing){
           await fileBlob(owner+'/'+source.id,file);
           if(!active()){await removeBlob(owner+'/'+source.id);return}
-          profile.files.push({id:source.id,name:file.name,type:file.type,category:'Черновики обследований',date:todayLocal(),visit:'',examDraft:draftId});
+          profile.files.push({id:source.id,name:file.name,type:file.type,category:'Черновики обследований',date:todayLocal(),visit:'',examDraft:draftId,sourceDigest:digest});
         }
         sourceList.push(source);
         if(protocol){review.checked=false;review.required=true;form.querySelector('[data-review]').hidden=false}
@@ -181,7 +193,7 @@ function editExam(id,visit='',resume=''){
       }
       drawSources();
       if(protocol)for(const [source,file] of batch){if(active())await readSource(source,file)}
-      if(active())status.textContent=protocol?'Откройте оригинал и сверьте перенесённые поля. Дополните пропуски вручную.':'Снимки готовы к сохранению.';
+      if(active())status.textContent=!batch.length?'Эти оригиналы уже приложены.':protocol?'Откройте оригинал и сверьте перенесённые поля. Дополните пропуски вручную.':'Снимки готовы к сохранению.';
     }catch{error.textContent='Не удалось сохранить вложение. Уже сохранённые файлы доступны в черновике.'}
     finally{setBusy(false)}
   }
@@ -213,6 +225,20 @@ function editExam(id,visit='',resume=''){
     if(parameters.some(p=>!p.name||!p.value)){error.textContent='Введите название и значение каждого параметра.';return}
     const values=fieldsNow();if(values.method==='Другое'&&values.customMethod.trim())values.method=values.customMethod.trim();delete values.customMethod;
     if(!values.description.trim()&&!values.conclusion.trim()&&!parameters.length&&!sourceList.length&&!savedExam?.attachments.length){error.textContent='Добавьте снимок, протокол, параметр или текст результата.';return}
+    const key=examIdentity({...values,parameters});
+    const snapshot=latestProfile(),focusId=id||draftId;
+    const sourceFiles=new Map([...profile.files,...snapshot.files].map(f=>[f.id,f]));
+    const sourceKey=s=>sourceFiles.get(s.id)?.sourceDigest||s.id;
+    const sourcesNow=[...(savedExam?.attachments||[]),...sourceList];
+    const sourceKeys=JSON.stringify(sourcesNow.map(sourceKey).sort());
+    const uploaded=sourceList.every(s=>!s.existing);
+    const used=snapshot.exams.find(other=>{
+      if(other.id===focusId)return false;
+      const sameSources=sourceKeys===JSON.stringify(other.attachments.map(sourceKey).sort());
+      if(sourcesNow.length&&sameSources&&uploaded)return true;
+      return key&&key===examIdentity(other)&&(!sourcesNow.length||!other.attachments.length||sameSources);
+    });
+    if(used&&(!savedExam||key!==examIdentity(savedExam)||sourceList.length))return duplicateCard(form,'exam',used.id,'Открыть существующее обследование');
     saving=true;submit.disabled=true;
     const before={files:profile.files,exams:profile.exams,examDrafts:profile.examDrafts};
     const exam={...values,id:id||draftId,parameters,attachments:[...(savedExam?.attachments||[]),...sourceList.map(s=>({id:s.id}))]};

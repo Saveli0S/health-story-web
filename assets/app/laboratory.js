@@ -58,6 +58,7 @@ async function verifyLab(id){
     if(!panel.open||routes.at(-1)!==route||person.id!==patient)return;
   }
   openPanel(person.name,'Сверить лабораторный бланк',`<form id="lab-form" data-id="${esc(id)}" class="edit-form">
+    ${f.duplicateLab&&current().files.some(other=>other.id===f.duplicateLab&&other.lab)?'<p class="hint">Такие результаты уже сохранены в другом бланке этого профиля.</p>'+act('lab','Открыть существующий анализ',f.duplicateLab,'text-button'):''}
     <label>Название исследования<input name="title" required value="${esc(draft.name)}"></label>
     <div class="intake-pair"><label>Дата взятия образца<input type="date" name="date" required max="${todayLocal()}" value="${esc(draft.date)}"></label><label>Лаборатория<input name="laboratory" value="${esc(draft.laboratory)}"></label></div>
     <label>Категория<select name="category">${['Другое','Гематология','Биохимия'].map(c=>'<option '+(draft.category===c?'selected':'')+'>'+c+'</option>').join('')}</select></label>
@@ -74,7 +75,9 @@ async function verifyLab(id){
   showUncertainText(form,f.issues);
 }
 function saveLab(form,defer=false){
+  if(readOnly)return;
   const f=current().files.find(x=>x.id===form.dataset.id);
+  if(!f)return;
   const value=(el,name)=>el.querySelector('[name="'+name+'"]').value.trim();
   const data={name:value(form,'title'),date:value(form,'date'),laboratory:value(form,'laboratory'),category:value(form,'category'),
     rows:[...form.querySelectorAll('.lab-input')].map(el=>({name:value(el,'marker'),value:value(el,'reading'),unit:value(el,'unit'),range:value(el,'range'),specimen:value(el,'specimen')}))};
@@ -82,9 +85,13 @@ function saveLab(form,defer=false){
   if(!defer&&(!data.name||!data.date||!data.rows.length||unresolved||!form.elements.verified.checked)){
     form.querySelector('.error').textContent='Уточните неясные значения по оригиналу. Для числового результата укажите единицу или выберите «Уточнить позже».';return;
   }
+  if(!defer&&(!f.lab||labIdentity(f.lab)!==labIdentity(data))){
+    const key=labIdentity(data),match=latestProfile().files.find(other=>other.id!==f.id&&other.lab&&labIdentity(other.lab)===key);
+    if(match)return duplicateCard(form,'lab',match.id,'Открыть существующий анализ');
+  }
   const before={...f};
   if(defer)f.labDraft={...data,position:form.sourcePosition()};
-  else{f.lab=data;delete f.labDraft}
+  else{f.lab=data;delete f.labDraft;delete f.duplicateLab}
   if(!saveState()){delete f.lab;Object.assign(f,before);form.querySelector('.error').textContent='Не удалось сохранить бланк.';return}
   render();if(defer)panel.close();else replaceRoute('lab',f.id);
 }
@@ -97,7 +104,7 @@ function labCard(id){
       return '<div class="lab-value"><div><small>'+esc([r.name,point.specimen].filter(Boolean).join(' · '))+'</small><strong>'+esc(r.value)+' '+esc(r.unit)+'</strong><small>'+esc(r.range?'Диапазон по бланку '+r.range:'Диапазон не указан')+'</small></div>'+act('trend','Динамика',point.key,'inline-action','trend')+'</div>';
     }).join('')+
     '<div class="actions">'+(f.visit?act('visit','К визиту',f.visit,'button secondary'):'')+act('file','Исходный бланк',id,'button secondary','clip')+(!readOnly?act('consult','Обсудить с ИИ','lab:'+id,'button primary','spark'):'')+'</div>'+
-    (!readOnly&&f.lab?act('verifyLab','Исправить результаты',id,'text-button','edit'):''));
+    (!readOnly&&f.lab?act('verifyLab','Исправить результаты',id,'text-button','edit'):'')+deletionButton('files',id,'Удалить анализ и бланк'));
 }
 function pointChart(points,action){
   const plotted=points.map((p,index)=>({...p,index,n:Number(String(p.value).replace(',','.')),t:Date.parse(p.date)}))

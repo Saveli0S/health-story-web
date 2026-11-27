@@ -37,7 +37,7 @@ function preventCard(id){
     (p.period?'<p>Периодичность · '+esc(p.period)+'</p>':'')+'</div>'+(p.note?'<p>'+esc(p.note)+'</p>':'')+
     '<div class="visit-options">'+(readOnly?'':act('completePrevent','Отметить выполнение',id,'button primary','check')+
       act('editPrevent','Изменить запись',id,'button secondary','edit')+act('consult','Обсудить с ИИ','prevent:'+id,'text-button','spark'))+'</div>'+
-    '<h3>История выполнения</h3>'+(history||'<p class="hint">Выполнений пока нет.</p>'));
+    '<h3>История выполнения</h3>'+(history||'<p class="hint">Выполнений пока нет.</p>')+deletionButton('prevention',id,'Удалить запись профилактики'));
 }
 function preventionForm(id){
   if(readOnly)return;

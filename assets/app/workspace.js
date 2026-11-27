@@ -42,6 +42,7 @@ function recordsPage(){
 }
 function settingsMenu(){
   const entries=[['providers','ИИ-провайдеры',providerStatus(),'spark'],['prompts','Промпты','Семейные и личные шаблоны','book'],['tagLibrary','Справочник тегов','Названия и правила авторазметки','folder'],['devices','Семья и устройства','Профили и права просмотра','users'],['archive','Синхронизация и резервная копия','Локальный архив семьи','folder']];
+  if(!readOnly)entries.push(['manageRecords','Управление данными','Удаление записей выбранного профиля','folder']);
   return '<div class="settings-menu">'+entries.filter(e=>!readOnly||!['providers','prompts'].includes(e[0])).map(e=>resultRow(e[0],'',e[1],e[2],e[3])).join('')+'</div>';
 }
 function visitConclusions(id){

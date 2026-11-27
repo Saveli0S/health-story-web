@@ -114,7 +114,7 @@ function consultContext(selected){
   }
   for(const id of [...visitIds].sort((a,b)=>visitById(a)[1].localeCompare(visitById(b)[1]))){
     const v=visitById(id);addRef('visit',id,v[2]);
-    (data.визиты??=[]).push({дата:v[1],эпизод:v[4],специальность:person.doctors[v[3]][1],запись:v[5],
+    (data.визиты??=[]).push({дата:v[1],эпизод:v[4],специальность:person.doctors[v[3]]?.[1]||'',запись:v[5],
       назначения:(courseAt(id)?.meds||[]).map(m=>[m.name,m.strength,m.form,m.instructions].filter(Boolean).join(' · ')),
       рекомендацииВрача:confirmedRecommendations(id).map(r=>r.text),сведенияИзНазначений:intakeFiles(id).filter(f=>f.checked&&f.context).map(f=>f.context),решения:current().changes.filter(c=>c.visit===id).map(decisionText),
       пометки:current().notes.filter(n=>n.visit===id).map(n=>n.text)});
@@ -163,14 +163,14 @@ function consultRecord(id){
   const refs=(transferHistory(r)||sent)+'<div class="consult-refs">'+(r.refs||[]).map(s=>act(s.kind,s.label,s.id,'chip-link','folder')).join('')+'</div>';
   if(r.answer||readOnly){
     openPanel(person.name,'История консультации',info+refs+(r.answer?'<section class="panel-section"><h3>Ответ · '+esc(r.provider)+'</h3><div class="manual-answer">'+esc(r.answer)+'</div></section>':'<p>Ответ пока не добавлен.</p>')+
-      '<details><summary>Запрос и версия промпта</summary><pre>'+esc(r.prompt)+'</pre><p>'+esc(template.text)+'</p></details>'+(r.answer?conversationHistory(r):'')+(readOnly?'':act('consult','Повторить с актуальными данными','again:'+id,'button secondary')));return;
+      '<details><summary>Запрос и версия промпта</summary><pre>'+esc(r.prompt)+'</pre><p>'+esc(template.text)+'</p></details>'+(r.answer?conversationHistory(r):'')+(readOnly?'':act('consult','Повторить с актуальными данными','again:'+id,'button secondary'))+deletionButton('consultations',id,'Удалить консультацию'));return;
   }
   openPanel(person.name,'Проверить и передать запрос',info+refs+`<form class="edit-form" id="consult-answer" data-id="${esc(id)}"><label>Точный текст для провайдера<textarea name="prompt" rows="7" required ${r.sentAt?'readonly':''}>${esc(r.sentAt?r.prompt:cleanClinicalText(r.prompt))}</textarea></label>
     <p class="hint">Проверьте свободный текст на личные сведения. Файлы и имена владельцев карточек в запрос не включаются автоматически.</p>
     ${transferHint()}<div class="actions left">${act('askProvider',chatGPT.connected?'Подтвердить и отправить в ChatGPT':routerKey?'Подтвердить и отправить в OpenRouter':'Подключить личный ChatGPT',id,'button primary','spark')}${chatGPT.connected?'':act('consultCopy','Скопировать для ChatGPT',id,'button secondary')+external('https://chatgpt.com/','Открыть ChatGPT')}</div>
     <p class="hint" role="status" id="provider-result">${esc(r.lastError||'')}</p>
     <label ${chatGPT.connected?'hidden':''}>Ответ из своего чата<textarea name="answer" rows="4">${esc(r.replyDraft||'')}</textarea></label>
-    <button class="button secondary" ${chatGPT.connected?'hidden':''}>Сохранить ответ</button></form>`);
+    <button class="button secondary" ${chatGPT.connected?'hidden':''}>Сохранить ответ</button></form>${deletionButton('consultations',id,'Удалить консультацию')}`);
 }
 function saveConsultAnswer(f,provider='ChatGPT · ручной перенос'){
   const r=current().consultations.find(r=>r.id===f.dataset.id);

@@ -306,6 +306,7 @@ const deviceSync=(()=>{
         try{
           const clinical=()=>JSON.stringify([data.profiles,data.family,data.tags,data.templates,data.city]);
           const initial=clinical();
+          const originalCache=Object.fromEntries(Object.entries(data.profiles).map(([id,p])=>[id,items(p).map(f=>({id:f.id,key:originalKey(data,id+'/'+f.id)}))]));
           if(data.access)await receiveRoster(data);
           if(!data.access)for(const {id} of data.family.members)ctx.profiles[id]||=profileContext();
           for(const id of Object.keys(ctx.profiles)){
@@ -321,7 +322,16 @@ const deviceSync=(()=>{
           if(incoming&&(jobs.size||providerJobs.size||panel.open&&panelBody.querySelector('form'))){
             lastError='Получены изменения. Они появятся после завершения работы с открытой формой.';return;
           }
-          commit(raw,data,incoming);lastError='';return;
+          commit(raw,data,incoming);
+          const removed=Object.entries(originalCache).flatMap(([id,cached])=>{
+            const profile=data.profiles[id];if(!profile)return [];
+            const retained=new Set(items(profile).map(f=>originalKey(data,id+'/'+f.id)));
+            const conflicts=ctx.profiles[id]?.base.records?.conflicts||[];
+            return cached.filter(file=>!retained.has(file.key)&&!conflicts.some(({path=[]})=>
+              ['files','visitDrafts'].includes(path[0])&&(path.length===1||path[1]?.id===file.id)));
+          });
+          await Promise.allSettled(removed.map(file=>removeBlob(file.key,data,true)));
+          lastError='';return;
         }catch(e){if(e.status===412&&attempt<2)continue;throw e}
       }
     }).catch(e=>{lastError=e instanceof TypeError?'Нет связи с сервером. Правки остаются на устройстве.':e.message;throw e}).finally(()=>{running=null;refresh()});
@@ -350,7 +360,7 @@ const deviceSync=(()=>{
     for(const m of scoped.family.members){
       const s=ctx.profiles[m.id];if(!s?.base.records||!s.base.consent)throw Error('Сначала синхронизируйте семью.');
       profiles[m.id]={key:s.key,previousKeys:s.previousKeys||[]};
-      grants[m.id]=scoped.access.role==='child'?'read':m.id===scoped.access.member?'self':'edit';
+      grants[m.id]=scoped.access.role==='child'?'read':(m.id===scoped.access.member||scoped.access.role==='admin'&&m.role==='Ребёнок')?'self':'edit';
     }
     return {family:scoped.family,city:scoped.city,tags:scoped.tags,templates:scoped.templates,profiles,grants};
   }

@@ -3,17 +3,32 @@
 function workflowSteps(step){
   return '<ol class="intake-steps" aria-label="Этапы">'+['Визит','Сверка','Разбор'].map((s,i)=>'<li '+(i+1===step?'aria-current="step"':'')+'><span>'+(i+1)+'</span>'+s+'</li>').join('')+'</ol>';
 }
-function showNewEpisode(){
-  openPanel(person.name,'Новый эпизод',`<form id="episode-form" class="edit-form">
-    <label>Название эпизода<input required maxlength="100" name="episode" placeholder="Например, весеннее обострение"></label>
+function showNewEpisode(id=''){
+  const previous=id?current().episodes.find(e=>e.id===id):null;
+  if(readOnly||(id&&!previous))return;
+  openPanel(person.name,previous?'Редактировать эпизод':'Новый эпизод',`<form id="episode-form" data-id="${esc(id)}" class="edit-form">
+    <label>Название эпизода<input required maxlength="100" name="episode" value="${esc(previous?.name)}" placeholder="Например, весеннее обострение"></label>
     <p class="hint">В одном эпизоде можно собрать несколько визитов к разным врачам.</p>
-    <p class="error" role="alert"></p><button class="button primary">Создать эпизод</button></form>`);
+    <p class="error" role="alert"></p><button class="button primary">${previous?'Сохранить эпизод':'Создать эпизод'}</button></form>`);
 }
 function submitEpisode(f){
+  if(readOnly)return;
   const name=f.elements.episode.value.trim();if(!name){f.elements.episode.focus();return}
-  const episode={id:uid(),name};current().episodes.push(episode);
-  if(!saveState()){current().episodes.pop();f.querySelector('.error').textContent='Не удалось сохранить эпизод в браузере.';return}
-  render();replaceRoute('episode',episode.id);
+  const profile=current(),id=f.dataset.id,existing=id&&profile.episodes.find(e=>e.id===id);
+  const match=latestProfile().episodes.find(e=>e.id!==id&&identityText(e.name)===identityText(name));
+  if(match&&identityText(existing?.name)!==identityText(name))return duplicateCard(f,'episode',match.id,'Открыть существующий эпизод');
+  if(id&&!existing)return;
+  const before={episodes:profile.episodes,addedVisits:profile.addedVisits};
+  const episode={...existing,id:id||uid(),name};
+  const renamed=v=>v[7]===id?Object.assign(v.slice(),{4:name}):v;
+  profile.episodes=id?profile.episodes.map(e=>e.id===id?episode:e):profile.episodes.concat(episode);
+  if(id){
+    const stored=new Set(profile.addedVisits.map(v=>v[0]));
+    profile.addedVisits=profile.addedVisits.map(renamed).concat(person.visits.filter(v=>v[7]===id&&!stored.has(v[0])).map(renamed));
+  }
+  if(!saveState()){Object.assign(profile,before);f.querySelector('.error').textContent='Не удалось сохранить эпизод в браузере.';return}
+  if(id)person.visits=person.visits.map(renamed);
+  render();if(id)goBack();else replaceRoute('episode',episode.id);
 }
 function showNewVisit(episodeId,photo){
   photo??=routes.at(-1)?.photo;
@@ -62,13 +77,15 @@ function toggleVisitInputs(){
   }
 }
 async function submitVisit(f,next){
-  if(f.dataset.saving)return;
+  if(f.dataset.saving||readOnly)return;
   const val=k=>f.elements[k].value.trim(), profile=current(),route=routes.at(-1),photo=route.photo,patient=person.id;
   const episode=val('episode')==='new'?{id:uid(),name:val('episodeName')}:profile.episodes.find(e=>e.id===val('episode'));
-  const doctor=val('doctor')==='new'?{id:uid(),values:[val('doctorName'),val('specialty'),val('clinic')]}:null;
-  if(!episode?.name||!val('title')||(doctor&&!doctor.values[0])){f.querySelector('.error').textContent='Заполните название эпизода, визита и имя врача.';return}
-  if(photo&&[val('title'),val('episode')==='new'?val('episodeName'):'',doctor?.values[0]||''].some(needsClarification)){f.querySelector('.error').textContent='Уточните отмеченные поля визита по оригиналу.';return}
-  const visit=[uid(),val('date'),val('title'),doctor?.id||val('doctor'),episode.name,val('note'),'scope',episode.id];
+  const newDoctor=val('doctor')==='new',values=[val('doctorName'),val('specialty'),val('clinic')];
+  const foundDoctor=newDoctor&&Object.keys(person.doctors).find(id=>values.every((v,i)=>identityText(v)===identityText(person.doctors[id][i])));
+  const doctor=newDoctor&&!foundDoctor?{id:uid(),values}:null;
+  if(!episode?.name||!val('title')||(newDoctor&&!values[0])){f.querySelector('.error').textContent='Заполните название эпизода, визита и имя врача.';return}
+  if(photo&&[val('title'),val('episode')==='new'?val('episodeName'):'',newDoctor?values[0]:''].some(needsClarification)){f.querySelector('.error').textContent='Уточните отмеченные поля визита по оригиналу.';return}
+  const visit=[uid(),val('date'),val('title'),doctor?.id||foundDoctor||val('doctor'),episode.name,val('note'),'scope',episode.id];
   let decisions;try{decisions=readTherapyChanges(f,visit)}catch(e){f.querySelector('.error').textContent=e.message;return}
   const meds=medicineValues(f);
   if(meds.some(m=>!m.name||!m.strength||!m.instructions||[m.name,m.strength,m.instructions].some(unclearRxField))){
@@ -76,14 +93,30 @@ async function submitVisit(f,next){
   }
   if(val('clinic')){visit[8]=[];visit[9]=val('clinic')}
   if(meds.length)visit[8]=meds.map(m=>({...m,period:emptyPeriod()}));
+  const match=sameVisit(visit,doctor?{[doctor.id]:doctor.values}:{});
+  if(match)return duplicateCard(f,'visit',match[0],'Открыть существующий визит');
+  if(val('episode')==='new'){
+    const same=profile.episodes.find(e=>identityText(e.name)===identityText(episode.name));
+    if(same){
+      f.elements.episode.value=same.id;toggleVisitInputs();refreshPreviousFields(f);
+      f.querySelector('.error').textContent='Выбран существующий эпизод с этим названием. Проверьте его и сохраните визит.';
+      return;
+    }
+  }
   const archived=photo&&profile.visitDrafts.find(d=>d.id===photo.draftId);
   if(photo&&!archived){f.querySelector('.error').textContent='Откройте исходный черновик из профиля.';return}
   if(archived&&!readJson(stateKey)?.profiles?.[patient]?.visitDrafts?.some(d=>d.id===archived.id)){
     f.querySelector('.error').textContent='Этот черновик уже изменён в другой вкладке. Обновите профиль.';return;
   }
   const originals=archived?draftGroup(archived,profile):[];
+  const primary=originals.find(d=>d.id===photo?.main&&d.kind==='Назначения');
+  const priorFiles=latestProfile().files;
+  const sourceMatch=primary?.sourceDigest&&priorFiles.find(f=>f.visitSource&&f.visit&&f.sourceDigest===primary.sourceDigest);
+  if(sourceMatch&&originals.every(source=>source.sourceDigest&&priorFiles.some(f=>f.visit===sourceMatch.visit&&f.sourceDigest===source.sourceDigest))){
+    return duplicateCard(f,'visit',sourceMatch.visit,'Открыть визит с этим комплектом');
+  }
   const rows=originals.map(d=>{
-    const kind=d.kind||'Назначения',row={id:d.id,blobId:d.blobId,visit:visit[0],category:kind,name:d.name,type:d.type,date:visit[1]};
+    const kind=d.kind||'Назначения',row={id:d.id,blobId:d.blobId,visit:visit[0],category:kind,name:d.name,type:d.type,date:visit[1],...(d.sourceDigest?{sourceDigest:d.sourceDigest}:{}),...(d.id===photo.main&&kind==='Назначения'?{visitSource:true}:{})};
     if(d.issues?.length)row.issues=d.issues;
     if(['Назначения','Рекомендации'].includes(kind))Object.assign(row,{intake:true,raw:d.raw||'',transcription:d.transcription,visitImportRevision:d.visitImportRevision,proposed:kind==='Рекомендации'?[]:d.proposed||[],readError:d.readError,checked:false,meds:[]});
     if(kind==='Лаборатория'&&(d.raw||d.labDraft)){row.labRaw=d.raw||'';row.labDraft=d.labDraft||parseLabText(d.raw,d.name)}

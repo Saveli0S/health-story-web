@@ -75,8 +75,27 @@ async function preparePhotoVisit(input,requestedMode){
   buttonList.forEach(b=>b.disabled=true);
   const profile=current(),patient=person.id,docs=[];
   try{
+    const unique=new Map();
     for(const file of files){
-      const d={id:uid(),parent:docs[0]?.id,episode:route.id||'',name:file.name,type:file.type,date:todayLocal(),kind:suggestImportKind(file.name),state:'queued'};
+      const digest=await sourceDigest(file);if(!unique.has(digest))unique.set(digest,file);
+    }
+    if(route!==routes.at(-1)||patient!==person.id||readOnly){route.reading=false;return}
+    if(unique.size===1){
+      const [digest,file]=unique.entries().next().value;
+      const recent=latestProfile();
+      const saved=await matchingOriginal(patient,file,digest,recent.files.filter(f=>f.visit&&visitSource(f)));
+      const pending=saved?null:await matchingOriginal(patient,file,digest,recent.visitDrafts.filter(d=>!d.parent));
+      if(saved||pending){
+        if(route===routes.at(-1)&&patient===person.id){
+          status.innerHTML=saved?'Этот документ уже есть в визите. '+act('visit','Открыть существующий визит',saved.visit,'text-button'):
+            'Этот документ уже есть в черновике. '+act('resumeVisit','Открыть существующий черновик',pending.id,'text-button');
+          document.querySelector('#visit-source').value='';
+        }
+        route.reading=false;buttonList.forEach(b=>b.disabled=false);return;
+      }
+    }
+    for(const [digest,file] of unique){
+      const d={id:uid(),parent:docs[0]?.id,episode:route.id||'',name:file.name,type:file.type,date:todayLocal(),kind:suggestImportKind(file.name),state:'queued',sourceDigest:digest};
       await fileBlob(patient+'/'+d.id,file);docs.push(d);
     }
     profile.visitDrafts.push(...docs);

@@ -53,24 +53,26 @@ async function joinDevicePanel(){
 }
 function grantDevicePanel(){
   if(!workingFamily||viewer!=='admin')return;
-  const members=family.members.filter(m=>m.id!==family.adminId);
+  const adminEnabled=Boolean(readJson(familyStateKey)?.sync);
+  const members=family.members.filter(m=>m.id!==family.adminId||adminEnabled);
   if(!members.length){openPanel('Семья и устройства','Выдать доступ','<p>Сначала добавьте профиль взрослого или ребёнка.</p>'+act('newMember','Добавить профиль','','button primary'));return}
   openPanel('Семья и устройства','Выдать доступ устройству','<form id="device-issue" class="edit-form">'+
     '<label>Запрос с нового устройства<input type="file" required name="request" accept=".health-request"></label>'+
     '<label>Отпечаток с экрана получателя<input name="fingerprint" required autocomplete="off" spellcheck="false" placeholder="4 группы по 4 символа"></label>'+
     '<label>Название устройства<input required name="label" maxlength="80" placeholder="Например, iPhone"></label>'+
-    '<label>Владелец устройства<select required name="member">'+members.map(m=>'<option value="'+esc(m.id)+'">'+esc(m.name)+' · '+(m.role==='Ребёнок'?'только своя карта, просмотр':'своя карта и все дети, редактирование')+'</option>').join('')+'</select></label>'+
+    '<label>Владелец устройства<select required name="member">'+members.map(m=>'<option value="'+esc(m.id)+'">'+esc(m.name)+' · '+(m.id===family.adminId?'администратор на iPhone, все профили':m.role==='Ребёнок'?'только своя карта, просмотр':'своя карта и все дети, редактирование')+'</option>').join('')+'</select></label>'+
     '<button class="button primary">Создать файл доступа</button><div role="status"></div></form>');
   const form=document.querySelector('#device-issue');
+  if(adminEnabled && members.some(m=>m.id!==family.adminId))form.elements.member.value=members.find(m=>m.id!==family.adminId).id;
   form.oninput=()=>{form.querySelector('[role=status]').replaceChildren();clearFileURL()};
 }
 function projectForDevice(data,memberId,deviceId,revision){
   validateFamily(data);
   const member=data.family.members.find(m=>m.id===memberId);
-  if(!member||member.id===data.family.adminId)throw Error('member');
-  const role=member.role==='Ребёнок'?'child':'adult';
-  const members=data.family.members.filter(m=>m.id===member.id||(role==='adult'&&m.role==='Ребёнок'));
-  return {schemaVersion:2,generation:uid(),family:{id:data.family.id,kind:'family',name:data.family.name,adminId:null,members},
+  if(!member)throw Error('member');
+  const role=member.id===data.family.adminId?'admin':member.role==='Ребёнок'?'child':'adult';
+  const members=data.family.members.filter(m=>role==='admin'||m.id===member.id||(role==='adult'&&m.role==='Ребёнок'));
+  return {schemaVersion:2,generation:uid(),family:{id:data.family.id,kind:'family',name:data.family.name,adminId:role==='admin'?member.id:null,members},
     access:{deviceId,member:memberId,role,revision,edited:false},city:data.city,tags:data.tags,templates:data.templates,
     profiles:Object.fromEntries(members.map(m=>[m.id,data.profiles[m.id]]))};
 }
@@ -95,7 +97,7 @@ async function requestedDevice(f){
   }
   const revision=req.revision??0;
   if(!Number.isSafeInteger(revision)||revision<0||revision>=Number.MAX_SAFE_INTEGER-1)throw Error();
-  return {raw,id,label,member:f.elements.member.value,revision};
+  return {raw,id,label,member:f.elements.member.value,revision,client:req.client};
 }
 async function issueDeviceFile(f){
   if(!workingFamily||viewer!=='admin'||f.dataset.busy)return;
@@ -108,6 +110,9 @@ async function issueDeviceFile(f){
     const {raw,id,label,member}=request;
     const snapshot=localStorage.getItem(familyStateKey),data=JSON.parse(localVault.open(snapshot));
     if(data.family.id!==family.id||data.access)throw Error();
+    if(member===data.family.adminId&&(!data.sync||(!f.dataset.device&&request.client!=='ios'))){
+      msg.textContent='Для доступа администратора включите обмен и выберите запрос из нативного приложения iPhone.';return;
+    }
     const old=deviceAuthority(family.id).devices.find(d=>d.id===id);
     if(old&&(old.revoked||old.member!==member)){msg.textContent='Это устройство отозвано или закреплено за другим профилем.';return}
     const revision=Math.max(old?.revision||0,request.revision)+1,scoped=projectForDevice(data,member,id,revision),files=[];

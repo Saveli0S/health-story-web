@@ -92,20 +92,51 @@ function showFamily(){
   available.map(p=>`<button class="person-row" data-action="select" data-id="${p.id}"><span class="avatar ${p.role==='Ребёнок'?'child':''}">${esc(p.initials)}</span><span><strong>${esc(p.name)}</strong><small>${workingFamily&&p.id===family.adminId?'Администратор':p.role}</small></span>${icon(p===person?'check':'right',true)}</button>`).join('')+familyActions());
 }
 function visitClinic(v){return v[9]??person.doctors[v[3]]?.[2]??''}
+function visitEditor(id){
+  const v=visitById(id);if(!v||readOnly)return;
+  openPanel(v[2],'Редактировать визит',`<form id="visit-edit-form" data-id="${esc(id)}" class="edit-form">
+    <label>Название визита<input name="title" required maxlength="100" value="${esc(v[2])}"></label>
+    <label>Дата визита<input name="date" type="date" required max="${todayLocal()}" value="${esc(v[1])}"></label>
+    <label>Врач<select name="doctor"><option value="">Врач не указан</option>${Object.keys(person.doctors).map(key=>'<option value="'+esc(key)+'" '+(v[3]===key?'selected':'')+'>'+esc(doctorLabel(key))+'</option>').join('')}</select></label>
+    <label>Клиника<input name="clinic" maxlength="160" value="${esc(visitClinic(v))}"></label>
+    <label>Сведения о визите<textarea name="note" maxlength="2000">${esc(v[5])}</textarea></label>
+    <p class="error" role="alert"></p><button class="button primary">Сохранить изменения</button></form>`);
+  panelBody.querySelector('#visit-edit-form').visitBase=v;
+}
+function saveVisitEdit(form){
+  const v=visitById(form.dataset.id);if(!v||readOnly)return;
+  const updated=v.slice(),value=field=>form.elements[field].value.trim();
+  if(!value('title')||!value('date')||value('doctor')&&!person.doctors[value('doctor')])return;
+  Object.assign(updated,{1:value('date'),2:value('title'),3:value('doctor'),5:value('note'),9:value('clinic')});
+  updated[8]??=[];
+  storeVisitEdit(form,v,updated);
+}
 function visitClinicEditor(id){
   const v=visitById(id);if(!v||readOnly)return;
   openPanel(v[2],'Клиника визита','<form id="visit-clinic-form" class="edit-form" data-id="'+esc(id)+'"><label>Клиника<input name="clinic" maxlength="160" value="'+esc(visitClinic(v))+'"></label><p role="alert" class="error"></p><button class="button primary">Сохранить</button></form>');
+  panelBody.querySelector('#visit-clinic-form').visitBase=v;
 }
 function saveVisitClinic(form){
   const id=form.dataset.id,v=visitById(id);if(!v||readOnly)return;
-  const rows=current().addedVisits,idx=rows.findIndex(r=>r[0]===id),updated=v.slice();
+  const updated=v.slice();
   updated[8]??=[];updated[9]=form.elements.clinic.value.trim();
+  storeVisitEdit(form,v,updated);
+}
+function storeVisitEdit(form,v,updated){
+  const latest=latestProfile().addedVisits.find(row=>row[0]===v[0])||v,expected=form.visitBase||v;
+  const fields=form.id==='visit-clinic-form'?[9]:[1,2,3,5,9];
+  if(fields.some(i=>latest[i]!==expected[i])){
+    form.querySelector('.error').textContent='Визит уже изменился. Откройте актуальную карточку перед сохранением.';return;
+  }
+  const id=v[0],rows=current().addedVisits,idx=rows.findIndex(r=>r[0]===id),match=sameVisit(updated);
+  if(match&&visitIdentity(updated,person.doctors)!==visitIdentity(v,person.doctors))return duplicateCard(form,'visit',match[0],'Открыть существующий визит');
   if(idx>=0)rows[idx]=updated;else rows.push(updated);
   if(!saveState()){
     if(idx>=0)rows[idx]=v;else rows.pop();
-    form.querySelector('.error').textContent='Не удалось сохранить клинику.';return;
+    form.querySelector('.error').textContent='Не удалось сохранить визит.';return;
   }
   person.visits[person.visits.findIndex(r=>r[0]===id)]=updated;
+  person.visits.sort((a,b)=>b[1].localeCompare(a[1]));
   render();goBack();
 }
 function showVisit(id){
@@ -114,9 +145,10 @@ function showVisit(id){
   openPanel(person.name,v[2],`
     <p class="detail-meta">${icon('calendar')}${dateLabel(v[1],{day:'numeric',month:'long',year:'numeric'})}</p>
     <p class="detail-meta">${visitClinic(v)?'Клиника · '+esc(visitClinic(v)):''} ${readOnly?'':act('editVisitClinic',visitClinic(v)?'Изменить клинику':'Указать клинику',id,'text-button')}</p>
-    ${tagStrip('visit',id)}<div class="visit-links">${act('episode',v[4],v[7],'chip-link','folder')}${act('doctor',doctorLabel(v[3]),v[3],'chip-link','scope')}</div><p class="visit-summary">${esc(v[5])}</p>
+    ${tagStrip('visit',id)}<div class="visit-links">${v[7]?act('episode',v[4],v[7],'chip-link','folder'):''}${person.doctors[v[3]]?act('doctor',doctorLabel(v[3]),v[3],'chip-link','scope'):''}</div><p class="visit-summary">${esc(v[5])}</p>
+    ${readOnly?'':act('editVisit','Редактировать визит',id,'button secondary','edit')}
     ${readOnly?'':act('intake',intakeFiles(id).some(f=>!f.checked)?'Продолжить сверку назначений':'Документы и сверка назначений',id,'button secondary','clip')}
-    <div class="visit-options">${act('brief','Сводка к приёму',v[7],'chip-link','book')}${readOnly?'':act('consult','Обсудить с ИИ','visit:'+id,'chip-link','spark')}
+    <div class="visit-options">${v[7]?act('brief','Сводка к приёму',v[7],'chip-link','book'):''}${readOnly?'':act('consult','Обсудить с ИИ','visit:'+id,'chip-link','spark')}
     ${!readOnly&&previousMeds(v[7],v[1],id).length?act('therapy','Пересмотреть предыдущую схему',id,'text-button','pill'):''}</div>
     ${current().changes.filter(c=>c.visit===id).map(c=>'<p class="fact-note">'+esc(decisionText(c))+'</p>').join('')}
     <nav class="visit-jumps"  aria-label="Содержание визита">${meds.length?act('jump','Назначения · '+meds.length,'visit-meds','jump-link'):''}${act('jump','Анализы · '+linked.length,'visit-labs','jump-link')}${act('jump','Вложения · '+files.length,'visit-files','jump-link')}${act('jump','Пометки · '+notes.length,'visit-notes','jump-link')}</nav>
@@ -129,21 +161,22 @@ function showVisit(id){
     <section class="panel-section"><h3>Результаты обследований</h3>${examListing(current().exams.filter(e=>e.visit===id))||'<p class="hint">Нет связанных обследований.</p>'}${readOnly?'':act('newExam','Добавить обследование',id,'text-button','plus')}</section>
     <section id="visit-files" class="panel-section"><h3>Вложения</h3>${files.map(f=>resultRow('file',f.id,f.name,f.category,'clip')).join('')||'<p class="hint">Пока нет файлов.</p>'}${readOnly?'':act('upload','Прикрепить файл',id,'text-button','plus')}</section>
     <section id="visit-notes" class="panel-section"><h3>Пометки к визиту</h3>${notes.map(n=>'<div class="note"><small>'+esc(n.author)+' · '+esc(stamp(n.time))+'</small><p>'+esc(n.text)+'</p></div>').join('')||'<p class="hint">Пометок пока нет.</p>'}
-    ${readOnly?'':act('addNote','Добавить пометку',id,'text-button','plus')}</section>`);
+    ${readOnly?'':act('addNote','Добавить пометку',id,'text-button','plus')}</section>${deletionButton('addedVisits',id,'Удалить визит')}`);
 }
 function showDoctor(id){
-  const [name,spec,clinic]=person.doctors[id];
-  openPanel(spec||'Карточка врача',name,'<p class="dialog-sub">'+esc(clinic)+'</p><div class="panel-section"><h3>Визиты пациента</h3><div class="visit-list">'+visitRows(person.visits.filter(v=>v[3]===id))+'</div></div>');
+  const doctor=person.doctors[id];if(!doctor)return;
+  const [name,spec,clinic]=doctor;
+  openPanel(spec||'Карточка врача',name,'<p class="dialog-sub">'+esc(clinic)+'</p><div class="panel-section"><h3>Визиты пациента</h3><div class="visit-list">'+visitRows(person.visits.filter(v=>v[3]===id))+'</div></div>'+deletionButton('addedDoctors',id,'Удалить карточку врача'));
 }
 function addNote(id){
   openPanel('Пометка к визиту',visitById(id)[2],`<form id="note-form" class="edit-form" data-id="${id}"><label>Текст пометки<textarea required name="note" maxlength="800"></textarea></label><p class="hint">Увидят все, кому доступна карточка ${esc(person.name)}.</p><button class="button primary">Сохранить пометку</button></form>`);
 }
-const pages={resumeExam:id=>editExam(null,'',id),exam:showExam,newExam:visit=>editExam(null,visit),editExam:id=>editExam(id),editVisitClinic:visitClinicEditor,drive:drivePanel,deviceUpdate:updateDevicePanel,joinDevice:joinDevicePanel,grantDevice:grantDevicePanel,revokeDevice:revokeDevicePanel,newFamily:()=>familyForm(true),newMember:()=>familyForm(false),recommendVisit:recommendationEditor,readDraft:id=>openImportDraft(id,'local'),manualDraft:id=>openImportDraft(id,'manual'),prevent:preventCard,editPrevent:preventionForm,completePrevent,tagLibrary,tagDefinition,removeTag:tagRemoval,recordTags:tagEditor,family:showFamily,medical:showMedical,visit:showVisit,doctor:showDoctor,episode:episodeCard,field:showField,removeField:showDelete,
+const pages={manageRecords,removeRecord,resumeExam:id=>editExam(null,'',id),exam:showExam,newExam:visit=>editExam(null,visit),editExam:id=>editExam(id),editVisitClinic:visitClinicEditor,editVisit:visitEditor,editEpisode:showNewEpisode,drive:drivePanel,deviceUpdate:updateDevicePanel,joinDevice:joinDevicePanel,grantDevice:grantDevicePanel,revokeDevice:revokeDevicePanel,newFamily:()=>familyForm(true),newMember:()=>familyForm(false),recommendVisit:recommendationEditor,readDraft:id=>openImportDraft(id,'local'),manualDraft:id=>openImportDraft(id,'manual'),prevent:preventCard,editPrevent:preventionForm,completePrevent,tagLibrary,tagDefinition,removeTag:tagRemoval,recordTags:tagEditor,family:showFamily,medical:showMedical,visit:showVisit,doctor:showDoctor,episode:episodeCard,field:showField,removeField:showDelete,
   search:showSearch,lab:labCard,trend:indicatorView,file:showFile,upload:selectUpload,period:showPeriod,finish:showFinish,consent:showConsent,
   review:showReview,manual:showManual,directTreatment:directTreatmentForm,therapy:therapyEditor,brief:visitBrief,measure:measureForm,measureChart,measurePoint,consult:newConsult,consultRecord,
   providers,prompts:promptManager,template:templateForm,resetTemplate:id=>changeTemplate(id,true,false),deleteTemplate:id=>changeTemplate(id,false,false),
   devices:familyDevices,archive:archivePanel,exportBackup:exportForm,importBackup:importForm,linkDocument,verifyLab,resumeVisit,analogs:showAnalogs,addNote,newEpisode:showNewEpisode,newVisit:showNewVisit,photoVisit:showPhotoVisit,intake:showIntake,verifyFile:showVerification};
-const restricted=new Set(['resumeExam','newExam','editExam','applyVisitTranscript','refreshRxDraft','editVisitClinic','recommendVisit','readDraft','manualDraft','queueTreatment','editPrevent','completePrevent','tagDefinition','removeTag','recordTags','confirmTagRemoval','resumeVisit','directTreatment','therapy','verifyLab','linkDocument','measure','consult','providers','prompts','template','resetTemplate','deleteTemplate','exportBackup','importBackup','field','removeField','confirmDelete','finish','period','upload','analyze','consent','run','addNote','manual','copyPrompt','newEpisode','newVisit','photoVisit','visitMode','sampleVisit','intake','verifyFile','sampleRx','retryRead','appendMed','dropMed','deferVerify','intakeAnalyze']);
+const restricted=new Set(['manageRecords','removeRecord','resumeExam','newExam','editExam','applyVisitTranscript','refreshRxDraft','editVisitClinic','editVisit','editEpisode','recommendVisit','readDraft','manualDraft','queueTreatment','editPrevent','completePrevent','tagDefinition','removeTag','recordTags','confirmTagRemoval','resumeVisit','directTreatment','therapy','verifyLab','linkDocument','measure','consult','providers','prompts','template','resetTemplate','deleteTemplate','exportBackup','importBackup','field','removeField','confirmDelete','finish','period','upload','analyze','consent','run','addNote','manual','copyPrompt','newEpisode','newVisit','photoVisit','visitMode','sampleVisit','intake','verifyFile','sampleRx','retryRead','appendMed','dropMed','deferVerify','intakeAnalyze']);
 function displayRoute(){clearFileURL();const r=routes.at(-1);pages[r.name](r.id)}
 function go(name,id=''){routes.push({name,id});displayRoute()}
 function replaceRoute(name,id){routes.pop();go(name,id)}
@@ -241,6 +274,7 @@ document.addEventListener('submit',e=>{
     case 'family-form':saveFamilyForm(f);break;
     case 'episode-form':submitEpisode(f);break;
     case 'visit-clinic-form':saveVisitClinic(f);break;
+    case 'visit-edit-form':saveVisitEdit(f);break;
     case 'visit-form':submitVisit(f,e.submitter?.value);break;
     case 'verify-form':storeVerification(f);break;
     case 'period-form':savePeriod(f);break;

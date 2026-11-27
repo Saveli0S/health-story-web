@@ -98,10 +98,11 @@ async function replaceImportOriginal(input,file){
   input.disabled=true;
   const newKey=uid(),oldKey=originalKey(prototypeState,patient+'/'+draft.id);
   try{
+    const digest=await sourceDigest(file);
     await fileBlob(patient+'/'+newKey,file);
     if(route!==routes.at(-1)||!input.isConnected||!profile.visitDrafts.includes(draft)){await removeBlob(patient+'/'+newKey);return}
     const idx=profile.visitDrafts.indexOf(draft);
-    profile.visitDrafts[idx]={id:draft.id,episode:draft.episode,name:file.name,type:file.type,blobId:newKey,state:'queued',kind:suggestImportKind(file.name)};
+    profile.visitDrafts[idx]={id:draft.id,episode:draft.episode,name:file.name,type:file.type,blobId:newKey,state:'queued',kind:suggestImportKind(file.name),sourceDigest:digest};
     if(!saveState()){profile.visitDrafts[idx]=draft;await removeBlob(patient+'/'+newKey);throw Error()}
     await removeBlob(oldKey).catch(()=>{});
     if(route===routes.at(-1)&&input.isConnected)await openImportDraft(draft.id,'local');

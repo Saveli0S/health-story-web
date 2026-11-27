@@ -67,8 +67,8 @@ function episodeTimeline(id){
 function episodeCard(id){
   const e=current().episodes.find(e=>e.id===id||e.id===visitById(id)?.[7]);if(!e)return;
   openPanel('Эпизод болезни',e.name,'<div class="actions left">'+act('brief','Сводка к приёму',e.id,'button primary','book')+
-    (!readOnly?act('newVisit','Добавить визит в эпизод',e.id,'button secondary','plus')+act('consult','Обсудить с ИИ','episode:'+e.id,'text-button','spark'):'')+
-    (prototypeState.sync?act('pinEpisode','Сохранить эпизод без сети',e.id,'button secondary','clip'):'')+'</div><section class="panel-section"><h3>Хронология эпизода</h3>'+episodeTimeline(e.id)+'</section>');
+    (!readOnly?act('newVisit','Добавить визит в эпизод',e.id,'button secondary','plus')+act('editEpisode','Редактировать эпизод',e.id,'text-button','edit')+act('consult','Обсудить с ИИ','episode:'+e.id,'text-button','spark'):'')+
+    (prototypeState.sync?act('pinEpisode','Сохранить эпизод без сети',e.id,'button secondary','clip'):'')+'</div><section class="panel-section"><h3>Хронология эпизода</h3>'+episodeTimeline(e.id)+'</section>'+deletionButton('episodes',e.id,'Удалить эпизод'));
 }
 function visitBrief(id){
   const ep=current().episodes.find(e=>e.id===id);if(!ep)return;
@@ -122,7 +122,7 @@ function measureChart(key){
   openPanel('Домашние измерения',rows[0].name,pointChart(rows.map(m=>({date:m.time,value:m.value,unit:m.unit,source:m.id})),'measurePoint')+
     rows.map(m=>resultRow('measurePoint',m.id,m.value+' '+m.unit,stamp(m.time),'trend')).join('')+(readOnly?'':act('measure','Добавить измерение','','button secondary','plus')));
 }
-function measurePoint(id){const m=current().measurements.find(m=>m.id===id);if(m)openPanel(m.name,m.value+' '+m.unit,'<p>'+esc(stamp(m.time))+'</p>'+(m.episode?act('episode','К эпизоду',m.episode,'button secondary'):''))}
+function measurePoint(id){const m=current().measurements.find(m=>m.id===id);if(m)openPanel(m.name,m.value+' '+m.unit,'<p>'+esc(stamp(m.time))+'</p>'+(m.episode?act('episode','К эпизоду',m.episode,'button secondary'):'')+deletionButton('measurements',id,'Удалить измерение'))}
 
 function recommendationsSection(id){
   const list=confirmedRecommendations(id);
