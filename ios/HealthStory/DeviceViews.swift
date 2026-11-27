@@ -71,11 +71,11 @@ struct DeviceHome:View {
     @State private var exporting=false
     @State private var requestingKey=false
     @ViewBuilder private var chatGPTLink: some View {
-        if let chatGPTAccount, journal.editable {
+        if journal.editable {
             NavigationLink {
                 NativeChatGPTSettings(account: chatGPTAccount)
             } label: {
-                JournalRowLabel(title: "Подключение ChatGPT", symbol: "sparkles")
+                JournalRowLabel(title: "ИИ-провайдеры", symbol: "sparkles")
             }
         }
     }

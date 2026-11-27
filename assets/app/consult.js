@@ -42,7 +42,7 @@ function changeTemplate(id,reset,confirm){
 function consultPage(){
   const rows=current().consultations.slice().reverse();
   return '<section class="section-page"><div class="section-head"><h2>ИИ-консультация</h2>'+(!readOnly?act('consult','Новая консультация','','button primary','plus'):'')+'</div>'+
-    (!readOnly?'<p class="listing-hint">'+providerStatus()+' · '+act('providers',chatGPT.connected||routerKey?'Управлять подключением':'Подключить ИИ','','inline-action')+'</p>':'')+
+    (!readOnly?'<p class="listing-hint">'+providerStatus()+' · '+act('providers',connectedProviders().length?'Управлять подключением':'Подключить ИИ','','inline-action')+'</p>':'')+
     (person.id==='anna'&&!readOnly?act('consult','Пример оценки риска','risk-demo','button secondary','spark'):'')+'<h3>История профиля</h3>'+(rows.map(r=>resultRow('consultRecord',r.id,r.question,stamp(r.time)+' · '+(r.answer?'Ответ сохранён':'Запрос подготовлен'),'spark')).join('')||'<p class="empty">Здесь появятся запросы и ответы для '+esc(person.name)+'.</p>')+'</section>';
 }
 function consultTemplatePicker(templates,selected){
@@ -193,9 +193,10 @@ function consultRecord(id){
     openPanel(person.name,'История консультации',info+refs+(r.answer?'<section class="panel-section"><h3>Ответ · '+esc(r.provider)+'</h3><div class="manual-answer">'+esc(r.answer)+'</div></section>':'<p>Ответ пока не добавлен.</p>')+
       '<details><summary>Запрос и версия промпта</summary><pre>'+esc(r.prompt)+'</pre><p>'+esc(template.text)+'</p></details>'+(r.answer?conversationHistory(r):'')+(readOnly?'':act('consult','Повторить с актуальными данными','again:'+id,'button secondary'))+deletionButton('consultations',id,'Удалить консультацию'));return;
   }
+  const options=connectedProviders(),sendLabel=options.length>1?'Подтвердить и отправить':options.length?'Подтвердить и отправить в '+providerNames[options[0]]:'Подключить ИИ-провайдера';
   openPanel(person.name,'Проверить и передать запрос',info+refs+`<form class="edit-form" id="consult-answer" data-id="${esc(id)}"><label>Точный текст для провайдера<textarea name="prompt" rows="7" required ${r.sentAt?'readonly':''}>${esc(r.sentAt?r.prompt:cleanClinicalText(r.prompt))}</textarea></label>
     <p class="hint">Проверьте свободный текст на личные сведения. Файлы и имена владельцев карточек в запрос не включаются автоматически.</p>
-    ${transferHint()}<div class="actions left">${act('askProvider',chatGPT.connected?'Подтвердить и отправить в ChatGPT':routerKey?'Подтвердить и отправить в OpenRouter':'Подключить личный ChatGPT',id,'button primary','spark')}${chatGPT.connected?'':act('consultCopy','Скопировать для ChatGPT',id,'button secondary')+external('https://chatgpt.com/','Открыть ChatGPT')}</div>
+    ${transferHint()}${providerChoice()}<div class="actions left">${act('askProvider',sendLabel,id,'button primary','spark')}${chatGPT.connected?'':act('consultCopy','Скопировать для ChatGPT',id,'button secondary')+external('https://chatgpt.com/','Открыть ChatGPT')}</div>
     <p class="hint" role="status" id="provider-result">${esc(r.lastError||'')}</p>
     <label ${chatGPT.connected?'hidden':''}>Ответ из своего чата<textarea name="answer" rows="4">${esc(r.replyDraft||'')}</textarea></label>
     <button class="button secondary" ${chatGPT.connected?'hidden':''}>Сохранить ответ</button></form>${deletionButton('consultations',id,'Удалить консультацию')}`);

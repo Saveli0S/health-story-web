@@ -216,17 +216,24 @@ final class NativeChatGPTAccount: NSObject, ObservableObject, ASWebAuthenticatio
 }
 
 private enum ChatGPTSessionKey {
-    private static func query(_ context: String) -> [String:Any] {
+    private static let service = "by.healthstory.chatgpt-session"
+    static func load(_ context: String) -> String? { NativeAIKeychain.load(context, service: service) }
+    static func save(_ value: String, for context: String) throws { try NativeAIKeychain.save(value, for: context, service: service) }
+    static func remove(_ context: String) throws { try NativeAIKeychain.remove(context, service: service) }
+}
+
+enum NativeAIKeychain {
+    private static func query(_ context: String, service: String) -> [String:Any] {
         [
             kSecClass as String:kSecClassGenericPassword,
-            kSecAttrService as String:"by.healthstory.chatgpt-session",
+            kSecAttrService as String:service,
             kSecAttrAccount as String:context,
             kSecAttrSynchronizable as String:false
         ]
     }
 
-    static func load(_ context: String) -> String? {
-        var request = query(context)
+    static func load(_ context: String, service: String) -> String? {
+        var request = query(context, service: service)
         request[kSecReturnData as String] = true
         var item: CFTypeRef?
         guard SecItemCopyMatching(request as CFDictionary, &item) == errSecSuccess,
@@ -234,35 +241,49 @@ private enum ChatGPTSessionKey {
         return String(data:data,encoding:.utf8)
     }
 
-    static func save(_ value: String, for context: String) throws {
-        var request = query(context)
+    static func save(_ value: String, for context: String, service: String) throws {
+        var request = query(context, service: service)
         let data = Data(value.utf8)
         request[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         request[kSecValueData as String] = data
         let result = SecItemAdd(request as CFDictionary,nil)
         if result == errSecDuplicateItem {
             let updates = [kSecValueData as String:data]
-            guard SecItemUpdate(query(context) as CFDictionary,updates as CFDictionary) == errSecSuccess else {
-                throw JournalError("Не удалось сохранить сессию ChatGPT на iPhone.")
+            guard SecItemUpdate(query(context, service: service) as CFDictionary,updates as CFDictionary) == errSecSuccess else {
+                throw JournalError("Не удалось сохранить подключение в Связке ключей iPhone.")
             }
         } else if result != errSecSuccess {
-            throw JournalError("Не удалось сохранить сессию ChatGPT на iPhone.")
+            throw JournalError("Не удалось сохранить подключение в Связке ключей iPhone.")
         }
     }
 
-    static func remove(_ context: String) throws {
-        let status = SecItemDelete(query(context) as CFDictionary)
+    static func remove(_ context: String, service: String) throws {
+        let status = SecItemDelete(query(context, service: service) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw JournalError("Не удалось удалить сессию ChatGPT с iPhone.")
+            throw JournalError("Не удалось удалить подключение из Связки ключей iPhone.")
         }
     }
 }
 
 struct NativeChatGPTSettings: View {
-    @ObservedObject var account: NativeChatGPTAccount
+    let account: NativeChatGPTAccount?
+    @Environment(\.nativeAPIKeys) private var keys
 
     var body: some View {
         List {
+            if let account { ChatGPTAccountRows(account: account) }
+            if let keys {
+                Section { Text(NativeAIProvider.cost + " Проверка ключа выполняется без запроса к модели.").font(.footnote) }
+                ForEach(NativeAIProvider.keyed, id: \.self) { NativeAPIKeyRows(provider: $0, keys: keys) }
+            }
+        }.journalBackground().navigationTitle("ИИ-провайдеры")
+    }
+}
+
+private struct ChatGPTAccountRows: View {
+    @ObservedObject var account: NativeChatGPTAccount
+    var body: some View {
+        Group {
             Section("Личный ChatGPT") {
                 switch account.state {
                 case .checking:
@@ -282,7 +303,6 @@ struct NativeChatGPTSettings: View {
             }.disabled(account.busy)
             if account.busy { ProgressView() }
             if let message = account.message { Text(message).foregroundStyle(.secondary) }
-        }.navigationTitle("Подключение ChatGPT")
-            .task { await account.refresh() }
+        }.task { await account.refresh() }
     }
 }

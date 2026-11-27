@@ -149,7 +149,7 @@ enum NativeTreatmentDelivery {
     }
 
     static func send(_ journal:DeviceJournal,owner:String,visit:String,request:Request,automatic:Bool,via transport:NativeChatGPTTransport) async throws {
-        guard journal.editable,!automatic || allowsAutomatic(journal,owner:owner) else {
+        guard journal.editable,!automatic || transport.providerName == "ChatGPT" && allowsAutomatic(journal,owner:owner) else {
             throw JournalError("Отправка для этого профиля требует подтверждения.")
         }
         let job=owner+"/"+visit
@@ -178,7 +178,7 @@ enum NativeTreatmentDelivery {
         if automatic {transfer["automatic"]=true}
         let reply=try await transport.reply([ChatGPTMessage(role:.user,content:exact)])
         guard !reply.answer.trim.isEmpty,!reply.model.trim.isEmpty else {
-            throw JournalError("ChatGPT не вернул завершённый ответ. Запрос сохранён.")
+            throw JournalError("Провайдер не вернул завершённый ответ. Запрос сохранён.")
         }
         try await waitForExchange(journal)
         try journal.changeProfile(owner){p in
@@ -188,7 +188,7 @@ enum NativeTreatmentDelivery {
                 throw JournalError("Карточка или черновик изменились во время разбора.")
             }
             var review:JournalObject=[
-                "id":UUID().uuidString,"kind":"provider","provider":"ChatGPT · "+reply.model,
+                "id":UUID().uuidString,"kind":"provider","provider":transport.providerName+" · "+reply.model,
                 "time":ISO8601DateFormatter().string(from:Date()),"visit":visit,
                 "prompt":exact,"answer":reply.answer,"payload":request.snapshot,"templateVersion":request.version,
                 "transfers":entries(saved,"transfers")+[transfer]
@@ -211,6 +211,7 @@ enum NativeTreatmentDelivery {
 
 struct NativeTreatmentReview:View {
     @ObservedObject var journal:DeviceJournal
+    @Environment(\.nativeAPIKeys) private var keys
     let owner:String,visit:String
     @State private var composing=false
     var body:some View {
@@ -226,7 +227,7 @@ struct NativeTreatmentReview:View {
                 }
             }
             NativeDoctorLink(journal:journal,owner:owner,visit:visit)
-            if journal.editable {Button("Разобрать лечение в ChatGPT"){composing=true}.disabled(meds.isEmpty || journal.busy)}
+            if journal.editable {Button(keys?.connected.isEmpty == false ? "Разобрать лечение" : "Разобрать лечение в ChatGPT"){composing=true}.disabled(meds.isEmpty || journal.busy)}
             Section("История разборов"){
                 if history.isEmpty {Text("Разборов пока нет.").foregroundStyle(.secondary)}
                 ForEach(history.indices,id:\.self){i in NavigationLink{NativeReviewVersion(journal:journal,owner:owner,id:caption(history[i],"id"))}label:{VStack(alignment:.leading){Text(i==0 ? "Последний разбор":"Предыдущий разбор");Text(caption(history[i],"time")).font(.caption)}}}
@@ -240,6 +241,8 @@ private struct NativeReviewComposer:View {
     @ObservedObject var journal:DeviceJournal;let owner:String,visit:String
     @Environment(\.dismiss) var dismiss
     @Environment(\.nativeChatGPT) private var chatGPT
+    @Environment(\.nativeAPIKeys) private var keys
+    @State private var provider:NativeAIProvider?
     @State private var directRequest:NativeTreatmentDelivery.Request?
     @State private var sending=false
     @State private var text=""
@@ -263,11 +266,18 @@ private struct NativeReviewComposer:View {
                 Section("Точный запрос"){
                     if copied {DisclosureGroup("Показать скопированный текст"){Text(text).textSelection(.enabled)}}
                     else {TextEditor(text:$text).frame(minHeight:170).accessibilityIdentifier("review-exact-prompt").journalField("review-exact",visible)}
-                    if let chatGPT, let directRequest, !copied {
+                    if let directRequest, !copied {
                         Text("Проверьте обезличенные сведения перед отправкой.").font(.caption)
-                        Button(sending ? "Ожидаем разбор…" : "Подтвердить и отправить"){
-                            if validation.submit([promptIssue].compactMap{$0}) {send(directRequest,via:chatGPT)}
-                        }.disabled(journal.busy || sending)
+                        NativeProviderChoice(preferred:"",choice:$provider) { transport in
+                            if let transport {
+                                let title = transport.providerName == "ChatGPT" ? "Подтвердить и отправить" : "Подтвердить и отправить в " + transport.providerName
+                                Button(sending ? "Ожидаем разбор…" : title){
+                                    if validation.submit([promptIssue].compactMap{$0}) {send(directRequest,via:transport)}
+                                }.disabled(journal.busy || sending)
+                            } else {
+                                NavigationLink("Подключить API-ключ"){NativeChatGPTSettings(account:nil)}
+                            }
+                        }.disabled(sending)
                     } else {
                         Text("Проверьте обезличенные сведения перед копированием. Оригиналы вложений остаются в дневнике.").font(.caption)
                         Button("Скопировать и открыть новый чат", systemImage: "arrow.up.right.square"){
@@ -324,7 +334,7 @@ private struct NativeReviewComposer:View {
                 do {
                     try await NativeTreatmentDelivery.send(journal,owner:owner,visit:visit,request:request,automatic:false,via:transport)
                     dismiss()
-                } catch {self.error=error.localizedDescription}
+                } catch {self.error=error.localizedDescription + (transport.providerName == "ChatGPT" ? "" : " Запрос сохранён.")}
             }
         }
     }
@@ -334,7 +344,7 @@ private struct NativeReviewComposer:View {
         if let draft=(p["prompts"] as? [String:JournalObject])?[visit], !caption(draft,"nativeID").isEmpty, let saved=draft["payload"] as? JournalObject {
             payload=saved;text=caption(draft,"text");draftID=caption(draft,"nativeID");copied=true;return
         }
-        if chatGPT != nil {
+        if chatGPT != nil || keys?.connected.isEmpty == false {
             let request=try NativeTreatmentDelivery.prepare(journal,owner:owner,visit:visit)
             directRequest=request;payload=request.snapshot;text=request.text;return
         }

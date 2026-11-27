@@ -9,6 +9,7 @@ let familyRecoveryKeyHelp = "В веб-дневнике администрато
 struct HealthStoryApp: App {
     @StateObject private var journal = DeviceJournal()
     @StateObject private var chatGPT = NativeChatGPTAccount()
+    @State private var apiKeys = NativeAPIKeys()
     var body: some Scene {
         WindowGroup {
             Group {
@@ -20,6 +21,8 @@ struct HealthStoryApp: App {
             }
                 .preferredColorScheme(.light)
                 .tint(JournalTheme.green)
+                .environment(\.nativeAPIKeys, apiKeys)
+                .task(id: NativeAPIKeys.selection(journal)) { apiKeys.activate(NativeAPIKeys.selection(journal)) }
                 .task(id: chatGPT.selection(for: journal)) { await chatGPT.activate(for: journal) }
                 .onOpenURL {url in _=GIDSignIn.sharedInstance.handle(url)}
         }

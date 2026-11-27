@@ -139,7 +139,7 @@ function createReview(id) {
 }
 function startReview(id){
   if(!reviewReady(id)||readOnly)return;
-  if(chatGPT.connected||routerKey){
+  if(connectedProviders().length){
     go('directTreatment',id);
     if(canAutoSendTreatment())sendTreatment(document.querySelector('#direct-treatment'));
     return;
@@ -150,7 +150,7 @@ function startReview(id){
 }
 function demoReviewAvailable(id){return id===person.course?.visit&&!intakeFiles(id).length&&!current().changes.some(c=>c.visit===id)}
 function showConsent(id) {
-  if(chatGPT.connected||routerKey){directTreatmentForm(id);return}
+  if(connectedProviders().length){directTreatmentForm(id);return}
   const payload=makePayload(id);
   if(!demoReviewAvailable(id)){
     openPanel('Разбор лечения','Проверить данные',workflowSteps(3)+`<p class="dialog-sub">Один запрос по всему визиту. Проверьте сведения перед переносом в свой ChatGPT.</p>

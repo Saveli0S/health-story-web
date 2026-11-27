@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 
 parser=argparse.ArgumentParser()
 parser.add_argument("device")
-parser.add_argument("--case",choices=["consultation","chatgpt","cards","remove","treatment","review","review-direct","visit-files","layout","archive-unlock","archive-cloud-key","archive-inspection","sync","lab","batch","pharmacy-live","validation","record-links"],default="consultation")
+parser.add_argument("--case",choices=["consultation","chatgpt","api-keys","cards","remove","treatment","review","review-direct","visit-files","layout","archive-unlock","archive-cloud-key","archive-inspection","sync","lab","batch","pharmacy-live","validation","record-links"],default="consultation")
 parser.add_argument("--sync-fixture",type=Path)
 parser.add_argument("--sync-relay")
 args=parser.parse_args()
@@ -38,6 +38,7 @@ if args.case=="batch": bundle="by.healthstory.batchvisit"
 if args.case=="lab": bundle="by.healthstory.labintake"
 if args.case=="sync": bundle="by.healthstory.medicalcorpus.sync"
 if args.case=="chatgpt": bundle="by.healthstory.chatgpt.qa"
+if args.case=="api-keys": bundle="by.healthstory.apikeys.qa"
 if args.case=="pharmacy-live": bundle="by.healthstory.pharmacy.qa"
 if args.case=="cards": bundle="by.healthstory.cardediting.qa"
 if args.case=="remove": bundle="by.healthstory.recordremoval.qa"
@@ -68,6 +69,12 @@ else:
         anchor=".onOpenURL"
         assert anchor in code
         main.write_text(code.replace(anchor,".environment(\\.nativeChatGPT, ChatGPTFixture.transport)\n                "+anchor,1))
+    if args.case=="api-keys":
+        shutil.copy(native/"APIKeyFixture.swift",ios/"HealthStory")
+        providers=ios/"HealthStory/NativeAPIKeys.swift"
+        source=providers.read_text()
+        assert source.count("ChatGPTHTTP.load(request)")==1
+        providers.write_text(source.replace("ChatGPTHTTP.load(request)","NativeAPIKeyFixture.load(request)"))
     if args.case=="lab":
         screen=ios/"HealthStory/LabIntake.swift"
         actual='Button("Выбрать фото или PDF из файлов"){picker=true}'
@@ -105,6 +112,7 @@ else:
         target.write_text(source.replace(anchor,replacement,1))
     screens={"archive-unlock":"ArchiveUnlockUI","archive-cloud-key":"CloudArchiveKeyUI","archive-inspection":"ArchiveInspectionUI","layout":"LayoutUI","visit-files":"VisitAttachmentsUI","batch":"VisitBatchUI","lab":"LabUI","treatment":"TreatmentUI","review":"ReviewUI","review-direct":"ProviderReviewUI","chatgpt":"ChatGPTUI","cards":"CardEditingUI","remove":"RecordRemovalUI","pharmacy-live":"PharmacyLiveUI"}
     screens["validation"]="ValidationUI"
+    screens["api-keys"]="APIKeysUI"
     screens["record-links"]="RecordLinksUI"
     shutil.copy(native/(screens.get(args.case,"ConsultationUI")+".swift"),ios/"CorpusUI")
 project_file=project/"project.pbxproj"
@@ -164,6 +172,8 @@ else:
     profile["consultations"]=[dict(id="pending-old",question="Старый черновик",time="2026-01-01",prompt="Контакт example@example.org",answer="",provider=""),dict(id="sent-old",question="История передачи",time="2026-02-01",prompt="Уже переданный текст · OLD-QA-MARK",sentAt="2026-02-01",answer="Тестовый ответ",provider="QA")]
     if args.case=="chatgpt":
         profile["consultations"].append(dict(id="chatgpt-qa",question="QA ChatGPT",time="2026-02-02",prompt="First fixture question",answer="",provider=""))
+    if args.case=="api-keys":
+        profile["consultations"].append(dict(id="api-keys-qa",question="QA API keys",time="2026-02-02",prompt="First fixture question",answer="",provider=""))
     if args.case=="pharmacy-live":
         profile["addedVisits"][0].append([dict(id="catalog-qa",name="Парацетамол",strength="500 мг",form="таблетки",pack="№20")])
     if args.case=="batch":
@@ -318,6 +328,8 @@ if treatment or args.case in ("review","review-direct","visit-files","lab","batc
 else:
     if args.case=="chatgpt":
         print("PASS native ChatGPT HTTPS contract, redacted history, quota, draft reopen, retry and saved answers")
+    elif args.case=="api-keys":
+        print("PASS native DeepSeek and Anthropic key validation, consultation, follow-up, and Keychain reuse")
     elif args.case=="archive-unlock":
         print("PASS optional archive key, reopen after relaunch, forget and manual fallback (synthetic keychain)")
     elif args.case=="archive-cloud-key":

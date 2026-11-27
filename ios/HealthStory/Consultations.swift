@@ -189,7 +189,8 @@ private struct ConsultationComposer:View {
 
 private struct ConsultationRecord:View {
     @ObservedObject var journal:DeviceJournal;let owner:String,id:String
-    @Environment(\.nativeChatGPT) private var chatGPT
+    @State private var provider: NativeAIProvider?
+    @State private var sendingTo = ""
     @State private var answer=""
     @State private var error=""
     @State private var notice=""
@@ -201,7 +202,7 @@ private struct ConsultationRecord:View {
     @State private var exportingRequest=false
     @State private var requestFile: ChatGPTRequestFile?
     @State private var outboundHistory: [ChatGPTMessage]?
-    @State private var received: (ChatGPTReply,String,[ChatGPTMessage],[ChatGPTMessage],JournalObject)?
+    @State private var received: (ChatGPTReply,String,[ChatGPTMessage],[ChatGPTMessage],JournalObject,String)?
     @State private var validation=JournalFormValidation()
     @State private var checkedAnswer=false
     private var requestIssue:JournalFieldIssue? {.required("consultation-request",preview,"Введите текст запроса.")}
@@ -268,7 +269,7 @@ private struct ConsultationRecord:View {
                 }
             }
             else if journal.editable {
-                Section("Личный ChatGPT"){providerAction(row,continuation:false)}
+                Section("ИИ-провайдер"){providerAction(row,continuation:false)}
                 Section("Ручная передача"){
                     if journal.admin,let family=journal.data["family"] as? JournalObject,caption(family,"adminId") != owner,journal.members.first(where:{caption($0,"id")==owner})?["role"] as? String=="Взрослый" {
                         Text("Разовая передача из профиля другого взрослого. Отправитель и время сохранятся в истории.")
@@ -328,23 +329,31 @@ private struct ConsultationRecord:View {
     }
     @ViewBuilder private func providerAction(_ row: JournalObject, continuation: Bool) -> some View {
         if sending {
-            ProgressView("Ожидаем ответ ChatGPT…")
+            ProgressView("Ожидаем ответ " + sendingTo + "…")
         } else if received != nil {
             Button("Сохранить полученный ответ"){ persistReply() }
                 .disabled(journal.busy)
             Button("Выйти без сохранения ответа",role:.destructive){ received = nil }
-        } else if let chatGPT {
+        } else {
+            let lastProvider = entries(row,"turns").last.map { caption($0,"provider") } ?? caption(row,"provider")
+            NativeProviderChoice(preferred:lastProvider,choice:$provider) { transport in
+                deliveryAction(row,continuation:continuation,via:transport)
+            }
+        }
+    }
+    @ViewBuilder private func deliveryAction(_ row: JournalObject, continuation: Bool, via transport: NativeChatGPTTransport?) -> some View {
+        if let transport {
             if journal.admin, owner != NativePromptLibrary.actor(journal),
                journal.members.first(where:{caption($0,"id")==owner})?["role"] as? String=="Взрослый" {
                 Text("Разовая отправка из профиля другого взрослого. Отправитель и время сохранятся в истории.")
             }
-            Button("Подтвердить и отправить в ChatGPT"){
+            Button("Подтвердить и отправить в " + transport.providerName){
                 if validation.submit([continuation ? followupIssue : requestIssue].compactMap{$0}) {
-                    send(row,continuation:continuation,via:chatGPT)
+                    send(row,continuation:continuation,via:transport)
                 }
             }.disabled(!ready || journal.busy || (continuation && outboundHistory == nil))
         } else {
-            Text("Прямое подключение ChatGPT на iPhone ожидает допуска OpenAI.").font(.footnote)
+            NavigationLink("Подключить API-ключ"){NativeChatGPTSettings(account:nil)}
             if continuation {
                 Button("Сохранить черновик"){
                     if caption(row,"nextQuestion").isEmpty && !validation.submit([followupIssue].compactMap{$0}) {return}
@@ -388,25 +397,26 @@ private struct ConsultationRecord:View {
                 current[continuation ? "nextQuestion" : "prompt"] = exact
             }
             let transfer = NativeChatGPTConversation.transfer(journal)
+            sendingTo=transport.providerName
             sending=true
             Task {
                 defer { sending=false }
                 do {
                     let reply = try await transport.reply(messages)
                     guard !reply.answer.trim.isEmpty, !reply.model.trim.isEmpty else {
-                        throw JournalError("ChatGPT не вернул завершённый ответ. Вопрос сохранён.")
+                        throw JournalError("Провайдер не вернул завершённый ответ. Вопрос сохранён.")
                     }
-                    received=(reply,exact,history,sentHistory,transfer)
+                    received=(reply,exact,history,sentHistory,transfer,transport.providerName)
                     persistReply()
-                } catch { self.error=error.localizedDescription }
+                } catch { self.error=error.localizedDescription + (transport.providerName == "ChatGPT" ? "" : " Вопрос сохранён.") }
             }
         } catch { self.error=error.localizedDescription }
     }
     private func persistReply() {
-        guard let (reply,question,previous,sentHistory,transfer)=received else { return }
+        guard let (reply,question,previous,sentHistory,transfer,providerName)=received else { return }
         do {
             try NativeChatGPTConversation.edit(journal,owner:owner,id:id){
-                try NativeChatGPTConversation.save(reply,question:question,previous:previous,sentHistory:sentHistory,transfer:transfer,in:&$0)
+                try NativeChatGPTConversation.save(reply,question:question,previous:previous,sentHistory:sentHistory,transfer:transfer,providerName:providerName,in:&$0)
             }
             received=nil
             followup=""

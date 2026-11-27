@@ -13,7 +13,13 @@ struct ChatGPTReply: Decodable, Sendable {
 
 // The account integration supplies a transport only once included-quota access is verified.
 struct NativeChatGPTTransport: Sendable {
+    let providerName: String
     let reply: @Sendable ([ChatGPTMessage]) async throws -> ChatGPTReply
+
+    init(providerName: String = "ChatGPT", reply: @escaping @Sendable ([ChatGPTMessage]) async throws -> ChatGPTReply) {
+        self.providerName = providerName
+        self.reply = reply
+    }
 
     static func gateway(
         at base: URL,
@@ -100,16 +106,16 @@ enum NativeChatGPTConversation {
     }
 
     static func save(_ reply: ChatGPTReply, question: String, previous: [ChatGPTMessage],
-                     sentHistory: [ChatGPTMessage], transfer: JournalObject, in row: inout JournalObject) throws {
+                     sentHistory: [ChatGPTMessage], transfer: JournalObject, providerName: String, in row: inout JournalObject) throws {
         let answer = reply.answer
         guard !answer.trim.isEmpty, !reply.model.trim.isEmpty else {
-            throw JournalError("ChatGPT не вернул завершённый ответ. Вопрос сохранён.")
+            throw JournalError("Провайдер не вернул завершённый ответ. Вопрос сохранён.")
         }
         guard history(row) == previous, caption(row,previous.isEmpty ? "prompt" : "nextQuestion") == question else {
             throw JournalError("Консультация изменилась на другом устройстве. Откройте историю перед отправкой.")
         }
         let time = ISO8601DateFormatter().string(from:Date())
-        let provider = "ChatGPT · " + reply.model
+        let provider = providerName + " · " + reply.model
         if previous.isEmpty {
             row["answer"] = answer
             row["answeredAt"] = time
