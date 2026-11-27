@@ -9,7 +9,7 @@ function providerFacts(account,delivery){
 function providerStatus(){
   if(chatGPT.connected)return 'Личный ChatGPT подключён';
   if(routerKey)return 'OpenRouter подключён на эту сессию';
-  if(!chatGPT.endpoint)return 'Подключение ChatGPT на сайте пока недоступно';
+  if(!chatGPT.endpoint||chatGPT.waitingForApproval)return 'Подключение ChatGPT на сайте пока недоступно';
   if(chatGPT.checking)return 'Проверяем подключение ChatGPT…';
   if(chatGPT.quotaUnconfirmed)return 'Подключено · доступ к квоте уточняется';
   if(!chatGPT.available)return 'Сервис подключения ChatGPT недоступен';

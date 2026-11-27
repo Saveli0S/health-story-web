@@ -1,27 +1,44 @@
 'use strict';
 
+const chatGPTGatewayOrigin = 'https://health-story-chatgpt.xzx89s.workers.dev';
+const chatGPTKey = 'health-story.chatgpt.signin';
+const chatGPTToken = /^[A-Za-z0-9_-]{43}$/;
+
 const chatGPT = {
   checking: true,
   available: false,
   connected: false,
   quotaUnconfirmed: false,
+  waitingForApproval: false,
   account: '',
+  session: '',
+  notice: '',
+  get usesBroker() { return this.endpoint?.origin === chatGPTGatewayOrigin; },
   get endpoint() {
     if (location.protocol === 'http:' && location.hostname === '127.0.0.1') return new URL('/chatgpt/', location.origin);
-    const enabled = document.querySelector('meta[name="health-story-chatgpt"]')?.content === 'gateway-v1';
-    if (enabled && location.protocol === 'https:') return new URL('./chatgpt/', location.href);
+    const config = document.querySelector('meta[name="health-story-chatgpt"]')?.content;
+    if (location.protocol !== 'https:') return null;
+    if (config === 'gateway-v1') return new URL('./chatgpt/', location.href);
+    if (location.origin === 'https://saveli0s.github.io' && config === chatGPTGatewayOrigin) {
+      return new URL('/chatgpt/', chatGPTGatewayOrigin);
+    }
     return null;
   },
   async request(path, body) {
     const endpoint = this.endpoint;
     if (!endpoint || readOnly) throw Error('Подключение ChatGPT недоступно.');
+    const headers = {};
+    if (body) headers['Content-Type'] = 'application/json';
+    if (this.usesBroker && this.session) headers.Authorization = 'Bearer ' + this.session;
     const response = await fetch(new URL(path, endpoint), {
-      method: body ? 'POST' : 'GET', credentials: 'same-origin', cache: 'no-store', redirect: 'error',
-      ...(body ? {headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} : {})
+      method: body ? 'POST' : 'GET', credentials: this.usesBroker ? 'omit' : 'same-origin',
+      cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer',
+      signal: AbortSignal.timeout(path === 'send' ? 125000 : 25000),
+      headers, ...(body ? {body:JSON.stringify(body)} : {})
     });
     const result = await response.json();
     if (!response.ok) {
-      if (response.status === 401) { this.connected = false; this.account = ''; }
+      if (response.status === 401) { this.connected = false; this.account = ''; this.session = ''; }
       throw Error((result.error || 'ChatGPT недоступен.') + ' Запрос сохранён.');
     }
     return result;
@@ -31,25 +48,55 @@ const chatGPT = {
     this.available = false;
     this.connected = false;
     this.quotaUnconfirmed = false;
+    this.waitingForApproval = false;
     this.account = '';
     try {
       if (!this.endpoint || readOnly) return;
+      if (this.usesBroker) {
+        try { await this.acceptReturn(); }
+        catch { this.notice = 'Не удалось завершить вход. Начните подключение заново.'; }
+      }
       const status = await this.request('status');
       // Hosted sessions must explicitly report that requests cannot overflow into credits.
-      this.available = typeof status.connected === 'boolean';
+      this.available = typeof status.connected === 'boolean' && status.available !== false;
+      this.waitingForApproval = status.available === false;
       this.connected = status.connected === true && (location.protocol === 'http:' || status.planOnly === true);
       this.quotaUnconfirmed = status.connected === true && !this.connected;
       this.account = this.connected ? status.account || '' : '';
     } catch { /* Keep the provider disconnected when the gateway is unreachable. */ }
     finally { this.checking = false; }
   },
+  async acceptReturn() {
+    const callback = new URLSearchParams(location.hash.slice(1));
+    const outcome = callback.get('chatgpt');
+    if (!outcome) return;
+    history.replaceState(null,'',location.pathname+location.search);
+    const verifier = sessionStorage.getItem(chatGPTKey) || '';
+    sessionStorage.removeItem(chatGPTKey);
+    if (outcome !== 'connected') {
+      this.notice = 'Разрешение на использование ChatGPT не получено.';
+      return;
+    }
+    const ticket = callback.get('ticket') || '';
+    if (!chatGPTToken.test(ticket) || !chatGPTToken.test(verifier)) throw Error();
+    const result = await this.request('redeem',{ticket,verifier});
+    if (result.planOnly !== true || !chatGPTToken.test(result.session || '')) throw Error();
+    this.session = result.session;
+    this.notice = 'Личный ChatGPT подключён для этой вкладки.';
+  },
   async connect(button) {
     if (readOnly || !this.available || button.disabled) return;
     button.disabled = true;
     try {
-      const result = await this.request('connect',{});
+      const body = {};
+      if (this.usesBroker) {
+        const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
+        sessionStorage.setItem(chatGPTKey,verifier);
+        body.challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier))));
+      }
+      const result = await this.request('connect',body);
       const dest = new URL(result.url);
-      if (dest.origin !== 'https://auth.openai.com') throw Error('Не удалось открыть вход в ChatGPT.');
+      if (dest.origin !== 'https://auth.openai.com' || dest.pathname !== '/api/accounts/authorize') throw Error('Не удалось открыть вход в ChatGPT.');
       location.assign(dest.href);
     } catch (error) { button.disabled = false; button.parentElement.querySelector('[role=status]').textContent = error.message; }
   },
@@ -58,6 +105,8 @@ const chatGPT = {
     button.disabled = true;
     try {
       const result = await this.request('disconnect',{});
+      this.session = '';
+      this.notice = '';
       await this.refresh(); providers(); render();
       if (!result.revoked) document.querySelector('#chatgpt-status').textContent = 'Вход завершён на устройстве. Отзыв доступа можно проверить в настройках ChatGPT.';
     } catch (error) { button.disabled = false; document.querySelector('#chatgpt-status').textContent = error.message; }
@@ -76,13 +125,13 @@ const chatGPT = {
 function chatGPTSettings() {
   let details;
   if (chatGPT.connected) details = 'Подключён аккаунт ' + chatGPT.account;
-  else if (!chatGPT.endpoint) details = 'Подключение на сайте ожидает допуска OpenAI. Прямой вход доступен в локальном дневнике на Mac.';
+  else if (!chatGPT.endpoint || chatGPT.waitingForApproval) details = 'Подключение на сайте ожидает допуска OpenAI. Прямой вход доступен в локальном дневнике на Mac.';
   else if (chatGPT.quotaUnconfirmed) details = 'Отправка ожидает подтверждения, что доступны только запросы в пределах включённой квоты.';
   else if (chatGPT.available) details = 'Войдите и разрешите использование включённой квоты.';
   else if (chatGPT.checking) details = 'Проверяем подключение ChatGPT…';
   else details = 'Сервис подключения ChatGPT недоступен. Обновите страницу и повторите.';
   const button = chatGPT.connected ? act('disconnectChatGPT','Отключить аккаунт','','button secondary') : chatGPT.available ? act('connectChatGPT','Продолжить с ChatGPT','','button primary') : '';
-  return '<section class="plain-card"><h3>Личный ChatGPT</h3><p>'+esc(details)+'</p><p>Ответы сохраняются в выбранном профиле. Условия квоты и использование кредитов можно проверить в настройках ChatGPT.</p>'+button+external('https://chatgpt.com/settings/usage','Управление квотой ChatGPT')+'<p id="chatgpt-status" role="status"></p></section>';
+  return '<section class="plain-card"><h3>Личный ChatGPT</h3><p>'+esc(details)+'</p><p>Ответы сохраняются в выбранном профиле. Условия квоты и использование кредитов можно проверить в настройках ChatGPT.</p>'+button+external('https://chatgpt.com/settings/usage','Управление квотой ChatGPT')+'<p id="chatgpt-status" role="status">'+esc(chatGPT.notice)+'</p></section>';
 }
 
 function conversationMessages(record) {

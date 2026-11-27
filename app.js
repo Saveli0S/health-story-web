@@ -297,6 +297,7 @@ if(!workingFamily&&person.id==='anna'&&!current().reviews.length){
 if(workingFamily)document.querySelector('.bar-actions .demo')?.remove();
 document.querySelector('.bar-actions').inert=false;
 render();
+const returningFromChatGPT=chatGPT.usesBroker&&new URLSearchParams(location.hash.slice(1)).has('chatgpt');
 chatGPT.refresh().then(()=>{
   if(!chatGPT.endpoint||readOnly)return;
   const settingsStatus=main.querySelector('.settings-menu [data-action="providers"] small');
@@ -305,7 +306,7 @@ chatGPT.refresh().then(()=>{
   if(!panel.open && section==='consults')render();
   if(routes.at(-1)?.name==='consultRecord' && !document.querySelector('#consult-answer :focus, #chatgpt-followup :focus'))consultRecord(routes.at(-1).id);
 });
-if(!readOnly&&params.get('connect')==='chatgpt')go('providers');
+if(!readOnly&&(params.get('connect')==='chatgpt'||returningFromChatGPT))go('providers');
 else if(driveSession.returned&&driveAllowed())go('drive');
 else if(params.get('new')==='family'&&viewer==='admin')go('newFamily');
 else if(params.get('visit')&&visitById(params.get('visit')))go('visit',params.get('visit'));
