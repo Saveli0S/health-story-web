@@ -12,17 +12,22 @@ final class APIKeysUI: XCTestCase {
         XCTFail("Control unavailable: " + element.description, file: file, line: line)
     }
 
+    private func openJournal(_ app: XCUIApplication) {
+        let unlock = app.buttons["Открыть архив"]
+        if unlock.waitForExistence(timeout: 4) {
+            let recovery = app.secureTextFields.firstMatch
+            recovery.tap()
+            recovery.typeText("QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI")
+            unlock.tap()
+        }
+        XCTAssertTrue(app.buttons["Мая Макетова"].waitForExistence(timeout: 10), app.debugDescription)
+    }
+
     func testConnectContinueAndReuseKeys() {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launch()
-        let recovery = app.secureTextFields.firstMatch
-        if recovery.waitForExistence(timeout: 4) {
-            recovery.tap()
-            recovery.typeText("QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI")
-            app.buttons["Открыть архив"].tap()
-        }
-        XCTAssertTrue(app.buttons["Мая Макетова"].waitForExistence(timeout: 10))
+        openJournal(app)
         tap(app.buttons["ИИ-провайдеры"], in: app)
         for (label, key) in [("DeepSeek", "synthetic-deepseek-key"), ("Claude (Anthropic)", "synthetic-anthropic-key")] {
             let disconnect = app.buttons["Отключить " + label]
@@ -50,6 +55,7 @@ final class APIKeysUI: XCTestCase {
         XCTAssertTrue(app.staticTexts["Учебный ответ Claude"].waitForExistence(timeout: 7), app.debugDescription)
         app.terminate()
         app.launch()
+        openJournal(app)
         tap(app.buttons["ИИ-провайдеры"], in: app)
         tap(app.buttons["Отключить DeepSeek"], in: app)
         XCTAssertTrue(app.secureTextFields["API-ключ DeepSeek"].exists)
