@@ -294,6 +294,7 @@ if(!workingFamily&&person.id==='anna'&&!current().reviews.length){
   const sample=createReview(person.course.visit);
   sample.time='2026-11-18T12:00:00+03:00';current().reviews.push(sample);saveState();
 }
+if(workingFamily)document.querySelector('.bar-actions .demo')?.remove();
 document.querySelector('.bar-actions').inert=false;
 render();
 chatGPT.refresh().then(()=>{
