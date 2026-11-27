@@ -55,7 +55,11 @@ const ids = new Map();
       await form.locator('[name="verified"]').check();
       await form.getByRole('button',{name:'Сохранить результаты'}).click();
       if (lab.rows.some(r=>r.clarify)) {
-        result.blockedUnclear = (await form.isVisible()) && /Уточните/.test(await form.locator('.error').innerText());
+        await form.locator('[name="reading"][aria-invalid="true"]').waitFor();
+        result.blockedUnclear = await form.locator('[name="reading"][aria-invalid="true"]').evaluate(input=>{
+          const ids=(input.getAttribute('aria-describedby')||'').split(/\s+/);
+          return ids.some(id=>document.getElementById(id)?.textContent.includes('Уточните'));
+        });
         if (result.blockedUnclear) {
           await action('deferLab');
           await page.goto(new URL('?section=labs',base).href);
