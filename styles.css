@@ -87,6 +87,10 @@ input[type=checkbox]{accent-color:#245b46;width:17px;height:17px}
 .finish-med{border-top:1px solid var(--line);padding:12px 0;display:grid;gap:7px}.finish-med label{font-size:14px}.unknown{display:flex;gap:6px;align-items:center;font-size:13px!important;color:var(--muted)}
 .med-overrides{margin-top:16px}.med-overrides summary{cursor:pointer;font-size:14px;color:var(--green);font-weight:580;padding:6px 0}
 .error{color:#90392c;font-size:14px}.history-row{padding:7px 0;color:var(--muted);font-size:13px}
+.field-issue{display:block;color:#90392c;font-size:13px;line-height:1.4;font-weight:500;overflow-wrap:anywhere}
+#panel :is(input,textarea,select,button)[aria-invalid=true]{border-color:#a24436;box-shadow:0 0 0 1px #a24436;scroll-margin-block:8px}
+#panel input:is([type=checkbox],[type=radio])[aria-invalid=true]{outline:2px solid #a24436;outline-offset:2px}
+#panel .file-picker:has(input[aria-invalid=true]){box-shadow:0 0 0 2px #a24436}
 @media(max-width:900px){.wrap{width:calc(100% - 50px)}.hero-body{padding-inline:28px}.dashboard{gap:18px;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)}.visit-row{gap:13px;padding:18px 13px}.dateflag{width:47px}.course-card{padding:16px}.section-head h2{font-size:26px}.row-main strong{font-size:15px}}
 @media(max-width:720px){
   .wrap{width:calc(100% - 32px)}.bar{min-height:61px;gap:8px}.brand{font-size:21px;gap:7px}.brandmark{width:30px;height:30px;border-radius:9px 9px 9px 3px}.brandmark svg{width:22px}.family{padding:8px 10px;gap:6px;font-size:13px;min-height:var(--control-height)}.bar-actions{gap:8px}.wide{display:none}
@@ -269,6 +273,7 @@ dialog:has(.source-workspace){width:min(1130px,calc(100% - 40px));max-height:94d
 
 /* Align paired controls while keeping their captions and hints readable. */
 :is(.intake-pair,.exam-reading) > label{align-content:space-between}
+:is(.intake-pair,.exam-reading):has(> label > .field-issue) > label{align-content:start}
 :is(.intake-pair,.exam-reading) > label > :is(input:not([type=checkbox]),select){
   width:100%;block-size:max(var(--control-height),2.75em);line-height:1.25;
 }

@@ -89,11 +89,18 @@ async function requestedDevice(f){
     if(!d?.spki)throw Error();
     return {raw:fromBase64(d.spki),id:d.id,label:d.label,member:d.member,revision:d.revision};
   }
-  const file=f.elements.request.files[0];if(!file||file.size>8192)throw Error();
-  const req=JSON.parse(await file.text());if(req.format!=='HS-request-1')throw Error();
-  const raw=fromBase64(req.spki),id=await deviceFingerprint(raw),label=f.elements.label.value.trim();
-  if(!label||shortDeviceId(id).replaceAll(' ','')!==f.elements.fingerprint.value.toUpperCase().replace(/\s/g,'')){
-    f.querySelector('[role=status]').textContent='Сверьте отпечаток на принимающем устройстве и введите его целиком.';return;
+  const field=f.elements.request,file=field.files[0],status=f.querySelector('[role=status]');
+  let req,raw;
+  try{
+    if(!file||file.size>8192)throw Error();
+    req=JSON.parse(await file.text());if(req.format!=='HS-request-1')throw Error();
+    raw=fromBase64(req.spki);
+  }catch{
+    status.textContent='';rejectFieldValue(field,'Выберите файл запроса с нового устройства.');return;
+  }
+  const id=await deviceFingerprint(raw),label=f.elements.label.value.trim();
+  if(shortDeviceId(id).replaceAll(' ','')!==f.elements.fingerprint.value.toUpperCase().replace(/\s/g,'')){
+    status.textContent='';rejectFieldValue(f.elements.fingerprint,'Сверьте отпечаток на принимающем устройстве и введите его целиком.',{related:field});return;
   }
   const revision=req.revision??0;
   if(!Number.isSafeInteger(revision)||revision<0||revision>=Number.MAX_SAFE_INTEGER-1)throw Error();

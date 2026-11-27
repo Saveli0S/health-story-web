@@ -31,7 +31,6 @@ async function saveFamilyForm(form){
   if(viewer!=='admin'||form.dataset.busy)return;
   const creating=form.dataset.creating==='true',name=form.elements.memberName.value.trim(),role=creating?'Взрослый':form.elements.role.value;
   const error=form.querySelector('.error'),title=form.elements.familyName?.value.trim();
-  if(!name||(creating&&!title)){error.textContent='Введите название и имя профиля.';return}
   if(!['Взрослый','Ребёнок'].includes(role))return;
   const member={id:'p-'+uid(),name,role},patient=personFromMember(member);
   const profile=makeState({...patient,birthday:form.elements.birthday.value});

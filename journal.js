@@ -57,20 +57,22 @@ function showField(id){
     <label>Значение<input required name="value" type="${isDate?'date':'text'}" ${isDate?'max="'+todayLocal()+'"':''} maxlength="280" value="${esc(f?.value)}"></label>
     <p class="error" role="alert"></p><div class="actions">${f?act('removeField','Удалить поле',id,'button danger'):''}<button class="button primary">Сохранить поле</button></div></form>`);
 }
+function availableFieldSpec(label){
+  return fieldSpecs.find(([key,name])=>norm(name)===norm(label)&&!current().fields.some(f=>f.id===key));
+}
+registerFieldRules('field-form',(form,add)=>{
+  const label=form.elements.label.value.trim(),id=form.dataset.id;
+  if(label&&current().fields.some(f=>f.id!==id&&norm(f.label)===norm(label)))add('label','Поле с таким названием уже есть.');
+  if(current().fields.some(f=>f.id===id)||!['birthday','measured'].includes(availableFieldSpec(label)?.[0]))return;
+  const value=form.elements.value.value.trim(),parsed=new Date(value+'T12:00:00Z');
+  if(!/^\d{4}-\d\d-\d\d$/.test(value)||Number.isNaN(parsed.getTime())||parsed.toISOString().slice(0,10)!==value||value>todayLocal())
+    add('value','Введите действительную дату в формате ГГГГ-ММ-ДД, не позже сегодняшней.');
+});
 function saveField(form){
   const data=new FormData(form), label=data.get('label').trim(), value=data.get('value').trim(), id=form.dataset.id;
-  if(!value||!label||current().fields.some(f=>f.id!==id&&norm(f.label)===norm(label))){
-    form.querySelector('.error').textContent='Заполните оба поля и используйте уникальное название.';return
-  }
   const f=current().fields.find(f=>f.id===id);
   if(f)Object.assign(f,{label,value});else {
-    const standard=fieldSpecs.find(([key,name])=>norm(name)===norm(label)&&!current().fields.some(f=>f.id===key));
-    if(standard && ['birthday','measured'].includes(standard[0])){
-      const parsed=new Date(value+'T12:00:00Z');
-      if(!/^\d{4}-\d\d-\d\d$/.test(value)||Number.isNaN(parsed.getTime())||parsed.toISOString().slice(0,10)!==value||value>todayLocal()){
-        form.querySelector('.error').textContent='Введите действительную дату в формате ГГГГ-ММ-ДД не позже даты демо.';return
-      }
-    }
+    const standard=availableFieldSpec(label);
     current().fields.push({id:standard?.[0]||uid(),label,value});
   }
   saveState();render();goBack();
@@ -143,19 +145,25 @@ function uploadManifest(form){
   };
   pick.onchange();
 }
+function uploadCategoryControl(form,index){return form.querySelector('[data-file-index="'+index+'"]')||form.elements.category}
+registerFieldRules('upload-form',(form,add)=>{
+  for(const [i,file] of [...form.elements.file.files].entries()){
+    const category=uploadCategoryControl(form,i),zip=/\.zip$/i.test(file.name);
+    if(!file.size)add('file','Выберите непустой файл.');
+    else if(!zip&&!(isPdf(file)||isPhoto(file)||isTextFile(file)))add('file','Выберите фото, PDF, TXT или ZIP.');
+    if(zip&&!['Снимки','Заключения','Другое'].includes(category.value))add(category,'Для ZIP выберите «Снимки», «Заключения» или «Другое».');
+    if(['Назначения','Рекомендации'].includes(category.value)&&!form.elements.visit.value)add('visit','Выберите визит для назначения или рекомендаций.');
+  }
+});
 async function saveUpload(form){
   if(form.dataset.busy)return;
   const files=Array.from(form.elements.file.files),profile=current(),patient=person.id,visit=form.elements.visit.value;
   const rows=files.map((file,i)=>{
-    const category=form.querySelector('[data-file-index="'+i+'"]')?.value||form.elements.category.value;
+    const category=uploadCategoryControl(form,i).value;
     return {id:uid(),visit,category,name:file.name,type:file.type,date:todayLocal(),...(category==='Заключения'&&files.length===1?{clinicalText:form.elements.clinical.value.trim()}:{}),
       ...(['Назначения','Рекомендации'].includes(category)?{intake:true,checked:false,meds:[]}: {})};
   });
   const error=form.querySelector('.error'),staged=[];
-  if(rows.some(r=>r.intake&&!visit)){error.textContent='Для назначения или рекомендаций выберите визит.';return}
-  if(!files.length||files.some((f,i)=>!f.size||!(isPdf(f)||isPhoto(f)||isTextFile(f)||(/\.zip$/i.test(f.name)&&['Снимки','Заключения','Другое'].includes(rows[i].category))))){
-    error.textContent='Проверьте типы файлов. ZIP можно приложить как снимок, заключение или другой документ.';return;
-  }
   form.dataset.busy='true';const submit=form.querySelector('button.primary');submit.disabled=true;
   const accepted=[];let existing;
   try{

@@ -40,6 +40,7 @@ function showPeriod(id) {
     <div id="actual-end" ${!p.closed?'hidden':''}><label>Фактическое окончание<input type="date" name="end" max="${todayLocal()}" value="${esc(p.end)}"></label><label class="unknown"><input type="checkbox" name="unknown" ${p.unknown?'checked':''}>Дата неизвестна</label></div>
     <label>Пометка при прерывании<textarea name="note" maxlength="300">${esc(p.note||'')}</textarea></label>
     <p class="error" role="alert"></p><button class="button primary">Сохранить даты</button></form>`);
+  document.querySelector('#period-form').localFieldRules=[periodFieldRules];
   togglePeriodFields();
 }
 function togglePeriodFields(){
@@ -51,10 +52,15 @@ function togglePeriodFields(){
   f.elements.end.min=f.elements.start.value;
   f.elements.planned.min=f.elements.start.value;
 }
+function periodFieldRules(form,add){
+  for(const name of ['planned','end']){
+    const date=form.elements[name].value;
+    if(date&&date<form.elements.start.value)add(name,'Укажите дату окончания не раньше начала курса.');
+  }
+}
 function savePeriod(f) {
   const d=new FormData(f), closed=d.get('closed')==='yes', start=d.get('start'), planned=d.get('planned');
   const end=closed?d.get('end')||'':'', unknown=closed && d.has('unknown');
-  if((planned && planned<start) || (end && end<start)) {f.querySelector('.error').textContent='Окончание должно быть в день начала курса или позже.';return}
   const period=medFromKey(f.dataset.id).med.period;
   Object.assign(period,{start,planned,end,closed,unknown,note:d.get('note').trim()});
   if(start||end||!closed)delete period.unconfirmed;
@@ -68,6 +74,17 @@ function showFinish(id) {
     <details class="med-overrides"><summary>Уточнить по препаратам</summary>
     ${c.meds.map((m,i)=>m.period.closed||m.endedBy?`<p>${esc(m.name)} · уже завершён</p>`:`<div class="finish-med"><label>${esc(m.name)}<input type="date" name="d${i}" min="${m.period.start}" max="${todayLocal()}"></label><label class="unknown"><input type="checkbox" name="u${i}" data-unknown="${i}">Дата неизвестна</label></div>`).join('')}</details>
     <p class="error" role="alert"></p><button class="button primary">Завершить лечение</button></form>`);
+  document.querySelector('#finish-form').localFieldRules=[finishFieldRules];
+}
+function finishFieldRules(form,add){
+  const meds=courseAt(form.dataset.id)?.meds||[];
+  const common=form.elements.common.value;
+  for(const [i,med] of meds.entries()){
+    const override=form.elements['d'+i];
+    if(!override||form.elements['u'+i].checked)continue;
+    const end=override.value||common;
+    if(end&&end<med.period.start)add(override.value?override:'common','Укажите дату окончания не раньше начала курса.');
+  }
 }
 function saveFinish(f) {
   const d=new FormData(f);
@@ -77,7 +94,6 @@ function saveFinish(f) {
     const unknown=d.has('u'+i), end=unknown?'':(d.get('d'+i)||d.get('common'));
     return {...p,closed:true,unknown,end};
   });
-  if(periods.some(p=>p.end && p.end<p.start)){f.querySelector('.error').textContent='Дата окончания раньше начала одного из курсов.';return}
   meds.forEach((m,i)=>Object.assign(m.period,periods[i]));saveState();render();panel.close();announce('Лечение завершено и сохранено в истории визита.');
 }
 function makePayload(id) {
@@ -445,12 +461,19 @@ function showAnalogs(id){
   }
   function readCriteria(){
     const values=readOnly?{...criteria}:Object.fromEntries(fields.map(([k])=>[k,form.elements[k].value.trim()]));
+    if(!readOnly&&!validateInlineFields(form))return null;
     if([values.trade||m.name,values.substance,values.alternative].some(v=>v&&!safeMarketQuery(v))){
       status.textContent='Проверьте поисковые названия и уберите личные сведения.';return null;
     }
     if(criteria.substanceFromCatalog&&marketNorm(values.substance)===marketNorm(criteria.substance))values.substanceFromCatalog=true;
     return values;
   }
+  if(!readOnly)form.localFieldRules=[(f,add)=>{
+    for(const name of ['trade','substance','alternative']){
+      const value=f.elements[name].value.trim()||(name==='trade'?m.name:'');
+      if(value&&!safeMarketQuery(value))add(name,'Проверьте название препарата и уберите личные сведения.');
+    }
+  }];
   function store(values,search,rows){
     if(current()!==profile||readOnly)return false;
     const previous=profile.marketCriteria,previousFindings=profile.marketFindings;

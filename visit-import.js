@@ -69,7 +69,7 @@ async function preparePhotoVisit(input,requestedMode){
   if(readOnly||route?.name!=='photoVisit'||!files.length||route.reading)return;
   const status=document.querySelector('#import-progress'),mode=requestedMode||document.querySelector('#visit-processing').value;
   if(files.some(f=>!f.size||!(isPhoto(f)||isPdf(f)||isTextFile(f)))){
-    status.textContent='Выберите непустые фото, PDF или TXT.';return;
+    rejectFieldValue(document.querySelector('#visit-source'),'Выберите непустые фото, PDF или TXT.');return;
   }
   route.reading=true;
   const buttonList=document.querySelectorAll('#visit-source,[data-action=sampleVisit],#visit-processing');

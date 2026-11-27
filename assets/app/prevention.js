@@ -62,6 +62,16 @@ function completePrevent(key){
     <label>Следующая плановая дата<input type="date" name="next" value="${event||p.next>todayLocal()?esc(p.next):''}"></label>
     <p class="error" role="alert"></p><button class="button primary">Сохранить выполнение</button></form>`);
 }
+function preventionFieldRules(form,add){
+  const {done,next,source,kind}=form.elements;
+  if(kind&&!Object.hasOwn(preventionKinds,kind.value))add(kind,'Выберите вид записи.');
+  if(source?.value&&!done?.value)add(done,'Укажите дату выполнения для выбранного визита или бланка.');
+  const events=current().prevention.find(p=>p.id===form.dataset.id)?.history||[];
+  const last=events.filter(h=>h.id!==form.dataset.event).at(-1)?.date||'';
+  if(next.value&&(next.value<done?.value||next.value<last))add(next,'Следующая дата должна быть не раньше выполненного обследования.');
+}
+registerFieldRules('prevention-form',preventionFieldRules);
+registerFieldRules('prevent-event',preventionFieldRules);
 function savePrevention(form){
   if(readOnly)return;
   const records=current().prevention,old=records.find(p=>p.id===form.dataset.id);
@@ -70,12 +80,9 @@ function savePrevention(form){
   if(isEvent&&!old)return;
   const p=isEvent?{...old,next}:{id:old?.id||uid(),kind:value('kind'),title:value('title'),period:value('period'),note:value('note'),next,history:old?.history||[]};
   const error=form.querySelector('.error');
-  if(!Object.hasOwn(preventionKinds,p.kind)||!p.title){error.textContent='Укажите название и вид записи.';return}
-  if(value('source')&&!done){error.textContent='Для ссылки на выполненное обследование укажите дату выполнения.';return}
   const eventId=form.dataset.event;
   const history=eventId?p.history.filter(h=>h.id!==eventId):p.history;
   if(eventId&&history.length===p.history.length)return;
-  if(done>todayLocal()||(next&&(next<done||next<(history.at(-1)?.date||'')))){error.textContent='Проверьте даты выполнения и следующего обследования.';return}
   if(done)p.history=[...history,{id:eventId||uid(),date:done,source:value('source'),note:value('eventNote')}].sort((a,b)=>a.date.localeCompare(b.date));
   current().prevention=old?records.map(row=>row.id===old.id?p:row):[...records,p];
   if(!saveState()){current().prevention=records;error.textContent='Не удалось сохранить запись.';return}

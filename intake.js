@@ -83,14 +83,10 @@ async function submitVisit(f,next){
   const newDoctor=val('doctor')==='new',values=[val('doctorName'),val('specialty'),val('clinic')];
   const foundDoctor=newDoctor&&Object.keys(person.doctors).find(id=>values.every((v,i)=>identityText(v)===identityText(person.doctors[id][i])));
   const doctor=newDoctor&&!foundDoctor?{id:uid(),values}:null;
-  if(!episode?.name||!val('title')||(newDoctor&&!values[0])){f.querySelector('.error').textContent='Заполните название эпизода, визита и имя врача.';return}
-  if(photo&&[val('title'),val('episode')==='new'?val('episodeName'):'',newDoctor?values[0]:''].some(needsClarification)){f.querySelector('.error').textContent='Уточните отмеченные поля визита по оригиналу.';return}
+  if(!episode?.name)return;
   const visit=[uid(),val('date'),val('title'),doctor?.id||foundDoctor||val('doctor'),episode.name,val('note'),'scope',episode.id];
   let decisions;try{decisions=readTherapyChanges(f,visit)}catch(e){f.querySelector('.error').textContent=e.message;return}
   const meds=medicineValues(f);
-  if(meds.some(incompleteMedicine)){
-    f.querySelector('.error').textContent='Уточните название, дозировку и схему каждого препарата.';return;
-  }
   if(val('clinic')){visit[8]=[];visit[9]=val('clinic')}
   if(meds.length)visit[8]=meds.map(m=>({...m,period:emptyPeriod()}));
   const match=sameVisit(visit,doctor?{[doctor.id]:doctor.values}:{});
@@ -363,9 +359,34 @@ function medicineValues(form){
     return result;
   });
 }
-function incompleteMedicine(m){
-  return [m.name,m.instructions].some(unclearRxField)||(!m.strengthUnspecified&&unclearRxField(m.strength));
+function medicineFieldRules(form,add){
+  const rows=[...form.querySelectorAll('[data-med]')],seen=new Set();
+  for(const [i,medicine] of medicineValues(form).entries()){
+    const control=name=>rows[i].querySelector('[name="'+name+'"]');
+    if(unclearRxField(medicine.name))add(control('drug'),'Уточните название препарата.');
+    if(!medicine.strengthUnspecified&&unclearRxField(medicine.strength))add(control('strength'),'Уточните дозировку.');
+    if(unclearRxField(medicine.instructions))add(control('instructions'),'Уточните схему приёма.');
+    const signature=medicineSignature(medicine);
+    if(form.id==='visit-rx-form'&&seen.has(signature))add(control('drug'),'Это назначение уже есть в списке.');
+    if(form.id==='edit-medicine-form'&&courseAt(form.dataset.visit)?.meds.some(m=>m.id!==medicine.id&&medicineSignature(m)===signature))
+      add(control('drug'),'Такое назначение уже есть в визите.');
+    seen.add(signature);
+  }
 }
+for(const id of ['visit-form','visit-rx-form','edit-medicine-form','verify-form'])registerFieldRules(id,medicineFieldRules);
+registerFieldRules('visit-form',(form,add)=>{
+  const episode=form.elements.episode.value;
+  if(episode!=='new'&&!current().episodes.some(row=>row.id===episode&&row.name))add('episode','Выберите доступный эпизод.');
+  if(!routes.at(-1)?.photo)return;
+  for(const name of ['title','episodeName','doctorName']){
+    if(needsClarification(form.elements[name].value))add(name,'Уточните значение по оригиналу.');
+  }
+});
+registerFieldRules('verify-form',(form,add)=>{
+  const hasMedicine=Boolean(form.querySelector('[data-med]'));
+  if(form.elements.none.checked===hasMedicine)add('none',hasMedicine?'Снимите отметку или удалите строки с препаратами.':'Добавьте препарат или отметьте, что назначений нет.');
+  if(needsClarification(form.elements.recommendation.value))add('recommendation','Уточните рекомендации по оригиналу.');
+});
 function prescriptionSlot(profile,visit,id){
   const change=profile.changes.findLast(c=>c.visit===visit&&c.replacement?.id===id);
   if(change)return {container:change,key:'replacement'};
@@ -407,17 +428,12 @@ function saveMedicineEdit(form){
   if(readOnly||!v)return;
   const [values]=medicineValues(form),profile=current(),latest=latestProfile();
   const error=message=>{form.querySelector('.error').textContent=message};
-  if(!values||incompleteMedicine(values)){
-    error('Уточните название, схему и дозировку препарата.');return;
-  }
+  if(!values)return;
   const slot=prescriptionSlot(profile,visit,values.id);
   const newest=prescriptionSlot(latest,visit,values.id);
   if(form.fromFixture?Boolean(newest):(!slot||!newest||
       JSON.stringify(prescriptionFields(newest.container[newest.key]))!==JSON.stringify(form.prescriptionBase))){
     error('Назначение изменилось. Обновите профиль перед сохранением.');return;
-  }
-  if(courseAt(visit)?.meds.some(m=>m.id!==values.id&&medicineSignature(m)===medicineSignature(values))){
-    error('В этом визите уже есть такое назначение.');return;
   }
   if(form.fromFixture){
     const updated=v.slice();
@@ -449,13 +465,6 @@ function visitPrescriptions(id){
 function saveVisitPrescriptions(form){
   const v=visitById(form.dataset.id);if(!v||readOnly)return;
   const meds=medicineValues(form),previous=v[8]||[];
-  if(form.elements.verified&&!form.elements.verified.checked)return;
-  if(meds.some(incompleteMedicine)){
-    form.querySelector('.error').textContent='Сверьте название, схему и дозировку каждого препарата.';return;
-  }
-  if(new Set(meds.map(medicineSignature)).size!==meds.length){
-    form.querySelector('.error').textContent='Уберите повторяющиеся назначения.';return;
-  }
   const updated=v.slice();
   updated[8]=meds.map(m=>{
     const old=previous.find(row=>row.id===m.id)||{};
@@ -472,13 +481,6 @@ function storeVerification(form,defer=false){
     if(missing){position.med=missing.id;position.field='strength'}
     file.draft={...values,position};file.checked=false;
   }else{
-    if(!form.elements.verified.checked)return;
-    if(values.none===Boolean(values.meds.length)||values.meds.some(incompleteMedicine)){
-      form.querySelector('.error').textContent='Заполните назначение для каждой строки или оставьте список пустым и отметьте отсутствие препаратов.';return;
-    }
-    if(needsClarification(values.recommendation)){
-      form.querySelector('.error').textContent='Сведения требуют уточнения. Исправьте отмеченные поля по оригиналу или выберите «Уточнить позже».';return;
-    }
     file.meds=values.meds.map(m=>{
       const old=file.meds.find(row=>row.id===m.id)||{};
       return {...applyPrescriptionFields(old,m),period:old.period||emptyPeriod()};

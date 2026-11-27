@@ -94,7 +94,7 @@ async function replaceImportOriginal(input,file){
   const route=routes.at(-1),profile=current(),patient=person.id,draft=profile.visitDrafts.find(d=>d.id===route.photo?.draftId);
   if(!draft||draftGroup(draft).length!==1||readOnly)return;
   const error=document.querySelector('#visit-form .error');
-  if(!file.size||!(isPhoto(file)||isPdf(file)||isTextFile(file))){error.textContent='Выберите непустое фото, PDF или TXT.';return}
+  if(!file.size||!(isPhoto(file)||isPdf(file)||isTextFile(file))){rejectFieldValue(input,'Выберите непустое фото, PDF или TXT.');return}
   input.disabled=true;
   const newKey=uid(),oldKey=originalKey(prototypeState,patient+'/'+draft.id);
   try{
