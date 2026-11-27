@@ -9,8 +9,15 @@ function familyDevices(){
 function archivePanel(){
   const canCrypt=Boolean(globalThis.crypto?.subtle);
   const offline=window.isSecureContext&&'serviceWorker' in navigator?act('offlineKit','Скачать распознавание для работы без сети','','button secondary','clip')+'<p role="status" id="offline-result"></p>':'';
+  const recoveryDetails=workingFamily&&viewer==='admin'&&canCrypt?'<details id="family-recovery-key" class="panel-section"><summary>Ключ восстановления семьи</summary>'+
+        '<p>Используйте этот ключ для копий, созданных дневником с ключом семьи. Если при выгрузке указали другой ключ, понадобится тот ключ.</p>'+
+        '<code></code></details>':'';
   openPanel('Настройки','Синхронизация и резервная копия','<div class="summary-sheet"><strong>Сохранено в этом браузере</strong><div id="sync-view"></div></div>'+
-    (viewer==='admin'?(canCrypt?'<p>Семейная копия включает записи всех профилей и оригиналы. Ключ восстановления храните отдельно от файла.</p><div class="actions left">'+act('exportBackup','Создать зашифрованный бэкап','','button primary')+act('importBackup','Проверить или восстановить копию','','button secondary')+'</div>':'<p>Создание и восстановление зашифрованной копии доступны по HTTPS или на localhost.</p>'):'<p>Семейный архив доступен администратору.</p>')+(driveAllowed()?act('drive','Google Диск','','button secondary','folder'):'')+offline);
+    (viewer==='admin'?(canCrypt?'<p>Семейная копия включает записи всех профилей и оригиналы. Ключ восстановления храните отдельно от файла.</p><div class="actions left">'+act('exportBackup','Создать зашифрованный бэкап','','button primary')+act('importBackup','Проверить или восстановить копию','','button secondary')+'</div>':'<p>Создание и восстановление зашифрованной копии доступны по HTTPS или на localhost.</p>'):'<p>Семейный архив доступен администратору.</p>')+(driveAllowed()?act('drive','Google Диск','','button secondary','folder'):'')+recoveryDetails+offline);
+  const keyDetails=document.querySelector('#family-recovery-key');
+  if(keyDetails)keyDetails.ontoggle=()=>{
+    keyDetails.querySelector('code').textContent=keyDetails.open?deviceAuthority(family.id).recovery:'';
+  };
   deviceSync.draw();
 }
 function toBase64(data){
