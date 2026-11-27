@@ -80,31 +80,47 @@ function tagDefinition(id){
   openPanel('Семейный справочник',t?'Редактировать тег':'Новый тег','<form id="tag-definition" class="edit-form" data-id="'+esc(id)+'"><label>Название<input required maxlength="48" name="title" value="'+esc(t?.name)+'"></label>'+
     '<label>Ключевые слова через запятую<textarea maxlength="400" name="keywords">'+esc(t?.keywords.join(', '))+'</textarea></label><p class="error" role="alert"></p><button class="button primary">Сохранить тег</button>'+
     (t?act('removeTag','Удалить тег',id,'text-button'):'')+'</form>');
+  panelBody.querySelector('#tag-definition').tagBase=t;
 }
 function tagRemoval(id){
   const t=prototypeState.tags.find(t=>t.id===id);if(viewer!=='admin'||!t)return;
   openPanel('Семейный справочник','Удалить тег «'+t.name+'»?','<p>Тег исчезнет из карточек и поиска у всей семьи. Медицинские записи сохранятся.</p>'+
     act('back','Отмена','','button secondary')+act('confirmTagRemoval','Удалить из справочника',id,'button primary'));
+  panelBody.querySelector('[data-action=confirmTagRemoval]').tagBase=t;
 }
 registerFieldRules('tag-definition',(form,add)=>{
   const name=tagWords(form.elements.title.value);
   if(!name)add('title','Введите название тега.');
   else if(prototypeState.tags.some(t=>t.id!==form.dataset.id&&tagWords(t.name)===name))add('title','Тег с таким названием уже есть.');
 });
-function updateTagLibrary(form,removeId){
+async function updateTagLibrary(form,removeId){
   if(viewer!=='admin')return;
-  const previous=prototypeState.tags,id=removeId||form.dataset.id||uid();
-  let next=previous.filter(t=>t.id!==id);
-  if(!removeId){
-    const name=form.elements.title.value.trim();
-    const keywords=[...new Set(form.elements.keywords.value.split(',').map(w=>w.trim()).filter(Boolean))];
-    const original=previous.find(t=>t.id===id);
-    if(original&&tagWords(original.name)!==tagWords(name)&&!keywords.some(word=>tagWords(word)===tagWords(original.name)))keywords.push(original.name);
-    const tag={id,name,keywords};
-    next=previous.some(t=>t.id===id)?previous.map(t=>t.id===id?tag:t):[...previous,tag];
+  const before=prototypeState.tags,id=removeId||form.dataset.id||uid();
+  const expected=removeId?panelBody.querySelector('[data-action=confirmTagRemoval]')?.tagBase:form.tagBase;
+  const name=form?.elements.title.value.trim();
+  const keywords=form?[...new Set(form.elements.keywords.value.split(',').map(word=>word.trim()).filter(Boolean))]:[];
+  function change(list){
+    const previous=list.find(tag=>tag.id===id);
+    const signature=tag=>tag&&[tag.id,tag.name,tag.keywords];
+    if(!syncMerge.same(signature(previous),signature(expected)))
+      throw Error('Тег изменился на другом устройстве. Откройте справочник заново.');
+    if(removeId)return list.filter(tag=>tag.id!==id);
+    if(!tagWords(name)||list.some(tag=>tag.id!==id&&tagWords(tag.name)===tagWords(name)))throw Error('Проверьте название тега.');
+    const aliases=[...keywords];
+    if(previous&&tagWords(previous.name)!==tagWords(name)&&!aliases.some(word=>tagWords(word)===tagWords(previous.name)))aliases.push(previous.name);
+    const tag={id,name,keywords:aliases};
+    return previous?list.map(row=>row.id===id?tag:row):[...list,tag];
   }
-  prototypeState.tags=next;
-  if(!saveState()){prototypeState.tags=previous;announce('Не удалось сохранить справочник тегов.');return}
-  render();while(routes.length>1&&routes.at(-1).name!=='tagLibrary')routes.pop();displayRoute();
+  const submit=form?.querySelector('button[type=submit],button:not([type])')||panelBody.querySelector('[data-action=confirmTagRemoval]');
+  if(submit?.disabled)return;
+  if(submit)submit.disabled=true;
+  try{
+    prototypeState.tags=workingFamily&&prototypeState.sync?await deviceSync.changeFamilyTags(change):change(before);
+    if(!saveState()){prototypeState.tags=before;throw Error('Не удалось сохранить справочник на этом устройстве.')}
+    render();while(routes.length>1&&routes.at(-1).name!=='tagLibrary')routes.pop();displayRoute();
+  }catch(error){
+    const message=error instanceof TypeError?'Для изменения семейного справочника нужна связь.':error.message;
+    const target=form?.querySelector('.error');
+    if(target)target.textContent=message;else announce(message);
+  }finally{if(submit)submit.disabled=false}
 }
-

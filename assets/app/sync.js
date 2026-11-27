@@ -37,6 +37,7 @@ const deviceSync=(()=>{
     throw Error('Не удалось проверить данные. Обновите доступ устройства.');
   }
   async function open(ctx,id,name,bytes){return (await decryptRevision(ctx,id,name,bytes)).bytes}
+  const tagLibraryID='_health_story_family_tags_v1';
   const cloudOrigin='https://health-story-sync.xzx89s.workers.dev';
   const cloudHosted=location.origin==='https://saveli0s.github.io';
   async function request(ctx,path,method='GET',body,rev,setupCode){
@@ -308,6 +309,7 @@ const deviceSync=(()=>{
           const initial=clinical();
           const originalCache=Object.fromEntries(Object.entries(data.profiles).map(([id,p])=>[id,items(p).map(f=>({id:f.id,key:originalKey(data,id+'/'+f.id)}))]));
           if(data.access)await receiveRoster(data);
+          await loadFamilyTags(data);
           if(!data.access)for(const {id} of data.family.members)ctx.profiles[id]||=profileContext();
           for(const id of Object.keys(ctx.profiles)){
             if(!data.profiles[id])throw Error('Изменился доступ к профилю.');
@@ -347,6 +349,48 @@ const deviceSync=(()=>{
     if(cloudHosted&&!setupCode)throw Error('Введите код подключения семейного сервера.');
     await request(ctx,'','PUT',undefined,undefined,setupCode);data.sync=ctx;commit(raw,data,false);await synchronize();
   }
+  function tagLibraryContext(ctx){
+    return {space:ctx.space,token:ctx.token,profiles:{[tagLibraryID]:ctx.tagLibrary}};
+  }
+  function readTagLibrary(object){
+    const tags=JSON.parse(new TextDecoder().decode(object.bytes)).tags;
+    if(!Array.isArray(tags)||tags.some(tag=>typeof tag.id!=='string'||typeof tag.name!=='string'||!Array.isArray(tag.keywords)))
+      throw Error('Справочник тегов не удалось прочитать.');
+    return tags;
+  }
+  async function writeTagLibrary(ctx,tags,rev){
+    return put(tagLibraryContext(ctx),tagLibraryID,'records',new TextEncoder().encode(JSON.stringify({tags})),rev);
+  }
+  async function loadFamilyTags(data){
+    const ctx=config(data),admin=!data.access;
+    if(admin)ctx.tagLibrary??={key:await derived(ctx.rosterMaster,'family-tags/v1'),previousKeys:[]};
+    if(!ctx.tagLibrary)return;
+    const remote=await getObject(tagLibraryContext(ctx),tagLibraryID,'records');
+    if(!remote){
+      if(!admin)throw Error('Справочник тегов ещё не опубликован.');
+      await writeTagLibrary(ctx,data.tags,0);return;
+    }
+    data.tags=readTagLibrary(remote);
+    if(admin&&!remote.primary)await writeTagLibrary(ctx,data.tags,remote.rev);
+  }
+  async function changeFamilyTags(change){
+    if(!workingFamily||viewer!=='admin')throw Error('Справочник редактирует администратор.');
+    const data=readJson(familyStateKey),ctx=config(data);
+    if(!ctx||data.access)throw Error('Справочник редактирует администратор.');
+    if(!ctx.tagLibrary)await synchronize();
+    return navigator.locks.request('health-story-sync',async()=>{
+      const state=readJson(familyStateKey),latest=config(state);
+      if(!latest?.tagLibrary||state.access)throw Error('Сначала синхронизируйте семейный справочник.');
+      for(let attempt=0;attempt<3;attempt++){
+        const remote=await getObject(tagLibraryContext(latest),tagLibraryID,'records');
+        if(!remote)throw Error('Справочник тегов недоступен.');
+        const before=readTagLibrary(remote),next=change(before);
+        if(syncMerge.same(before,next))return next;
+        try{await writeTagLibrary(latest,next,remote.rev);return next}
+        catch(error){if(error.status!==412||attempt===2)throw error}
+      }
+    });
+  }
   async function derived(secretValue,context){
     const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secretValue),{name:'HMAC',hash:'SHA-256'},false,['sign']);
     return base64url(new Uint8Array(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(context))));
@@ -362,7 +406,8 @@ const deviceSync=(()=>{
       profiles[m.id]={key:s.key,previousKeys:s.previousKeys||[]};
       grants[m.id]=scoped.access.role==='child'?'read':(m.id===scoped.access.member||scoped.access.role==='admin'&&m.role==='Ребёнок')?'self':'edit';
     }
-    return {family:scoped.family,city:scoped.city,tags:scoped.tags,templates:scoped.templates,profiles,grants};
+    if(ctx.tagLibrary)grants[tagLibraryID]=scoped.access.role==='admin'?'edit':'read';
+    return {family:scoped.family,city:scoped.city,tags:scoped.tags,templates:scoped.templates,profiles,grants,tagLibrary:ctx.tagLibrary};
   }
   function rosterKey(ctx,id,secret){
     return {space:ctx.space,profiles:{[id]:{key:secret}}};
@@ -411,6 +456,7 @@ const deviceSync=(()=>{
       entry.key=typeof keys==='string'?keys:keys.key;entry.previousKeys=keys.previousKeys||[];ctx.profiles[member.id]=entry;
     }
     Object.assign(data,{family:r.family,tags:r.tags,city:r.city,templates:r.templates});
+    ctx.tagLibrary=r.tagLibrary;
     validateFamily(data,true);
   }
   async function revoke(id){
@@ -425,6 +471,10 @@ const deviceSync=(()=>{
       for(const m of scope.family.members){
         const s=fresh.sync.profiles[m.id];
         if(s){s.previousKeys=[s.key,...(s.previousKeys||[])];s.key=secret()}
+      }
+      if(fresh.sync.tagLibrary){
+        const tags=fresh.sync.tagLibrary;
+        fresh.sync.tagLibrary={key:secret(),previousKeys:[tags.key,...(tags.previousKeys||[])]};
       }
       commit(raw,fresh,false);schedule();
     });
@@ -519,5 +569,5 @@ const deviceSync=(()=>{
     if(previous.sync)schedule();
     setInterval(()=>{if(!document.hidden&&navigator.onLine&&prototypeState.sync)schedule()},60000);
   }
-  return {start,draw,thumb,pin,keepConflicts,migrateEdits,enable,synchronize,noteChanges,loadOriginal,grant,revoke,records};
+  return {start,draw,thumb,pin,keepConflicts,migrateEdits,enable,synchronize,noteChanges,loadOriginal,grant,revoke,records,changeFamilyTags};
 })();
