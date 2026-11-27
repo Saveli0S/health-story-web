@@ -19,7 +19,7 @@ function recordsListing(){
     if(analysisMode==='prevention')content=preventionListing(sectionQuery);
     else if(analysisMode==='reports'){
       const rows=filterRows(searchIndex().filter(r=>r.type==='lab'&&(labFilter==='Все'||labCategory(r.id)===labFilter)),sectionQuery);
-      content=rows.map(r=>resultRow('lab',r.id,r.title,r.meta,'lab')).join('');
+      content=labDraftListing(sectionQuery,labFilter)+rows.map(r=>resultRow('lab',r.id,r.title,r.meta,'lab')).join('');
     }else content=indicatorGroups().filter(g=>norm(g.name+' '+g.specimen+' '+g.points.map(p=>p.raw.name+' '+reportInfo(labs().find(l=>l.id===p.source)).name+' '+tagLabels('lab',p.source)).join(' ')).includes(norm(sectionQuery)))
       .map(g=>resultRow('trend',g.key,g.name,seriesDescription(g)+' · результатов '+g.points.length,'trend')).join('');
   }

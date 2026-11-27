@@ -33,6 +33,20 @@ function indicatorGroups(){
 function seriesDescription(group){
   return [group.specimen||'Биоматериал не уточнён',group.unit,!group.specimen&&group.points?.[0]?.date?dateLabel(group.points[0].date):''].filter(Boolean).join(' · ');
 }
+function labDraftListing(query,category){
+  if(readOnly)return '';
+  const drafts=current().files.filter(file=>{
+    if(file.category!=='Лаборатория'||file.lab&&!file.labDraft)return false;
+    const draft=file.labDraft;
+    if(category!=='Все'&&(draft?.category||'Другое')!==category)return false;
+    const terms=[file.name,draft?.name,draft?.laboratory,...(draft?.rows||[]).map(row=>row.name),tagLabels('lab',file.id)];
+    return norm(terms.filter(Boolean).join(' ')).includes(norm(query));
+  });
+  if(!drafts.length)return '';
+  return '<section class="review-queue"><h3>Требуют сверки</h3>'+drafts.map(file=>
+    resultRow('verifyLab',file.id,file.name,'Сверить данные','edit')
+  ).join('')+'</section>';
+}
 function labInput(row={}){
   return `<fieldset class="rx-inputs lab-input"><legend>Показатель</legend><label>Название<input name="marker" value="${esc(row.name)}" required></label>
     <div class="intake-pair"><label>Результат<input name="reading" required value="${esc(row.value)}"></label>
@@ -50,7 +64,7 @@ async function verifyLab(id){
     if(!labReads.has(id))labReads.set(id,(async()=>{
       let raw='';const issues=[];try{
         const blob=await fileBlob(patient+'/'+id);
-        raw=await recognizeDocument(new File([blob],f.name,{type:f.type}),isPdf(f),msg=>{if(routes.at(-1)===route){const el=document.querySelector('#lab-progress');if(el)el.textContent=msg}},issues);
+        raw=await recognizeDocument(new File([blob],f.name,{type:f.type}),isPdf(f),msg=>{if(routes.at(-1)===route){const el=document.querySelector('#lab-progress');if(el)el.textContent=msg}},issues,{pdfRows:true});
       }catch{/* Manual reconciliation is available if the original cannot be read. */}
       f.issues=issues;f.labRaw=raw;f.labDraft=parseLabText(raw,f.name);saveState();return f.labDraft;
     })().finally(()=>labReads.delete(id)));

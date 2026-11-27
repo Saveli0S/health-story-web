@@ -95,7 +95,34 @@ function uncertainLines(tsv,page){
   }
   return [...lines.values()].filter(l=>l.unclear).map(l=>({page,text:l.words.map(w=>w.text).join(' '),words:l.words.filter(w=>w.confidence>=0&&w.confidence<65)}));
 }
-async function recognizeDocument(blob,pdf,progress,issues=[]){
+function pdfTableText(items,viewport){
+  // A PDF can store one whole column before the next one. Match cells by baseline.
+  const cells=items.filter(item=>typeof item.str==='string'&&item.str.trim()).map(item=>{
+    const [x,y]=viewport.convertToViewportPoint(item.transform[4],item.transform[5]);
+    return {x,y,text:item.str.trim(),height:item.height};
+  }).sort((a,b)=>a.y-b.y||a.x-b.x);
+  const rows=[];
+  for(const cell of cells){
+    const row=rows.at(-1);
+    if(row&&cell.y-row.y<=Math.max(1,Math.min(row.height,cell.height)*.3))row.cells.push(cell);
+    else rows.push({y:cell.y,height:cell.height,cells:[cell]});
+  }
+  return rows.map(row=>row.cells.sort((a,b)=>a.x-b.x).map(cell=>cell.text).join(' ')).join('\n');
+}
+function pdfDocumentText(items){
+  const lines=[];
+  let line='',lastY=null;
+  for(const item of items){
+    if(typeof item.str!=='string')continue;
+    const y=item.transform[5];
+    if(line&&lastY!==null&&Math.abs(y-lastY)>Math.max(3,item.height*.5)){lines.push(line.trim());line=''}
+    line+=item.str+' ';lastY=y;
+    if(item.hasEOL){lines.push(line.trim());line=''}
+  }
+  if(line.trim())lines.push(line.trim());
+  return lines.filter(Boolean).join('\n');
+}
+async function recognizeDocument(blob,pdf,progress,issues=[],{pdfRows=false}={}){
   if(isTextFile(blob))return (await blob.text()).trim();
   let worker,documentPdf,stage='',pageNumber=1;
   async function readImage(image){
@@ -124,16 +151,7 @@ async function recognizeDocument(blob,pdf,progress,issues=[]){
     for(let n=1;n<=documentPdf.numPages;n++){
       pageNumber=n;stage='Страница '+n+' из '+documentPdf.numPages+' · ';progress(stage+'Чтение текста…');
       const page=await documentPdf.getPage(n), content=await page.getTextContent();
-      const lines=[];let line='',lastY=null;
-      for(const item of content.items){
-        if(typeof item.str!=='string')continue;
-        const y=item.transform[5];
-        if(line && lastY!==null && Math.abs(y-lastY)>Math.max(3,item.height*.5)){lines.push(line.trim());line=''}
-        line+=item.str+' '; lastY=y;
-        if(item.hasEOL){lines.push(line.trim());line=''}
-      }
-      if(line.trim())lines.push(line.trim());
-      let result=lines.filter(Boolean).join('\n');
+      let result=pdfRows?pdfTableText(content.items,page.getViewport({scale:1})):pdfDocumentText(content.items);
       const hasText=(result.match(/[\p{L}\p{N}]/gu)||[]).length>=10;
       // Some scans have a small selectable header/footer over a full-page raster.
       let scan=!hasText;
