@@ -37,7 +37,7 @@ const base=process.env.HEALTH_SYNC_URL||'http://127.0.0.1:8765/';
  const value=(p,id)=>(p.evaluate(id=>readJson(stateKey).profiles[id].fields.find(f=>f.id==='weight').value,id));
  async function edit(p,id,k,v){await goto(p,'?profile='+id);assert(await p.evaluate(([k,v])=>{current().fields.find(f=>f.id===k).value=v;return saveState()},[k,v]))}
  try{
-   phase='setup';const master=await page(chrome,'?new=family'),adult=await page(safari),child=await page(safari);
+   phase='setup';const master=await page(chrome,'?new=family'),webAdmin=await page(chrome),adult=await page(safari),child=await page(safari);
    await master.locator('[name=familyName]').fill('Семья синхронизации');await master.locator('[name=memberName]').fill('Администратор');
    await master.locator('#family-form button').click();await master.getByRole('heading',{name:'Администратор',exact:true}).waitFor();
    await master.evaluate(async()=>{
@@ -52,11 +52,22 @@ const base=process.env.HEALTH_SYNC_URL||'http://127.0.0.1:8765/';
    if(await master.locator('#sync-setup').count())await master.locator('#sync-setup').fill((await require('node:fs/promises').readFile(process.env.HS_SETUP_FILE,'utf8')).trim());
    await master.locator('[data-sync=enable]').click();await master.locator('[data-sync=now]').waitFor();
    await sync(master);await pair(master,adult,'p-adult');await pair(master,child,'p-child');
+   phase='additional Chrome administrator';
+   const ownerId=await master.evaluate(()=>family.adminId);
+   await pair(master,webAdmin,ownerId);
+   await goto(master);
+   await sync(webAdmin);
+   assert.deepEqual(await webAdmin.evaluate(()=>[viewer,accessibleProfiles().length]),['admin',3]);
+   await goto(webAdmin,'?section=settings');
+   await webAdmin.locator('main [data-action=devices]').click();
+   await webAdmin.getByText(/выдача и отзыв доступа доступны/i).waitFor();
+   await edit(webAdmin,'p-adult','weight','70');await sync(webAdmin);await sync(master);
+   assert.equal(await value(master,'p-adult'),'70');
    phase='child consent changes propagate only from admin';
    for(const allowed of [true,false]){
-     await goto(master,'?profile=p-child&section=settings');
-     await master.locator('#chatgpt-auto').setChecked(allowed);
-     await sync(master);
+     await goto(webAdmin,'?profile=p-child&section=settings');
+     await webAdmin.locator('#chatgpt-auto').setChecked(allowed);
+     await sync(webAdmin);await sync(master);
      for(const recipient of [adult,child]){
        await sync(recipient);
        await goto(recipient,'?profile=p-child&section=settings');
@@ -116,6 +127,8 @@ const base=process.env.HEALTH_SYNC_URL||'http://127.0.0.1:8765/';
    await sync(master);await sync(adult);await sync(child);
    assert(await adult.evaluate(()=>Boolean(readJson(stateKey).profiles['p-second'])));
    assert(!await child.evaluate(()=>Boolean(readJson(stateKey).profiles['p-second'])));
+   await sync(webAdmin);
+   assert(await webAdmin.evaluate(()=>Boolean(readJson(stateKey).profiles['p-second'])));
    phase='revoke, rekey and preserve offline copy';
    const oldKey=await child.evaluate(()=>readJson(stateKey).sync.profiles['p-child'].key);
    await goto(master,'?section=settings');await master.locator('main [data-action=devices]').click();

@@ -316,7 +316,9 @@ const deviceSync=(()=>{
             const writer=data.access?.role!=='child';
             if(writer)await ensureOriginals(data,id);
             await lane(data,id,'records',writer);
-            await lane(data,id,'consent',!data.access||data.access.member===id&&writer);
+            const managesConsent=!data.access||writer&&(data.access.member===id||
+              data.access.role==='admin'&&data.family.members.some(m=>m.id===id&&m.role==='Ребёнок'));
+            await lane(data,id,'consent',managesConsent);
           }
           if(!data.access)await updateRosters(data);
           ctx.last=time();if(data.access)data.access.edited=false;
@@ -448,7 +450,8 @@ const deviceSync=(()=>{
     const ctx=config(data),id=data.access.deviceId,resp=await request(ctx,'/devices/'+id+'/roster');
     const raw=await open(rosterKey(ctx,id,ctx.rosterKey),id,'roster',await resp.arrayBuffer());
     const r=JSON.parse(new TextDecoder().decode(raw));
-    if(r.family.id!==data.family.id||r.family.adminId!==null||Object.keys(r.profiles).length!==r.family.members.length)throw Error('Неверная область доступа.');
+    const adminId=data.access.role==='admin'?data.access.member:null;
+    if(r.family.id!==data.family.id||r.family.adminId!==adminId||Object.keys(r.profiles).length!==r.family.members.length)throw Error('Неверная область доступа.');
     for(const member of r.family.members){
       if(!Object.hasOwn(r.profiles,member.id))throw Error('Неполный доступ.');
       if(!data.profiles[member.id])data.profiles[member.id]=makeState(personFromMember(member));
@@ -534,7 +537,7 @@ const deviceSync=(()=>{
         const labels={fields:'Медкарта',addedVisits:'Визит',notes:'Пометка',files:'Документ',measurements:'Измерение',episodes:'Эпизод',consultations:'Консультация',auto:'Автоанализ',directAuto:'Автоотправка в OpenRouter',chatGPTAuto:'Автоотправка в ChatGPT'};
         const item=c.path[0]==='fields'?p.fields.find(f=>f.id===record)?.label:c.path[0]==='addedVisits'?p.addedVisits.find(v=>v[0]===record)?.[2]:null;
         title.textContent='Расхождение · '+data.family.members.find(m=>m.id===id)?.name+' · '+(labels[c.path[0]]||'Запись')+(item?' · '+item:'');
-        const editable=!readOnly&&(c.lane!=='consent'||!data.access||data.access.member===id);
+        const editable=!readOnly&&(c.lane!=='consent'||mayChangeConsent(data.family.members.find(m=>m.id===id)));
         const conflict=document.createElement('div'),options=document.createElement('div');
         conflict.className='sync-conflict';options.className=editable?'actions archive-actions':'sync-conflict';
         conflict.append(title,options);root.append(conflict);
