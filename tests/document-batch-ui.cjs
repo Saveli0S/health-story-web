@@ -13,7 +13,12 @@ const text=(name,body)=>file(name,'text/plain',Buffer.from(body));
  const page=await context.newPage(),errors=[],remote=[];
  page.on('pageerror',e=>errors.push(e.message));
  await context.route(/^https?:\/\//,route=>{
-   if(new URL(route.request().url()).origin!==new URL(base).origin){remote.push(route.request().url());return route.abort()}
+   const request=route.request(),url=new URL(request.url());
+   if(new URL(base).origin==='https://saveli0s.github.io'&&request.method()==='GET'&&
+      url.href==='https://health-story-chatgpt.xzx89s.workers.dev/chatgpt/status'){
+     return route.fulfill({json:{available:false,connected:false},headers:{'access-control-allow-origin':'https://saveli0s.github.io'}});
+   }
+   if(url.origin!==new URL(base).origin){remote.push(request.url());return route.abort()}
    return route.continue();
  });
  const dialog=page.locator('dialog'),form=name=>dialog.locator('#'+name);
