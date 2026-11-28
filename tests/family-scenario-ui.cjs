@@ -91,9 +91,13 @@ async function step(name,fn){stage=name;const details=await fn();evidence.stages
     });
     await step('Медкарта ребёнка',async()=>{
       await go('?profile='+childId);await act('medical',p.locator('main'));
-      for(const [id,value] of [['weight','36 кг'],['height','143 см'],['measured','2025-01-05'],['allergy','Учебная аллергия на Макет-QA']]){
-        await dialog().locator('[data-action=field][data-id="'+id+'"]').click();await field('value').fill(value);await submit('Сохранить поле');
+      for(const [id,value,type] of [['birthday','2016-01-07','date'],['weight','36.5','number'],['height','143','number'],['measured','2025-01-05','date'],['allergy','Учебная аллергия на Макет-QA','text']]){
+        await dialog().locator('[data-action=field][data-id="'+id+'"]').click();
+        assert.equal(await field('value').getAttribute('type')??'text',type);
+        await field('value').fill(value);await submit('Сохранить поле');
       }
+      assert.match(await dialog().innerText(),/36,5 кг/);
+      assert.match(await dialog().innerText(),/143 см/);
       await dialog().locator('[data-action=field][data-id=""]').click();await fill({label:'Поле для проверки',value:'Начальное значение'});await submit('Сохранить поле');
       const row=dialog().locator('.field-line').filter({hasText:'Поле для проверки'});await act('field',row);await fill({value:'Уточнённое значение'});await submit('Сохранить поле');
       assert.match(await row.innerText(),/Уточнённое значение/);await act('field',row);await act('removeField');await act('confirmDelete');
