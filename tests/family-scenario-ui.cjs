@@ -147,7 +147,7 @@ async function step(name,fn){stage=name;const details=await fn();evidence.stages
     await step('Состав запроса на разбор лечения',async()=>{
       await gotoVisit(childId,initial);await act('analyze');await act('manual');
       const prompt=await field('prompt').inputValue();assert.match(prompt,/Учебная аллергия на Макет-QA/);
-      assert.match(prompt,/36 кг/);assert.match(prompt,/Препарат Альфа QA/);assert.match(prompt,/семь ступеней/);
+      assert.match(prompt,/36[.,]5 кг/);assert.match(prompt,/Препарат Альфа QA/);assert.match(prompt,/семь ступеней/);
       assert.match(prompt,/Haemoglobin/);assert.match(prompt,/Моча/);assert.doesNotMatch(prompt,/Клеверин|Лада Макетова|Доктор Январь|01-phantom/);
       await field('answer').fill('Учебный разбор курса, введён вручную.');await submit('Сохранить версию разбора');await dialog().getByText('Учебный разбор курса, введён вручную.',{exact:true}).waitFor();
       return 'В сводку вошли детский профиль, препараты, три связанных бланка и обследование. Визит взрослого и прямые идентификаторы отсутствовали. Сохранена вручную введённая версия.';
@@ -201,7 +201,10 @@ async function step(name,fn){stage=name;const details=await fn();evidence.stages
       const recipient=await newPage(secondary);await pairDevice(master,recipient,childId);
       await p.locator('header [data-action=family]').click();assert.deepEqual(await dialog().locator('.person-row strong').allTextContents(),[child]);await act('close');
       await gotoVisit(childId,initial);await dialog().getByText(noteText,{exact:true}).waitFor();assert.equal(await dialog().locator('[data-action=addNote],[data-action=period]').count(),0);
-      await goSection(adultId,'exams');await p.getByRole('heading',{name:child,exact:true}).waitFor();assert.equal(await p.locator('main [data-action=newExam]').count(),0);
+      await goSection(adultId,'exams');await p.getByRole('heading',{name:'Профиль по ссылке недоступен',exact:true}).waitFor();
+      await p.getByRole('button',{name:'Выбрать доступный профиль',exact:true}).click();
+      await dialog().locator('.person-row').filter({hasText:child}).click();
+      await p.getByRole('heading',{name:child,exact:true}).waitFor();assert.equal(await p.locator('main [data-action=newExam]').count(),0);
       await recipient.context().close();p=master;
       return 'Чистое устройство получило один профиль и общую пометку; добавление пометки, изменение дат и добавление обследования недоступны.';
     });

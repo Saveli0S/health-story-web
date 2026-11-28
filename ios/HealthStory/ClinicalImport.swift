@@ -23,10 +23,17 @@ struct ParsedLabRow:Identifiable, Equatable {
 }
 struct LabResult:Equatable {
     var name="",date="",laboratory="",category="Другое",rows:[ParsedLabRow]=[]
-    var json:JournalObject {["name":name.trim,"date":date,"laboratory":laboratory.trim,"category":category,"rows":rows.map(\.json)]}
+    var documentDate=""
+    var json:JournalObject {
+        var result:JournalObject=["name":name.trim,"date":date,"laboratory":laboratory.trim,"category":category,"rows":rows.map(\.json)]
+        if !documentDate.isEmpty {result["documentDate"]=documentDate}
+        return result
+    }
     static func from(_ data:JournalObject) -> LabResult {
         var result=LabResult()
-        result.name=caption(data,"name"); result.date=caption(data,"date")
+        result.name=caption(data,"name")
+        result.date=data["dateEstimated"] as? Bool == true ? "":caption(data,"date")
+        result.documentDate=caption(data,"documentDate")
         result.laboratory=caption(data,"laboratory")
         result.category=data["category"] as? String ?? "Другое"
         result.rows=entries(data,"rows").map { r in
@@ -37,8 +44,8 @@ struct LabResult:Equatable {
     var validationIssues:[JournalFieldIssue] {
         [
             .required("lab-name",name,"Укажите название исследования."),
-            CoursePeriod.date(date)==nil || date>dayString() ?
-                JournalFieldIssue(field:"lab-date",message:"Укажите дату взятия образца в формате ГГГГ-ММ-ДД, не позже сегодняшнего дня.") : nil,
+            !date.isEmpty && (CoursePeriod.date(date)==nil || date>dayString()) ?
+                JournalFieldIssue(field:"lab-date",message:"Укажите дату взятия образца не позже сегодняшнего дня.") : nil,
             rows.isEmpty ? JournalFieldIssue(field:"lab-add-row",message:"Добавьте показатель и его результат.") : nil
         ].compactMap{$0}+rows.flatMap(\.validationIssues)
     }
@@ -109,14 +116,14 @@ struct LabFields:View {
         Group {
             Section("Сведения из бланка"){
                 TextField("Название",text:$lab.name).journalField("lab-name",issues)
-                TextField("Дата взятия · ГГГГ-ММ-ДД",text:$lab.date).journalField("lab-date",issues)
+                JournalCalendarField(title:"Дата взятия образца",day:$lab.date,emptyLabel:"Неизвестна").journalField("lab-date",issues)
                 TextField("Лаборатория",text:$lab.laboratory)
                 Picker("Категория",selection:$lab.category){ForEach(Array(Set(["Другое","Гематология","Биохимия",lab.category])).sorted(),id:\.self){Text($0).tag($0)}}
             }
             Section("Показатели"){
                 ForEach($lab.rows){$r in VStack(alignment:.leading){
                     TextField("Показатель",text:$r.name).journalField(r.field("name"),issues)
-                    TextField("Значение",text:$r.value).journalField(r.field("value"),issues)
+                    LabReadingField(value:$r.value).journalField(r.field("value"),issues)
                     TextField("Единица",text:$r.unit).journalField(r.field("unit"),issues)
                     TextField("Референсный диапазон",text:$r.range).journalField(r.field("range"),issues)
                     TextField("Биоматериал",text:$r.specimen)
@@ -124,6 +131,28 @@ struct LabFields:View {
                 .onDelete{lab.rows.remove(atOffsets:$0)}
                 Button("Добавить показатель"){lab.rows.append(ParsedLabRow())}.journalField("lab-add-row",issues)
             }
+        }
+    }
+}
+private struct LabReadingField: View {
+    @Binding var value: String
+    @State private var inputKind: Kind?
+    private enum Kind: String, CaseIterable {
+        case number="Число", quality="Качественный", other="Порог или текст"
+    }
+    private let options=["Не обнаружено","Обнаружено","Отрицательно","Положительно","Следы"]
+    private var kind: Kind {
+        if let inputKind {return inputKind}
+        if options.contains(where:{$0.caseInsensitiveCompare(value) == .orderedSame}) {return .quality}
+        return value.trim.isEmpty || Double(value.trim.replacingOccurrences(of:",",with:".")) != nil ? .number:.other
+    }
+    var body: some View {
+        Picker("Тип результата",selection:Binding(get:{kind},set:{inputKind=$0})) {
+            ForEach(Kind.allCases,id:\.self){Text($0.rawValue).tag($0)}
+        }
+        TextField("Значение",text:$value).keyboardType(kind == .number ? .decimalPad:.default)
+        if kind == .quality {
+            Menu("Выбрать результат"){ForEach(options,id:\.self){option in Button(option){value=option}}}
         }
     }
 }

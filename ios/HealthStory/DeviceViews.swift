@@ -409,10 +409,25 @@ struct MedicalFieldEditor: View {
         "Дата рождения":"birthday","Рост":"height","Вес":"weight","Дата измерений":"measured",
         "Аллергии":"allergy","Хронические заболевания":"chronic"
     ]
+    private static let units=["height":"см","weight":"кг"]
     init(journal:DeviceJournal,owner:String,destination:MedicalFieldDestination){
         self.journal=journal;self.owner=owner;self.destination=destination
         _label=State(initialValue:caption(destination.field,"label"))
-        _value=State(initialValue:caption(destination.field,"value"))
+        let raw=caption(destination.field,"value")
+        _value=State(initialValue:["birthday","measured"].contains(destination.id) ? Self.dateValue(raw) ?? raw:raw)
+    }
+    private static func dateValue(_ raw:String) -> String? {
+        let parts=raw.trim.split(separator:".")
+        let iso=parts.count==3 && parts[2].count==4 ? parts.reversed().joined(separator:"-"):raw.trim
+        return CoursePeriod.date(iso)==nil ? nil:iso
+    }
+    private func amount(_ raw:String,unit:String) -> String? {
+        let endings=unit=="см" ? "(?:см|cm)":"(?:кг|kg)"
+        let number=raw.trim.replacingOccurrences(of:"\\s*"+endings+"$",with:"",options:[.regularExpression,.caseInsensitive])
+            .replacingOccurrences(of:",",with:".")
+        guard number.range(of:"^(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)$",options:.regularExpression) != nil,
+              let reading=Double(number),reading.isFinite,reading>0 else{return nil}
+        return number
     }
     private func fieldID(in fields:[JournalObject]) -> String {
         if !destination.id.isEmpty {return destination.id}
@@ -422,22 +437,35 @@ struct MedicalFieldEditor: View {
     private func issues(in fields:[JournalObject]) -> [JournalFieldIssue] {
         let duplicate=fields.contains{caption($0,"id") != destination.id &&
             ClinicalDuplicates.text(caption($0,"label"))==ClinicalDuplicates.text(label)}
-        let invalidDate=["birthday","measured"].contains(fieldID(in:fields)) &&
-            (CoursePeriod.date(value.trim)==nil || value.trim>dayString())
-        return [
-            .required("label",label,"Введите название поля.") ?? .length("label",label,limit:64) ??
-                (duplicate ? JournalFieldIssue(field:"label",message:"Поле с таким названием уже есть.") : nil),
-            .required("value",value,"Введите значение.") ?? .length("value",value,limit:280) ??
-                (invalidDate ? JournalFieldIssue(field:"value",message:"Введите дату в формате ГГГГ-ММ-ДД, не позже сегодняшнего дня.") : nil)
-        ].compactMap{$0}
+        let key=fieldID(in:fields)
+        let date=Self.dateValue(value)
+        let invalidDate=["birthday","measured"].contains(key) && (date==nil || (date ?? "")>dayString())
+        let invalidUnit=Self.units[key].flatMap{unit in amount(value,unit:unit)==nil ? unit:nil}
+        let labelIssue=JournalFieldIssue.required("label",label,"Введите название поля.") ??
+            .length("label",label,limit:64) ??
+            (duplicate ? JournalFieldIssue(field:"label",message:"Поле с таким названием уже есть.") : nil)
+        let formatIssue=invalidDate ? JournalFieldIssue(field:"value",message:"Выберите дату не позже сегодняшнего дня.") :
+            invalidUnit.map{JournalFieldIssue(field:"value",message:"Введите число больше нуля в \($0).")}
+        let valueIssue=JournalFieldIssue.required("value",value,"Введите значение.") ??
+            .length("value",value,limit:280) ?? formatIssue
+        return [labelIssue,valueIssue].compactMap{$0}
     }
     var body:some View {
-        let issues=issues(in:entries(journal.profile(owner),"fields"))
+        let fields=entries(journal.profile(owner),"fields")
+        let issues=issues(in:fields),key=fieldID(in:fields)
         let visible=validation.visible(issues)
         NavigationStack {
             Form {
                 TextField("Название поля",text:$label).journalField("label",visible)
-                TextField("Значение",text:$value,axis:.vertical).lineLimit(2...5).journalField("value",visible)
+                if ["birthday","measured"].contains(key) {
+                    JournalCalendarField(title:label.trim.isEmpty ? "Дата":label,day:$value).journalField("value",visible)
+                } else if let unit=Self.units[key] {
+                    TextField("Значение, "+unit,text:Binding(get: {
+                        amount(value,unit:unit)?.replacingOccurrences(of:".",with:",") ?? value
+                    },set:{value=$0})).keyboardType(.decimalPad).journalField("value",visible)
+                } else {
+                    TextField("Значение",text:$value,axis:.vertical).lineLimit(2...5).journalField("value",visible)
+                }
                 if let error {Text(error).foregroundStyle(.red)}
                 Button("Сохранить поле"){if validation.submit(issues){save()}}
             }.journalValidation(validation).journalBackground().navigationTitle(destination.id.isEmpty ? "Новое поле":"Изменить поле")
@@ -446,12 +474,16 @@ struct MedicalFieldEditor: View {
     }
     private func save(){
         do {
-            let name=label.trim,text=value.trim,original=destination.id
+            let name=label.trim,original=destination.id
             try journal.changeProfile(owner){profile in
                 var fields=entries(profile,"fields")
                 if let issue=issues(in:fields).first {throw JournalError(issue.message)}
                 let standardOrOriginal=fieldID(in:fields)
                 let id=standardOrOriginal.isEmpty ? UUID().uuidString : standardOrOriginal
+                let text:String
+                if let unit=Self.units[id],let number=amount(value,unit:unit){text=number+" "+unit}
+                else if ["birthday","measured"].contains(id){text=Self.dateValue(value) ?? value.trim}
+                else{text=value.trim}
                 if original.isEmpty {fields.append(["id":id,"label":name,"value":text])}
                 else {
                     guard let index=fields.firstIndex(where:{caption($0,"id")==original}),
@@ -632,18 +664,24 @@ private struct VisitEditor: View {
     @State private var previous=[JournalObject]()
     @State private var restored=false
     @State private var finished=false
+    @State private var manualDraftID=UUID().uuidString
     @Environment(\.dismiss) var dismiss
     @State private var draft=NativeVisitDraft()
     @State private var picking=false
     @State private var photos:[PhotosPickerItem]=[]
     @State private var error:String?
     @State private var raw=""
+    @State private var doctorQuery=""
     @State private var reading=false
     @State private var camera=false
     @State private var duplicate:DuplicateClinicalCard?
     @State private var transcriptionSource:NativeUpload?
     @State private var validation=JournalFormValidation()
     private var needsReview:Bool {draft.files.contains{$0.readCategory != nil}}
+    private var hasDraft:Bool {
+        !previous.isEmpty || !draft.files.isEmpty || !draft.medicines.isEmpty || draft.episodeID != nil || draft.recognizedDate ||
+            [draft.title,draft.episode,draft.specialty,draft.doctor,draft.clinic,draft.note,draft.recommendation].contains{!$0.trim.isEmpty}
+    }
     private func validationIssues(episodes:[JournalObject]) -> [JournalFieldIssue] {
         let episodeIssue=draft.episodeID == nil ?
             JournalFieldIssue.required("episode-name",draft.episode,"Введите название эпизода.") :
@@ -651,7 +689,7 @@ private struct VisitEditor: View {
         return [
             episodeIssue,
             .required("visit-title",draft.title,"Введите название визита."),
-            .required("doctor",draft.doctor,"Введите ФИО врача."),
+            draft.doctorSelection=="new" ? .required("doctor",draft.doctor,"Введите ФИО врача или выберите «Врач не указан».") : nil,
             needsReview && !draft.checked ? JournalFieldIssue(field:"visit-review",message:"Подтвердите сверку с оригиналами.") : nil
         ].compactMap{$0}+draft.medicines.flatMap(\.validationIssues)
     }
@@ -672,8 +710,7 @@ private struct VisitEditor: View {
                 if draft.episodeID==nil {TextField("Название эпизода",text:$draft.episode).journalField("episode-name",visible)}
                 TextField("Название визита",text:$draft.title).journalField("visit-title",visible)
                 DatePicker("Дата",selection:Binding(get:{draft.date},set:{draft.date=$0;draft.recognizedDate=true}),in:...Date(),displayedComponents:.date)
-                TextField("Специализация",text:$draft.specialty)
-                TextField("ФИО врача",text:$draft.doctor).journalField("doctor",visible)
+                doctorFields(visible)
                 TextField("Клиника",text:$draft.clinic)
             }
             Section("Вложения") {
@@ -715,12 +752,13 @@ private struct VisitEditor: View {
             if let duplicate,let row=NativeTreatments.visits(journal.profile(owner)).first(where:{NativeTreatments.field($0,0)==duplicate.id}){
                 NavigationLink("Открыть существующий визит"){NativeVisitDetails(journal:journal,owner:owner,row:row)}
             }
-            if !draft.files.isEmpty {
-                Button("Отложить сверку визита"){if persist(){dismiss()}}.disabled(reading || journal.busy)
+            if hasDraft {
+                Button(draft.files.isEmpty ? "Сохранить черновик":"Отложить сверку визита"){if persist(){dismiss()}}.disabled(reading || journal.busy)
+                if !previous.isEmpty {Text("Черновик сохранён").font(.caption).foregroundStyle(.secondary)}
             }
             }.journalValidation(validation)
             }.journalBackground().disabled(!restored).navigationTitle("Новый визит").toolbar {
-            ToolbarItem(placement:.cancellationAction){Button(draft.files.isEmpty ? "Отмена":"Закрыть"){if !restored || draft.files.isEmpty || persist(){dismiss()}}.disabled(reading)}
+            ToolbarItem(placement:.cancellationAction){Button(hasDraft ? "Закрыть":"Отмена"){if !restored || !hasDraft || persist(){dismiss()}}.disabled(reading)}
             ToolbarItem(placement:.confirmationAction){Button("Сохранить"){
                 guard validation.submit(issues) else{return}
                 do {
@@ -738,11 +776,16 @@ private struct VisitEditor: View {
                 }
                 catch{duplicate=error as? DuplicateClinicalCard;self.error=error.localizedDescription}
             }.disabled(!restored || journal.busy || reading)}
-        }}.task{await loadDraft()}.interactiveDismissDisabled(!draft.files.isEmpty)
+        }}.task{await loadDraft()}.interactiveDismissDisabled(hasDraft)
+        .task(id:try? jsonBytes(["fields":VisitDrafts.fields(draft),"meds":VisitDrafts.medicines(draft)])){
+            guard restored,hasDraft else{return}
+            try? await Task.sleep(for:.milliseconds(350))
+            if !Task.isCancelled,!journal.busy {_=persist()}
+        }
         .sheet(item:$transcriptionSource){file in
             VisitTranscriptionEditor(file:file){text in try applyTranscription(text,fileID:file.id)}
         }
-        .onChange(of:draft.files.map(\.id)){_,_ in if restored && !draft.files.isEmpty {_=persist()}}
+        .onChange(of:draft.files.map(\.id)){_,_ in if restored && hasDraft {_=persist()}}
         .fullScreenCover(isPresented:$camera){NativeCamera{bytes in draft.files.append(NativeUpload(name:"Назначение.jpg",mime:"image/jpeg",bytes:bytes))}.ignoresSafeArea()}
         .fileImporter(isPresented:$picking,allowedContentTypes:[.data],allowsMultipleSelection:true){result in
             do {let uploads=try result.get().map{url in NativeUpload(name:url.lastPathComponent,mime:UTType(filenameExtension:url.pathExtension)?.preferredMIMEType ?? "application/octet-stream",bytes:try readNativeFile(url))};draft.files.append(contentsOf:uploads)}
@@ -756,13 +799,36 @@ private struct VisitEditor: View {
             };photos=[]}catch{self.error=error.localizedDescription}
         }}
     }
+    @ViewBuilder private func doctorFields(_ visible:[JournalFieldIssue]) -> some View {
+        let doctors=entries(journal.profile(owner),"addedDoctors")
+        let words=ClinicalDuplicates.text(doctorQuery).split(separator:" ")
+        let matches=doctors.filter{row in
+            let text=ClinicalDuplicates.text((row["values"] as? [String] ?? []).joined(separator:" "))
+            return caption(row,"id")==draft.doctorSelection || words.allSatisfy{text.contains($0)}
+        }
+        if !doctors.isEmpty {TextField("Найти по специальности, ФИО или клинике",text:$doctorQuery)}
+        Picker("Врач",selection:$draft.doctorSelection) {
+            Text("Добавить врача").tag("new")
+            Text("Врач не указан").tag("")
+            ForEach(matches.indices,id:\.self){index in
+                let row=matches[index]
+                let fields=row["values"] as? [String] ?? []
+                Text((Array(fields.prefix(2).reversed())+Array(fields.dropFirst(2))).filter{!$0.isEmpty}.joined(separator:" · "))
+                    .tag(caption(row,"id"))
+            }
+        }.journalField("doctor-selection",visible)
+        if draft.doctorSelection=="new" {
+            TextField("Специализация",text:$draft.specialty)
+            TextField("ФИО врача",text:$draft.doctor).journalField("doctor",visible)
+        }
+    }
     @MainActor private func loadDraft() async {
         guard !restored else{return}
         guard let id=resumeID else{restored=true;return}
         do {
             let p=journal.profile(owner),rows=VisitDrafts.group(in:p,id:id)
             var bytes=[String:Data]()
-            for row in rows {
+            for row in rows where row["manualOnly"] as? Bool != true {
                 let key=caption(row,"id");bytes[key]=try await journal.attachment(owner:owner,id:key).bytes
             }
             try VisitDrafts.check(journal.profile(owner),id:id,expected:rows)
@@ -771,13 +837,15 @@ private struct VisitEditor: View {
         }catch{self.error=error.localizedDescription}
     }
     @discardableResult private func persist()->Bool {
-        guard restored,!finished,let id=draft.files.first?.id else{return false}
-        let docs=VisitDrafts.documents(draft,previous:previous)
+        guard restored,!finished,hasDraft else{return false}
+        let docs=VisitDrafts.documents(draft,previous:previous,manualID:manualDraftID)
+        let id=previous.first.map{caption($0,"id")} ?? caption(docs[0],"id")
         if NSArray(array:previous).isEqual(to:docs){return true}
         let cached=journal.cachedIDs(owner)
         do {
             try journal.changeProfile(owner,originals:draft.files.filter{!cached.contains($0.id)}){p in
                 try VisitDrafts.check(p,id:id,expected:previous)
+                if caption(docs[0],"id") != id {try VisitDrafts.check(p,id:caption(docs[0],"id"),expected:[])}
                 p["visitDrafts"]=entries(p,"visitDrafts").filter{caption($0,"id") != id && caption($0,"parent") != id}+docs
             }
             previous=docs;return true

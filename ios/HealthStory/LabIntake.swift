@@ -204,7 +204,7 @@ struct LabReview:View {
                 if !sourcePosition.sourceID.isEmpty {files[i]["labPosition"]=sourcePosition.json}
                 if final {
                     let key=ClinicalDuplicates.lab(lab.json)
-                    if (files[i]["lab"] as? JournalObject).map(ClinicalDuplicates.lab) != key,
+                    if !lab.date.isEmpty,(files[i]["lab"] as? JournalObject).map(ClinicalDuplicates.lab) != key,
                        let match=files.first(where:{row in
                            caption(row,"id") != id && (row["lab"] as? JournalObject).map(ClinicalDuplicates.lab)==key
                        }) {throw DuplicateClinicalCard(id:caption(match,"id"))}

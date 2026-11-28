@@ -67,6 +67,44 @@ struct JournalFormValidation {
     }
 }
 
+struct JournalCalendarField: View {
+    let title: String
+    @Binding var day: String
+    var emptyLabel = "Дата не указана"
+    @State private var picking = false
+    @State private var selected = Date()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let date = CoursePeriod.date(day), date <= Date() {
+                DatePicker(title, selection: Binding(get: { date }, set: { day = dayString($0) }),
+                           in: ...Date(), displayedComponents: .date)
+                    .accessibilityIdentifier("journal-calendar-"+title)
+                Button("Очистить дату") { day = "" }.font(.caption).buttonStyle(.borderless)
+            } else {
+                LabeledContent(title, value: day.isEmpty ? emptyLabel : day)
+                Button("Выбрать дату", systemImage: "calendar") {
+                    selected = Date()
+                    picking = true
+                }.buttonStyle(.borderless)
+            }
+        }.sheet(isPresented: $picking) {
+            NavigationStack {
+                Form {
+                    DatePicker(title, selection: $selected, in: ...Date(), displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                }.navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button("Отмена") { picking = false } }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Выбрать") { day = dayString(selected); picking = false }
+                        }
+                    }
+            }
+        }
+    }
+}
+
 extension View {
     func journalField(_ field: String, _ issues: [JournalFieldIssue]) -> some View {
         let message = issues.first { $0.field == field }?.message

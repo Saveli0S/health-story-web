@@ -16,6 +16,7 @@ struct FamilyArchive {
     struct Entry: Decodable, Identifiable {
         let id: String
         let name, category, date: String?
+        let manualOnly: Bool?
     }
     struct Visit: Decodable, Identifiable {
         let id, date, title: String
@@ -111,7 +112,7 @@ struct FamilyArchive {
         var expected = Set<String>()
         for (owner, profile) in profiles {
             guard owner.hasPrefix("p-"), !owner.contains("/") else { throw Failure.incomplete }
-            for entry in profile.files + (profile.visitDrafts ?? []) {
+            for entry in profile.files + (profile.visitDrafts ?? []).filter({$0.manualOnly != true}) {
                 guard !entry.id.isEmpty, !entry.id.contains("/"), expected.insert(owner + "/" + entry.id).inserted else { throw Failure.incomplete }
             }
         }

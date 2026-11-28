@@ -13,16 +13,23 @@ enum VisitDrafts {
     }
     static func fields(_ draft:NativeVisitDraft) -> JournalObject {
         ["episode":draft.episodeID ?? "new","episodeName":draft.episode,"title":draft.title,"date":dayString(draft.date),
-         "doctor":"new","doctorName":draft.doctor,"specialty":draft.specialty,"clinic":draft.clinic,"note":draft.note,"recommendation":draft.recommendation]
+         "doctor":draft.doctorSelection,"doctorName":draft.doctor,"specialty":draft.specialty,"clinic":draft.clinic,"note":draft.note,"recommendation":draft.recommendation]
     }
     static func medicines(_ draft:NativeVisitDraft) -> [JournalObject] {
         draft.medicines.map{["id":$0.id,"name":$0.name,"strength":$0.strength,"form":$0.form,"instructions":$0.instructions]}
     }
 
-    static func documents(_ draft:NativeVisitDraft, previous:[JournalObject]) -> [JournalObject] {
-        guard let root=draft.files.first?.id else{return []}
+    static func documents(_ draft:NativeVisitDraft, previous:[JournalObject], manualID:String=UUID().uuidString) -> [JournalObject] {
+        guard let root=draft.files.first?.id else{
+            return [["id":previous.first.map{caption($0,"id")} ?? manualID,
+                     "manualOnly":true,"state":"manual","type":"text/plain","date":dayString(),
+                     "name":draft.title.trim.isEmpty ? "Черновик визита" : draft.title.trim,
+                     "episode":draft.episodeID ?? "","fields":fields(draft),
+                     "manualMeds":medicines(draft),"recognizedDate":draft.recognizedDate]]
+        }
         return draft.files.map { file in
             var row=previous.first{caption($0,"id")==file.id} ?? [:]
+            row.removeValue(forKey:"manualOnly")
             row["id"]=file.id;row["name"]=file.name;row["type"]=file.mime;row["kind"]=file.category
             row["size"]=file.bytes.count;row["date"]=row["date"] ?? dayString()
             row["episode"]=draft.episodeID ?? "";row["parent"]=file.id==root ? nil:root
@@ -46,7 +53,8 @@ enum VisitDrafts {
         draft.sourcePosition=NativeSourcePosition(main["position"] as? JournalObject ?? [:])
         draft.title=caption(fields,"title");draft.note=caption(fields,"note");draft.clinic=caption(fields,"clinic")
         draft.doctor=caption(fields,"doctorName");draft.specialty=caption(fields,"specialty");draft.recommendation=caption(fields,"recommendation")
-        let selected=caption(fields,"doctor")
+        let selected=fields["doctor"] as? String ?? "new"
+        draft.doctorSelection=selected
         if !selected.isEmpty,selected != "new",let values=entries(profile,"addedDoctors").first(where:{caption($0,"id")==selected})?["values"] as? [String],values.count>1 {
             draft.doctor=values[0];draft.specialty=values[1]
             if draft.clinic.isEmpty && values.count>2 {draft.clinic=values[2]}
@@ -59,7 +67,7 @@ enum VisitDrafts {
         draft.medicines=(main["manualMeds"] as? [JournalObject] ?? rows.flatMap{entries($0,"proposed")}).map{
             NativeMedicine(id:$0["id"] as? String ?? UUID().uuidString,name:caption($0,"name"),strength:caption($0,"strength"),form:caption($0,"form"),instructions:caption($0,"instructions"))
         }
-        for row in rows {
+        for row in rows where row["manualOnly"] as? Bool != true {
             let id=caption(row,"id")
             guard let bytes=originals[id] else {throw JournalError("Для продолжения загрузите оригиналы черновика.")}
             var file=NativeUpload(id:id,category:row["kind"] as? String ?? "Назначения",name:caption(row,"name"),mime:caption(row,"type"),bytes:bytes)

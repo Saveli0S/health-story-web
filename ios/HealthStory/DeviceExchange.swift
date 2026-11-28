@@ -284,7 +284,7 @@ struct DeviceExchange {
                 }
                 base[lane]=["rev":finalRev,"value":value,"conflicts":cases]
             }
-            for f in (profile["files"] as? [JournalObject] ?? [])+(profile["visitDrafts"] as? [JournalObject] ?? []) {
+            for f in entries(profile,"files")+entries(profile,"visitDrafts").filter({$0["manualOnly"] as? Bool != true}) {
                 if f["syncLocalOnly"]==nil, let name=f["id"] as? String {uploaded.insert(name)}
             }
             state.merge(keys){_,new in new};state["uploaded"]=Array(uploaded);state["base"]=base;state["stamps"]=JournalObject()

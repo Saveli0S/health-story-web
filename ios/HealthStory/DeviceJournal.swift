@@ -58,7 +58,7 @@ final class DeviceJournal: ObservableObject {
                 }
             }
             if !kept.isEmpty {profile["savedConflicts"]=kept;profiles[owner]=profile}
-            for item in entries(profile,"files")+entries(profile,"visitDrafts") {
+            for item in entries(profile,"files")+entries(profile,"visitDrafts").filter({$0["manualOnly"] as? Bool != true}) {
                 let name=caption(item,"id"), address=owner+"/"+name
                 if let original=cached.first(where:{caption($0,"id")==address}) {originals.append(original)}
                 else if item["syncLocalOnly"] != nil {
@@ -127,7 +127,7 @@ final class DeviceJournal: ObservableObject {
         var expected=Set<String>()
         for (id,p) in patients {
             guard let files=p["files"] as? [JournalObject] else {throw JournalError("Некорректная медкарта.")}
-            for f in files+(p["visitDrafts"] as? [JournalObject] ?? []) {
+            for f in files+entries(p,"visitDrafts").filter({$0["manualOnly"] as? Bool != true}) {
                 guard let name=f["id"] as? String,!name.isEmpty,!name.contains("/"),expected.insert(id+"/"+name).inserted else {throw JournalError("Некорректная ссылка на оригинал.")}
             }
         }
@@ -192,7 +192,7 @@ final class DeviceJournal: ObservableObject {
 
     func saveOffline(owner:String, ids:[String], progress:(Int)->Void = {_ in}) async throws {
         let p=profile(owner)
-        let allowed=entries(p,"files")+(editable ? entries(p,"visitDrafts"):[])
+        let allowed=entries(p,"files")+(editable ? entries(p,"visitDrafts").filter{$0["manualOnly"] as? Bool != true}:[])
         guard ids.allSatisfy({id in !id.isEmpty && allowed.contains{caption($0,"id")==id}}) else {
             throw JournalError("Документ недоступен.")
         }
@@ -423,7 +423,7 @@ final class DeviceJournal: ObservableObject {
     @discardableResult
     func saveVisit(owner:String, draft: NativeVisitDraft, expectedDraft:[JournalObject]=[]) throws -> String {
         guard !busy,editable, members.contains(where:{$0["id"] as? String==owner}),!draft.title.trim.isEmpty,
-              !draft.doctor.trim.isEmpty,!draft.episode.trim.isEmpty else {throw JournalError("Проверьте название визита, врача, эпизод и права записи.")}
+              !draft.episode.trim.isEmpty else {throw JournalError("Проверьте название визита, эпизод и права записи.")}
         var d=data, p=profile(owner), profiles=d["profiles"] as? [String:JournalObject] ?? [:]
         if draft.files.contains(where:{$0.readCategory != nil}),!draft.checked {throw JournalError("Сверьте распознанные поля с оригиналами.")}
         if expectedDraft.isEmpty,let first=draft.files.first {try VisitDrafts.check(p,id:first.id,expected:[])}
@@ -440,13 +440,22 @@ final class DeviceJournal: ObservableObject {
         let ep=knownEpisode ?? ["id":UUID().uuidString,"name":draft.episode.trim]
         if knownEpisode==nil {episodes.append(ep)}
         var doctors=p["addedDoctors"] as? [JournalObject] ?? []
-        let values=[draft.doctor.trim,draft.specialty.trim,draft.clinic.trim]
-        let doctorKey=values.map(ClinicalDuplicates.text)
-        let doctor=doctors.first(where:{($0["values"] as? [String])?.map(ClinicalDuplicates.text)==doctorKey}) ?? ["id":UUID().uuidString,"values":values]
-        if !doctors.contains(where:{$0["id"] as? String==doctor["id"] as? String}) {doctors.append(doctor)}
+        var doctorID=draft.doctorSelection
+        if doctorID=="new" {
+            let values=[draft.doctor.trim,draft.specialty.trim,draft.clinic.trim]
+            guard !values[0].isEmpty else {throw JournalError("Введите ФИО врача или выберите «Врач не указан».")}
+            let key=values.map(ClinicalDuplicates.text)
+            if let existing=doctors.first(where:{($0["values"] as? [String])?.map(ClinicalDuplicates.text)==key}) {
+                doctorID=caption(existing,"id")
+            } else {
+                doctorID=UUID().uuidString;doctors.append(["id":doctorID,"values":values])
+            }
+        } else if !doctorID.isEmpty && !doctors.contains(where:{caption($0,"id")==doctorID}) {
+            throw JournalError("Выберите доступного врача.")
+        }
         let formatter=DateFormatter();formatter.locale=Locale(identifier:"en_US_POSIX");formatter.calendar=Calendar(identifier:.gregorian);formatter.dateFormat="yyyy-MM-dd"
         let day=formatter.string(from:draft.date)
-        var row:[Any]=[visitID,day,draft.title.trim,doctor["id"]!,ep["name"]!,draft.note.trim,"scope",ep["id"]!]
+        var row:[Any]=[visitID,day,draft.title.trim,doctorID,ep["name"]!,draft.note.trim,"scope",ep["id"]!]
         if !draft.medicines.isEmpty || !draft.clinic.trim.isEmpty {row.append(try draft.medicines.map {try $0.record()})}
         if !draft.clinic.trim.isEmpty {row.append(draft.clinic.trim)}
         let visits=p["addedVisits"] as? [[Any]] ?? []
@@ -485,7 +494,7 @@ final class DeviceJournal: ObservableObject {
             if upload.id==source?.id {item["visitSource"]=true}
             if upload.category=="Лаборатория",let lab=upload.lab {
                 let key=ClinicalDuplicates.lab(lab.json)
-                let match=files.first{($0["lab"] as? JournalObject).map(ClinicalDuplicates.lab)==key}
+                let match=lab.date.isEmpty ? nil:files.first{($0["lab"] as? JournalObject).map(ClinicalDuplicates.lab)==key}
                 if lab.verified && draft.checked && match==nil {item["lab"]=lab.json}
                 else {
                     item["labDraft"]=lab.json
@@ -534,6 +543,7 @@ struct NativeMedicine: Identifiable {
 struct NativeVisitDraft {
     var sourcePosition=NativeSourcePosition()
     var title="",episode="",specialty="",doctor="",clinic="",note="",recommendation=""
+    var doctorSelection="new"
     var recognizedDate=false
     var checked=false;var episodeID:String?, date=Date(),medicines:[NativeMedicine]=[],files:[NativeUpload]=[]
 }

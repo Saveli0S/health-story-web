@@ -73,7 +73,7 @@ function episodeTimeline(id){
   for(const c of current().changes.filter(c=>c.episode===id))events.push({date:c.date,order:1,html:resultRow('visit',c.visit,decisionText(c),doctorLabel(c.doctor),'pill')});
   for(const e of current().exams.filter(e=>visitById(e.visit)?.[7]===id))events.push({date:e.date,order:2,html:resultRow('exam',e.id,examTitle(e),e.conclusion,'book')});
   for(const f of episodeReports(id)){const l=reportInfo(f);events.push({date:l.date,order:2,html:resultRow('lab',f.id,l.name,l.laboratory,'lab')})}
-  for(const m of current().measurements.filter(m=>m.episode===id))events.push({date:m.time.slice(0,10),order:3,html:resultRow('measureChart',indicatorKey(m.name,m.unit),m.name,m.value+' '+m.unit,'trend')});
+  for(const m of current().measurements.filter(m=>m.episode===id))events.push({date:m.time.slice(0,10),order:3,html:resultRow('measureChart',measurementKey(m),m.name,m.value+' '+m.unit,'trend')});
   return events.sort((a,b)=>a.date.localeCompare(b.date)||a.order-b.order).map(e=>'<div class="timeline-entry"><small>'+dateLabel(e.date,{day:'numeric',month:'long',year:'numeric'})+'</small>'+e.html+'</div>').join('')||'<p class="hint">Эпизод пока пуст.</p>';
 }
 function episodeCard(id){
@@ -115,28 +115,74 @@ function saveBriefQuestion(f){
   else if(old)old.text=previous;
   else questions.pop();
 }
-function measureForm(){
+const measurementPresets=[
+  ['Температура','°C',['температура тела'],['°с','c','с','градусы цельсия']],
+  ['Вес','кг',['масса тела'],['kg']],
+  ['Рост','см',[],['cm']],
+  ['Пульс','уд/мин',['частота пульса','чсс'],['уд./мин','уд в мин','bpm']],
+  ['Систолическое давление','мм рт. ст.',['верхнее давление'],['мм рт ст','mmhg']],
+  ['Диастолическое давление','мм рт. ст.',['нижнее давление'],['мм рт ст','mmhg']]
+];
+function measurementPreset(name){
+  const key=norm(name).replace(/\s+/g,' ');
+  return measurementPresets.find(([title,,aliases])=>norm(title)===key||aliases.includes(key));
+}
+function measurementUnit(m){
+  const preset=measurementPreset(m.name);
+  const unit=norm(m.unit).replace(/\s*\/\s*/g,'/').replace(/\s+/g,' ');
+  return preset&&(unit===norm(preset[1])||preset[3].includes(unit))?preset[1]:m.unit;
+}
+function measurementKey(m){return indicatorKey(measurementPreset(m.name)?.[0]||m.name,measurementUnit(m))}
+function measureForm(id='',repeat=false){
+  const previous=current().measurements.find(m=>m.id===id);
+  if(id&&!previous)return;
   const local=new Date(),time=new Date(local-local.getTimezoneOffset()*60000).toISOString().slice(0,16);
-  openPanel(person.name,'Домашнее измерение',`<form id="measure-form" class="edit-form"><label>Показатель<input name="marker" required list="measure-names" placeholder="Например, температура"><datalist id="measure-names">${['Температура','Вес','Пульс','Систолическое давление','Диастолическое давление','Рост'].map(x=>'<option>'+x+'</option>').join('')}</datalist></label>
-    <div class="intake-pair"><label>Значение<input name="reading" inputmode="decimal" required></label><label>Единица<input name="unit" required placeholder="Например, °C"></label></div>
-    <label>Дата и время<input name="time" type="datetime-local" required max="${time}" value="${time}"></label><label>Эпизод<select name="episode"><option value="">Без привязки</option>${current().episodes.map(e=>'<option value="'+esc(e.id)+'">'+esc(e.name)+'</option>').join('')}</select></label>
+  const edit=previous&&!repeat;
+  openPanel(person.name,edit?'Редактировать измерение':'Домашнее измерение',`<form id="measure-form" class="edit-form" data-id="${edit?esc(id):''}">
+    <label>Готовые показатели<select name="preset"><option value="">Другое</option>${measurementPresets.map(([name,unit])=>'<option value="'+esc(name)+'" '+(measurementPreset(previous?.name||'')?.[0]===name?'selected':'')+'>'+esc(name+' · '+unit)+'</option>').join('')}</select></label>
+    <label>Показатель<input name="marker" required value="${esc(previous?.name)}" placeholder="Например, температура"></label>
+    <div class="intake-pair"><label>Значение<input name="reading" inputmode="decimal" value="${edit?esc(previous.value):''}" required></label><label>Единица<input name="unit" required value="${esc(previous&&measurementUnit(previous))}" placeholder="Например, °C"></label></div>
+    <label>Дата и время<input name="time" type="datetime-local" required max="${time}" value="${edit?esc(previous.time):time}"></label><label>Эпизод<select name="episode"><option value="">Без привязки</option>${current().episodes.map(e=>'<option value="'+esc(e.id)+'" '+(e.id===previous?.episode?'selected':'')+'>'+esc(e.name)+'</option>').join('')}</select></label>
     <p role="alert" class="error"></p><button class="button primary">Сохранить измерение</button></form>`);
+  const form=document.querySelector('#measure-form'),{marker,preset,unit}=form.elements;
+  form.measureBase=edit?previous:null;
+  preset.onchange=()=>{
+    marker.value=preset.value;
+    unit.value=measurementPreset(marker.value)?.[1]||'';
+    (preset.value?form.elements.reading:marker).focus();
+  };
+  marker.oninput=()=>{
+    const selected=measurementPreset(marker.value),old=measurementPreset(preset.value);
+    if(!unit.value||unit.value===old?.[1])unit.value=selected?.[1]||'';
+    preset.value=selected?.[0]||'';
+  };
 }
 registerFieldRules('measure-form',(form,add)=>{
   if(!/^[-+]?\d+(?:[.,]\d+)?$/.test(form.elements.reading.value.trim()))add('reading','Введите числовое значение.');
 });
 function saveMeasure(f){
-  const d=new FormData(f),get=k=>d.get(k).trim(),m={id:uid(),name:get('marker'),value:get('reading'),unit:get('unit'),time:get('time'),episode:get('episode')};
-  current().measurements.push(m);
-  if(!saveState()){current().measurements.pop();return}
-  render();replaceRoute('measureChart',indicatorKey(m.name,m.unit));
+  const d=new FormData(f),get=k=>d.get(k).trim(),id=f.dataset.id,profile=current(),before=profile.measurements;
+  const m={...f.measureBase,id:id||uid(),name:get('marker'),value:get('reading'),unit:get('unit'),time:get('time'),episode:get('episode')};
+  m.unit=measurementUnit(m);
+  if(id&&JSON.stringify(latestProfile().measurements.find(row=>row.id===id))!==JSON.stringify(f.measureBase)){
+    f.querySelector('.error').textContent='Измерение изменилось. Откройте его снова.';return;
+  }
+  profile.measurements=id?before.map(row=>row.id===id?m:row):[...before,m];
+  if(!saveState()){profile.measurements=before;f.querySelector('.error').textContent='Не удалось сохранить измерение.';return}
+  render();replaceRoute('measureChart',measurementKey(m));
 }
 function measureChart(key){
-  const rows=current().measurements.filter(m=>indicatorKey(m.name,m.unit)===key).sort((a,b)=>a.time.localeCompare(b.time));if(!rows.length)return;
-  openPanel('Домашние измерения',rows[0].name,'<p class="detail-meta">'+esc(rows[0].unit)+'</p>'+pointChart(rows.map(m=>({date:m.time,value:m.value,unit:m.unit,source:m.id})),'measurePoint')+
-    rows.map(m=>resultRow('measurePoint',m.id,m.value+' '+m.unit,stamp(m.time),'trend')).join('')+(readOnly?'':act('measure','Добавить измерение','','button secondary','plus')));
+  const rows=current().measurements.filter(m=>measurementKey(m)===key).sort((a,b)=>a.time.localeCompare(b.time));if(!rows.length)return;
+  const recent=rows.at(-1),unit=measurementUnit(recent);
+  openPanel('Домашние измерения',measurementPreset(recent.name)?.[0]||recent.name,'<p class="detail-meta">'+esc(unit)+'</p>'+pointChart(rows.map(m=>({date:m.time,value:m.value,unit,source:m.id})),'measurePoint')+
+    rows.map(m=>resultRow('measurePoint',m.id,m.value+' '+unit,stamp(m.time),'trend')).join('')+(readOnly?'':act('repeatMeasure','Измерить ещё раз',recent.id,'button secondary','plus')));
 }
-function measurePoint(id){const m=current().measurements.find(m=>m.id===id);if(m)openPanel(m.name,m.value+' '+m.unit,'<p>'+esc(stamp(m.time))+'</p>'+(m.episode?act('episode','К эпизоду',m.episode,'button secondary'):'')+deletionButton('measurements',id,'Удалить измерение'))}
+function measurePoint(id){
+  const m=current().measurements.find(m=>m.id===id);
+  if(m)openPanel(m.name,m.value+' '+measurementUnit(m),'<p>'+esc(stamp(m.time))+'</p>'+
+    (m.episode?act('episode','К эпизоду',m.episode,'button secondary'):'')+
+    (readOnly?'':act('measure','Изменить измерение',id,'button secondary','edit'))+deletionButton('measurements',id,'Удалить измерение'));
+}
 
 function recommendationsSection(id){
   const sources=recommendationSources(current(),id);

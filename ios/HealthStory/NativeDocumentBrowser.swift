@@ -62,7 +62,8 @@ private struct NativeProfileUpload: View {
             Picker("Визит", selection: $visit) {
                 Text("Без привязки").tag("")
                 ForEach(visits.indices, id: \.self) { i in
-                    Text(NativeTreatments.field(visits[i], 2)).tag(NativeTreatments.field(visits[i], 0))
+                    Text([NativeTreatments.field(visits[i], 2),NativeTreatments.field(visits[i], 1)].filter{!$0.isEmpty}.joined(separator:" · "))
+                        .tag(NativeTreatments.field(visits[i], 0))
                 }
             }
             DatePicker("Дата документа", selection: $date, in: ...Date(), displayedComponents: .date)
@@ -108,6 +109,9 @@ private struct NativeProfileUpload: View {
             let profile = journal.profile(owner)
             guard visit.isEmpty || NativeTreatments.visits(profile).contains(where: { NativeTreatments.field($0, 0) == visit }) else {
                 throw JournalError("Визит больше недоступен.")
+            }
+            if visit.isEmpty && ["Назначения", "Рекомендации"].contains(category) {
+                throw JournalError("Выберите визит для назначения или рекомендаций.")
             }
             var records: [JournalObject] = [], originals: [NativeUpload] = []
             let known = entries(profile, "files").filter { caption($0, "visit") == visit }

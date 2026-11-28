@@ -74,7 +74,7 @@ const txt=(name,content)=>({name,mimeType:'text/plain',buffer:Buffer.from(conten
     const fromVisit=dialog.locator('#intake-visit-data');
     assert.equal(await fromVisit.locator('.medication').count(),2);
     await fromVisit.getByText('Рекомендации врача',{exact:true}).click();
-    await fromVisit.getByText(/Рекомендации по лечению:/).waitFor();
+    await fromVisit.locator('.recommendation-item').getByText(/Рекомендации по лечению:/).waitFor();
     await fromVisit.getByRole('button',{name:/attachment.txt/}).click();
     await dialog.getByText('Existing visit attachment QA',{exact:true}).waitFor();
     await open('visit='+encodeURIComponent(id));
@@ -89,7 +89,7 @@ const txt=(name,content)=>({name,mimeType:'text/plain',buffer:Buffer.from(conten
     await open('new=visit&mode=photo');
     await dialog.locator('#visit-source').setInputFiles(txt('Другой файл.txt',photoBody));await submit('Открыть существующий визит');
     await dialog.getByRole('heading',{name:'QA Visit from original'}).waitFor();
-    assert.equal(await page.evaluate(()=>current().visitDrafts.length),0);
+    assert.equal(await page.evaluate(()=>current().visitDrafts.filter(d=>!d.manualOnly).length),0);
 
     for(const [value,repeated] of [['42',false],['42',true],['44',false]]){
       await open('section=exams');await main.locator('[data-action=newExam]').click();
@@ -115,18 +115,18 @@ const txt=(name,content)=>({name,mimeType:'text/plain',buffer:Buffer.from(conten
       await field('verified',form).check();await submit('Сохранить результаты');
     };
     await importLab(txt('lab-qa.txt','Дата заказа: 12.11.2026\nfixture A'));
-    const today=await page.evaluate(()=>todayLocal());
-    assert.equal(await field('date',dialog.locator('#lab-form')).inputValue(),today);
-    await dialog.locator('#lab-date-estimate').waitFor();
+    assert.equal(await field('date',dialog.locator('#lab-form')).inputValue(),'');
+    await dialog.locator('#lab-date-hint').waitFor();
     await fillLab('42');
     await dialog.getByRole('heading',{name:'QA анализ',exact:true}).waitFor();
-    assert.match(await dialog.locator('.detail-meta').innerText(),/Дата подставлена/);
+    assert.match(await dialog.locator('.detail-meta').innerText(),/Дата неизвестна/);
     await importLab(txt('renamed.txt','Дата заказа: 12.11.2026\nfixture A'));await submit('Открыть существующий бланк');
     assert.equal(await page.evaluate(()=>current().files.filter(f=>f.lab).length),1);
-    await importLab(txt('other-qa.txt','fixture B'));await fillLab('42');
+    await submit('Исправить результаты');await fillLab('42','2026-11-12');
+    await importLab(txt('other-qa.txt','fixture B'));await fillLab('42','2026-11-12');
     await submit('Открыть существующий анализ');
     await submit('Исправить результаты');
-    assert.equal(await field('date').inputValue(),today);
+    assert.equal(await field('date').inputValue(),'2026-11-12');
     await fillLab('43','2026-11-12');
     assert.doesNotMatch(await dialog.locator('.detail-meta').innerText(),/Дата подставлена/);
     assert.deepEqual(await page.evaluate(()=>current().files.filter(f=>f.lab).map(f=>f.lab.rows[0].value)),['43']);

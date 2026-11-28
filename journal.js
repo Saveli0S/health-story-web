@@ -166,8 +166,9 @@ function selectUpload(visit){
   const labEntry=visit==='lab',recEntry=visit.startsWith('rec:'),rxEntry=visit.startsWith('rx:');
   if(recEntry||rxEntry)visit=visit.slice(visit.indexOf(':')+1);
   openPanel(person.name,recEntry?'Загрузить рекомендации врача':'Прикрепить файлы',`<form id="upload-form" class="edit-form"><p class="dialog-sub">Выберите один или несколько файлов. Оригиналы сохраняются в этом браузере.</p>
-    <label>Визит<select name="visit">${labEntry?'<option value="">Без визита</option>':''}${person.visits.map(v=>'<option value="'+esc(v[0])+'" '+(v[0]===visit?'selected':'')+'>'+esc(v[2])+' · '+dateLabel(v[1])+'</option>').join('')}</select></label>
+    <label>Визит<select name="visit"><option value="">Без визита</option>${person.visits.map(v=>'<option value="'+esc(v[0])+'" '+(v[0]===visit?'selected':'')+'>'+esc(v[2])+' · '+labDateLabel(v[1])+'</option>').join('')}</select></label>
     <label>Категория<select name="category">${uploadKindOptions(labEntry?'Лаборатория':recEntry?'Рекомендации':rxEntry?'Назначения':'Заключения')}</select></label>
+    <label>Дата документа<input type="date" name="date" required max="${todayLocal()}" value="${todayLocal()}"></label>
     <label>Файлы<input multiple required type="file" name="file" accept="${importAccept},.zip"></label><p class="hint">Фото, PDF, TXT или исследование DICOM в ZIP. ${originalTransferHint()}</p>
     <div id="upload-manifest"></div>
     <label id="upload-conclusion">Текст заключения для разбора <small>по желанию, только проверенные сведения</small><textarea name="clinical" maxlength="2400"></textarea></label>
@@ -212,7 +213,7 @@ async function saveUpload(form){
   const files=Array.from(form.elements.file.files),profile=current(),patient=person.id,visit=form.elements.visit.value;
   const rows=files.map((file,i)=>{
     const category=uploadCategoryControl(form,i).value;
-    return {id:uid(),visit,category,name:file.name,type:file.type,date:todayLocal(),...(category==='Заключения'&&files.length===1?{clinicalText:form.elements.clinical.value.trim()}:{}),
+    return {id:uid(),visit,category,name:file.name,type:file.type,date:form.elements.date.value,...(category==='Заключения'&&files.length===1?{clinicalText:form.elements.clinical.value.trim()}:{}),
       ...(['Назначения','Рекомендации'].includes(category)?{intake:true,checked:false,meds:[]}: {})};
   });
   const error=form.querySelector('.error'),staged=[];

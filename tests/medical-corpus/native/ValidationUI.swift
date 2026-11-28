@@ -136,9 +136,10 @@ final class ValidationUI: XCTestCase {
     }
 
     func testMeasurementRequiresNumberAndUnit() {
-        app.buttons["Анализы и измерения"].tap()
+        let clinical=app.buttons["Анализы и измерения"]
+        reach(clinical);clinical.tap()
         app.buttons["Добавить измерение"].tap()
-        let save = app.buttons["Сохранить"]
+        let save = app.buttons["Сохранить измерение"]
         reach(save)
         save.tap()
         let nameError = app.staticTexts["validation-measurement-name"]
@@ -151,9 +152,7 @@ final class ValidationUI: XCTestCase {
         assertCleared(nameError)
         XCTAssertTrue(valueError.exists)
         let value = app.textFields["Значение"]
-        enter(value, "a")
-        XCTAssertTrue(valueError.exists)
-        value.typeText(XCUIKeyboardKey.delete.rawValue + "37,2")
+        enter(value, "37,2")
         assertCleared(valueError)
         XCTAssertTrue(unitError.exists)
         enter(app.textFields["Единица"], "C")
@@ -163,15 +162,28 @@ final class ValidationUI: XCTestCase {
         XCTAssertTrue(app.navigationBars["Анализы и измерения"].waitForExistence(timeout: 6))
     }
 
+    func testManualVisitSurvivesClosingWithoutOriginal() {
+        app.buttons["Новый визит"].tap()
+        let title=app.textFields["Название визита"]
+        XCTAssertTrue(title.waitForExistence(timeout:6))
+        enter(title,"Manual draft QA")
+        app.navigationBars.buttons["Закрыть"].tap()
+        let draft=app.buttons["Manual draft QA"]
+        reach(draft)
+        app.terminate()
+        setUp()
+        reach(draft);draft.tap()
+        XCTAssertEqual(title.value as? String,"Manual draft QA")
+        app.navigationBars.buttons["Закрыть"].tap()
+    }
+
     func testExamDateAndParameterFields() {
         let exams = app.buttons["Результаты обследований"]
         reach(exams)
         exams.tap()
         app.buttons["Добавить обследование"].tap()
-        let date = app.textFields["Дата · ГГГГ-ММ-ДД"]
+        let date = app.descendants(matching:.any).matching(identifier:"journal-calendar-Дата обследования").firstMatch
         reach(date)
-        enter(date, "X")
-        date.typeText("\n")
         let add = app.buttons["Добавить параметр"]
         reach(add)
         add.tap()
@@ -179,17 +191,13 @@ final class ValidationUI: XCTestCase {
         reach(save)
         save.tap()
         let methodError = app.staticTexts["validation-exam-method"]
-        let dateError = app.staticTexts["validation-exam-date"]
         XCTAssertTrue(methodError.waitForExistence(timeout: 4))
         XCTAssertTrue(methodError.isHittable)
-        XCTAssertTrue(dateError.exists)
-        enter(app.textFields["Вид обследования"], "Validation exam")
+        let method=app.buttons.matching(NSPredicate(format:"label CONTAINS 'Вид обследования'")).firstMatch
+        reach(method);method.tap()
+        app.buttons["Другое"].firstMatch.tap()
+        enter(app.textFields["Название вида обследования"], "Validation exam")
         assertCleared(methodError)
-        XCTAssertTrue(dateError.exists)
-        reach(date)
-        enter(date, String(repeating: XCUIKeyboardKey.delete.rawValue, count: 11) + "2026-01-08")
-        assertCleared(dateError)
-        date.typeText("\n")
         let parameter = app.textFields["Название"]
         let parameterError = app.staticTexts["Введите название параметра."]
         let valueError = app.staticTexts["Введите значение параметра."]

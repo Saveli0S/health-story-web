@@ -178,8 +178,10 @@ func trendCards(_ profile:JournalObject) -> [TrendCard] {
 
 func trendPoints(_ profile:JournalObject)->[TrendPoint] {
     var out=entries(profile,"measurements").map{r in
-        let name=caption(r,"name"),unit=caption(r,"unit")
-        return TrendPoint(id:caption(r,"id"),name:name,unit:unit,date:caption(r,"time"),value:caption(r,"value"),source:nil,key:"measurement:"+name+"|"+unit)
+        let storedName=caption(r,"name"),name=MeasurementPreset.find(storedName)?.name ?? storedName
+        let unit=MeasurementPreset.unit(for:storedName,stored:caption(r,"unit"))
+        return TrendPoint(id:caption(r,"id"),name:name,unit:unit,date:caption(r,"time"),value:caption(r,"value"),source:nil,
+                          key:"measurement:"+ClinicalDuplicates.text(name)+"|"+unit)
     }
     let parser=try? ClinicalImport()
     for file in entries(profile,"files") {
@@ -214,13 +216,25 @@ struct TrendCardLink:View {
 struct TrendDetail:View {
     @ObservedObject var journal:DeviceJournal
     let owner:String,key:String
+    @State private var selectedSeries=""
+    @State private var measurement:MeasurementDestination?
 
     var body:some View {
         if let card=trendCards(journal.profile(owner)).first(where:{$0.id==key || $0.series.contains{$0.id==key}}) {
+            let series=card.series.first{$0.id==selectedSeries} ?? card.series.first{$0.id==key} ?? card.series[0]
             List {
-                ForEach(card.series){series in seriesContent(series)}
+                if card.series.count>1 {
+                    Picker("Ряд для сравнения",selection:Binding(get:{series.id},set:{selectedSeries=$0})) {
+                        ForEach(card.series){option in Text(seriesLabel(option)).tag(option.id)}
+                    }
+                }
+                seriesContent(series)
             }.journalBackground().navigationTitle(card.name)
+                .sheet(item:$measurement){choice in NativeMeasurementEditor(journal:journal,owner:owner,choice:choice)}
         }else {ContentUnavailableView("Нет результатов",systemImage:"chart.xyaxis.line")}
+    }
+    private func seriesLabel(_ series:TrendSeries)->String {
+        [series.details,series.material=="Биоматериал не уточнён" ? series.points[0].date:""].filter{!$0.isEmpty}.joined(separator:" · ")
     }
 
     @ViewBuilder private func seriesContent(_ series:TrendSeries) -> some View {
@@ -239,7 +253,14 @@ struct TrendDetail:View {
             ForEach(series.points){point in
                 if let id=point.source {
                     NavigationLink {DeviceAttachment(journal:journal,owner:owner,id:id,name:point.report)} label:{resultLabel(point)}
+                } else if journal.editable {
+                    Button {
+                        measurement=MeasurementDestination(source:point.id,repeatMeasurement:false)
+                    } label:{LabeledContent(point.date,value:point.value+" "+point.unit)}
                 } else {LabeledContent(point.date,value:point.value+" "+point.unit)}
+            }
+            if !series.isLab,journal.editable,let latest=series.points.max(by:{$0.date<$1.date}) {
+                Button("Измерить ещё раз",systemImage:"plus"){measurement=MeasurementDestination(source:latest.id)}
             }
         }
     }
@@ -373,14 +394,7 @@ struct Trends:View {
     @State private var query:String
     @State private var mode = Mode.all
     @State private var category = ""
-    @State private var adding=false
-    @State private var name=""
-    @State private var unit=""
-    @State private var value=""
-    @State private var date=Date()
-    @State private var episode=""
-    @State private var error:String?
-    @State private var validation=JournalFormValidation()
+    @State private var measurement:MeasurementDestination?
     init(journal:DeviceJournal,owner:String,initialQuery:String="") {
         self.journal=journal;self.owner=owner;_query=State(initialValue:initialQuery)
     }
@@ -388,17 +402,10 @@ struct Trends:View {
         let p=journal.profile(owner)
         let tags=RecordTags(profile:p,library:entries(journal.data,"tags"))
         let results=trendCards(p).filter{$0.matches(query,tags:tags)}
-        let numeric=Double(value.trim.replacingOccurrences(of:",",with:"."))?.isFinite == true
-        let issues=[
-            JournalFieldIssue.required("measurement-name",name,"Введите название показателя."),
-            numeric ? nil : JournalFieldIssue(field:"measurement-value",message:"Введите числовое значение."),
-            .required("measurement-unit",unit,"Введите единицу измерения.")
-        ].compactMap{$0}
-        let visible=validation.visible(issues)
         List {
             if journal.editable {
                 NavigationLink("Добавить лабораторный бланк"){LabIntake(journal:journal,owner:owner)}
-                Button("Добавить измерение"){validation=JournalFormValidation();error=nil;adding=true}
+                Button("Добавить измерение"){measurement=MeasurementDestination()}
             }
             Picker("Раздел анализов", selection: $mode) {
                 ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
@@ -445,21 +452,7 @@ struct Trends:View {
             }
         }.journalBackground().navigationTitle("Анализы и измерения").navigationBarTitleDisplayMode(.inline)
             .searchable(text:$query,placement:.navigationBarDrawer(displayMode:.always),prompt:"Анализ, показатель или тег")
-        .sheet(isPresented:$adding){NavigationStack {Form {
-            TextField("Показатель",text:$name).journalField("measurement-name",visible)
-            TextField("Значение",text:$value).journalField("measurement-value",visible)
-            TextField("Единица",text:$unit).journalField("measurement-unit",visible)
-            DatePicker("Дата и время",selection:$date,in:...Date())
-            Picker("Эпизод",selection:$episode){Text("Без привязки").tag("");ForEach(entries(p,"episodes").indices,id:\.self){i in let e=entries(p,"episodes")[i];Text(caption(e,"name")).tag(caption(e,"id"))}}
-            if let error {Text(error).foregroundStyle(.red)}
-            Button("Сохранить"){
-                guard validation.submit(issues) else{return}
-                do{
-                let fmt=DateFormatter();fmt.locale=Locale(identifier:"en_US_POSIX");fmt.dateFormat="yyyy-MM-dd'T'HH:mm"
-                try journal.changeProfile(owner){v in v["measurements"]=entries(v,"measurements")+[["id":UUID().uuidString,"name":name.trim,"value":value.trim,"unit":unit.trim,"time":fmt.string(from:date),"episode":episode]]}
-                adding=false;value=""
-            }catch{self.error=error.localizedDescription}}.disabled(journal.busy || !journal.editable)
-        }.journalValidation(validation).navigationTitle("Домашнее измерение")}}
+        .sheet(item:$measurement){choice in NativeMeasurementEditor(journal:journal,owner:owner,choice:choice)}
     }
 
     @ViewBuilder private func trendSection(_ title:String,_ cards:[TrendCard]) -> some View {
@@ -468,6 +461,118 @@ struct Trends:View {
         }
     }
 }
+
+private struct MeasurementPreset {
+    let name:String,unit:String,aliases:[String],unitAliases:[String]
+    static let all=[
+        Self(name:"Температура",unit:"°C",aliases:["температура тела"],unitAliases:["°с","c","с","градусы цельсия"]),
+        Self(name:"Вес",unit:"кг",aliases:["масса тела"],unitAliases:["kg"]),
+        Self(name:"Рост",unit:"см",aliases:[],unitAliases:["cm"]),
+        Self(name:"Пульс",unit:"уд/мин",aliases:["частота пульса","чсс"],unitAliases:["уд./мин","уд в мин","bpm"]),
+        Self(name:"Систолическое давление",unit:"мм рт. ст.",aliases:["верхнее давление"],unitAliases:["мм рт ст","mmhg"]),
+        Self(name:"Диастолическое давление",unit:"мм рт. ст.",aliases:["нижнее давление"],unitAliases:["мм рт ст","mmhg"])
+    ]
+    static func find(_ name:String)->Self? {
+        let key=ClinicalDuplicates.text(name)
+        return all.first{ClinicalDuplicates.text($0.name)==key || $0.aliases.contains(key)}
+    }
+    static func unit(for name:String,stored:String)->String {
+        guard let preset=find(name) else{return stored}
+        let key=stored.trim.lowercased().replacingOccurrences(of:"\\s*/\\s*",with:"/",options:.regularExpression)
+        return key==preset.unit.lowercased() || preset.unitAliases.contains(key) ? preset.unit:stored
+    }
+}
+
+private struct MeasurementDestination:Identifiable {
+    let id=UUID()
+    var source:String?=nil
+    var repeatMeasurement=true
+}
+
+private struct NativeMeasurementEditor:View {
+    @ObservedObject var journal:DeviceJournal
+    let owner:String
+    let original:JournalObject?
+    @Environment(\.dismiss) private var dismiss
+    @State private var name:String
+    @State private var unit:String
+    @State private var value:String
+    @State private var date:Date
+    @State private var episode:String
+    @State private var error:String?
+    @State private var validation=JournalFormValidation()
+
+    init(journal:DeviceJournal,owner:String,choice:MeasurementDestination){
+        self.journal=journal;self.owner=owner
+        let source=entries(journal.profile(owner),"measurements").first{caption($0,"id")==choice.source} ?? [:]
+        original=choice.repeatMeasurement ? nil:source
+        let initialName=caption(source,"name")
+        _name=State(initialValue:initialName)
+        _unit=State(initialValue:MeasurementPreset.unit(for:initialName,stored:caption(source,"unit")))
+        _value=State(initialValue:choice.repeatMeasurement ? "":caption(source,"value"))
+        _date=State(initialValue:choice.repeatMeasurement ? Date():Self.dateFormatter().date(from:caption(source,"time")) ?? Date())
+        _episode=State(initialValue:caption(source,"episode"))
+    }
+    private static func dateFormatter()->DateFormatter {
+        let formatter=DateFormatter()
+        formatter.locale=Locale(identifier:"en_US_POSIX");formatter.calendar=Calendar(identifier:.gregorian)
+        formatter.dateFormat="yyyy-MM-dd'T'HH:mm"
+        return formatter
+    }
+    var body:some View {
+        let episodes=entries(journal.profile(owner),"episodes")
+        let numeric=Double(value.trim.replacingOccurrences(of:",",with:"."))?.isFinite == true
+        let issues=[
+            JournalFieldIssue.required("measurement-name",name,"Введите название показателя."),
+            numeric ? nil : JournalFieldIssue(field:"measurement-value",message:"Введите числовое значение."),
+            .required("measurement-unit",unit,"Введите единицу измерения.")
+        ].compactMap{$0}
+        let visible=validation.visible(issues)
+        NavigationStack {
+            Form {
+                Picker("Готовые показатели",selection:Binding(get:{MeasurementPreset.find(name)?.name ?? ""},set:{
+                    name=$0;unit=MeasurementPreset.find($0)?.unit ?? ""
+                })) {
+                    Text("Другое").tag("")
+                    ForEach(MeasurementPreset.all,id:\.name){preset in Text(preset.name+" · "+preset.unit).tag(preset.name)}
+                }
+                TextField("Показатель",text:$name).journalField("measurement-name",visible)
+                TextField("Значение",text:$value).keyboardType(.decimalPad).journalField("measurement-value",visible)
+                TextField("Единица",text:$unit).journalField("measurement-unit",visible)
+                DatePicker("Дата и время",selection:$date,in:...max(Date(),date))
+                Picker("Эпизод",selection:$episode){
+                    Text("Без привязки").tag("")
+                    ForEach(episodes.indices,id:\.self){index in
+                        Text(caption(episodes[index],"name")).tag(caption(episodes[index],"id"))
+                    }
+                }
+                if let error {Text(error).foregroundStyle(.red)}
+                Button("Сохранить измерение"){
+                    if validation.submit(issues){save()}
+                }.disabled(journal.busy || !journal.editable)
+            }.journalValidation(validation).journalBackground().navigationTitle(original==nil ? "Домашнее измерение":"Редактировать измерение")
+                .toolbar{ToolbarItem(placement:.cancellationAction){Button("Отмена"){dismiss()}}}
+        }
+    }
+    private func save(){
+        do{
+            try journal.changeProfile(owner){profile in
+                var rows=entries(profile,"measurements")
+                let id=original.map{caption($0,"id")} ?? UUID().uuidString
+                let fields:JournalObject=["id":id,"name":name.trim,"value":value.trim,
+                    "unit":MeasurementPreset.unit(for:name,stored:unit.trim),"time":Self.dateFormatter().string(from:date),"episode":episode]
+                if let original {
+                    guard let index=rows.firstIndex(where:{caption($0,"id")==id}),
+                          try jsonBytes(original)==jsonBytes(rows[index]) else{throw JournalError("Измерение изменилось. Откройте его снова.")}
+                    rows[index].merge(fields){_,new in new}
+                } else {rows.append(fields)}
+                profile["measurements"]=rows
+            }
+            dismiss()
+        }catch{self.error=error.localizedDescription}
+    }
+}
+
 struct Prevention:View {
     @ObservedObject var journal:DeviceJournal;let owner:String
     @State private var edit=false

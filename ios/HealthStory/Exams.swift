@@ -98,6 +98,7 @@ private struct NativeExamEditor:View {
     @State private var photos:[PhotosPickerItem]=[]
     @State private var validation=JournalFormValidation()
     private let keys=["method","customMethod","region","date","doctor","clinic","visit","description","conclusion"]
+    private let methods=["УЗИ","Рентгенография","Флюорография","КТ","МРТ","ЭКГ","Эндоскопия"]
     init(journal:DeviceJournal,owner:String,exam:JournalObject=[:],draft:JournalObject=[:]){
         self.journal=journal;self.owner=owner
         let originalID=caption(draft,"exam")
@@ -169,9 +170,21 @@ private struct NativeExamEditor:View {
                 }
             }.disabled(reading||journal.busy)
             Section("Обследование"){
-                TextField("Вид обследования",text:binding("method")).journalField("exam-method",visible)
+                Picker("Вид обследования",selection:Binding(get:{
+                    let value=fields["method"] ?? ""
+                    return value.isEmpty || methods.contains(value) ? value:"Другое"
+                },set:{fields["method"]=$0})) {
+                    Text("Выберите вид").tag("")
+                    ForEach(methods,id:\.self){Text($0).tag($0)}
+                    Text("Другое").tag("Другое")
+                }.journalField("exam-method",visible)
+                if let method=fields["method"],!method.isEmpty,!methods.contains(method) {
+                    TextField("Название вида обследования",text:Binding(
+                        get:{fields["method"]=="Другое" ? "":fields["method"] ?? ""},
+                        set:{fields["method"]=$0.isEmpty ? "Другое":$0}))
+                }
                 TextField("Область исследования",text:binding("region"))
-                TextField("Дата · ГГГГ-ММ-ДД",text:Binding(
+                JournalCalendarField(title:"Дата обследования",day:Binding(
                     get:{fields["date"] ?? ""},
                     set:{dateDefault=$0.trim.isEmpty;fields["date"]=$0}
                 )).journalField("exam-date",visible)

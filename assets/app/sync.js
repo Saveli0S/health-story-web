@@ -61,7 +61,7 @@ const deviceSync=(()=>{
     const encrypted=await seal(ctx,id,name,bytes);
     return request(ctx,'/profiles/'+id+'/'+name,'PUT',await encrypted.arrayBuffer(),rev);
   }
-  function items(p){return [...p.files,...(p.visitDrafts||[])]}
+  function items(p){return [...p.files,...(p.visitDrafts||[]).filter(d=>!d.manualOnly)]}
   async function thumbnail(item,blob){
     if(item.thumbnail||(!isPhoto(item)&&!isPdf(item)))return;
     let canvas,pdf;

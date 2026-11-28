@@ -157,7 +157,7 @@ function appExtrasSubmit(f){
   }
 }
 function measureLinks(){
-  const groups=new Map(current().measurements.map(m=>[indicatorKey(m.name,m.unit),m]));
+  const groups=new Map(current().measurements.map(m=>[measurementKey(m),m]));
   return '<div class="home-measures"><div class="section-head"><h2>Домашние измерения</h2>'+(!readOnly?act('measure','Добавить измерение','','text-button','plus'):'')+'</div>'+
-    ([...groups].map(([key,m])=>act('measureChart',m.name+' · '+m.unit,key,'chip-link','trend')).join('')||'<p class="hint">Вес, температура и другие показатели можно записывать между визитами.</p>')+'</div>';
+    ([...groups].map(([key,m])=>act('measureChart',(measurementPreset(m.name)?.[0]||m.name)+' · '+measurementUnit(m),key,'chip-link','trend')).join('')||'<p class="hint">Вес, температура и другие показатели можно записывать между визитами.</p>')+'</div>';
 }

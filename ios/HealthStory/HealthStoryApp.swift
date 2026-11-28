@@ -299,7 +299,12 @@ struct ArchiveProfileView: View {
                 ForEach(visits) { visit in LabeledContent(visit.title, value: visit.date) }
             }
             attachments("Документы", profile.files)
-            if let drafts = profile.visitDrafts, !drafts.isEmpty { attachments("Черновики визитов", drafts) }
+            if let drafts = profile.visitDrafts, !drafts.isEmpty {
+                let files=drafts.filter{$0.manualOnly != true}
+                if !files.isEmpty {attachments("Черновики с вложениями",files)}
+                let manual=drafts.filter{$0.manualOnly == true}
+                if !manual.isEmpty {Section("Текстовые черновики"){ForEach(manual){Text($0.name ?? "Черновик визита")}}}
+            }
         }.journalBackground().navigationTitle(member.name).navigationBarTitleDisplayMode(.inline)
     }
 

@@ -12,7 +12,7 @@ function switchVisitMode(mode,episodeId){
   if(form?.dataset.saving)return;
   const drafts=route.modeDrafts||{};
   if(form)drafts[route.name]={fields:Object.fromEntries(new FormData(form)),meds:medicineValues(form)};
-  const next={name,id:episodeId,modeDrafts:drafts,imported:route.photo||route.imported};
+  const next={name,id:episodeId,modeDrafts:drafts,manualId:route.manualId,imported:route.photo||route.imported};
   if(next.imported)next.photo=next.imported;
   routes[routes.length-1]=next;displayRoute();
   const restored=document.querySelector('#visit-form'),saved=drafts[name];
@@ -74,7 +74,8 @@ async function preparePhotoVisit(input,requestedMode){
   route.reading=true;
   const buttonList=document.querySelectorAll('#visit-source,[data-action=sampleVisit],#visit-processing');
   buttonList.forEach(b=>b.disabled=true);
-  const profile=current(),patient=person.id,docs=[];
+  const profile=current(),patient=person.id,docs=[],before=profile.visitDrafts;
+  const manual=before.find(d=>d.id===route.manualId&&d.manualOnly);
   try{
     const unique=new Map();
     for(const file of files){
@@ -85,7 +86,7 @@ async function preparePhotoVisit(input,requestedMode){
       const [digest,file]=unique.entries().next().value;
       const recent=latestProfile();
       const saved=await matchingOriginal(patient,file,digest,recent.files.filter(f=>f.visit&&visitSource(f)));
-      const pending=saved?null:await matchingOriginal(patient,file,digest,recent.visitDrafts.filter(d=>!d.parent));
+      const pending=saved?null:await matchingOriginal(patient,file,digest,recent.visitDrafts.filter(d=>!d.parent&&!d.manualOnly));
       if(saved||pending){
         if(route===routes.at(-1)&&patient===person.id){
           status.innerHTML=saved?'Этот документ уже есть в визите. '+act('visit','Открыть существующий визит',saved.visit,'text-button'):
@@ -96,17 +97,27 @@ async function preparePhotoVisit(input,requestedMode){
       }
     }
     for(const [digest,file] of unique){
-      const d={id:uid(),parent:docs[0]?.id,episode:route.id||'',name:file.name,type:file.type,date:todayLocal(),kind:suggestImportKind(file.name),state:'queued',sourceDigest:digest};
+      if(current()!==profile||route!==routes.at(-1)||patient!==person.id||readOnly)throw Error();
+      const first=!docs.length,d={id:first&&manual?manual.id:uid(),parent:docs[0]?.id,episode:manual?.episode||route.id||'',name:file.name,type:file.type,date:todayLocal(),kind:suggestImportKind(file.name),state:'queued',sourceDigest:digest};
+      if(first&&manual){
+        const latest=latestProfile().visitDrafts.find(item=>item.id===manual.id);
+        if(JSON.stringify(latest)!==JSON.stringify(manual))throw Error('Черновик изменился');
+        d.fields=Object.fromEntries(Object.entries(manual.fields||{}).filter(([key,value])=>
+          (value||key==='doctor')&&!(key==='date'&&value===todayLocal())));
+        d.manualMeds=manual.manualMeds;
+      }
       await fileBlob(patient+'/'+d.id,file);docs.push(d);
     }
-    profile.visitDrafts.push(...docs);
+    if(current()!==profile||route!==routes.at(-1)||patient!==person.id)throw Error();
+    profile.visitDrafts=profile.visitDrafts.filter(d=>d!==manual).concat(docs);
     if(!saveState())throw Error();
   }catch{
     profile.visitDrafts=profile.visitDrafts.filter(d=>!docs.includes(d));
+    if(manual&&!profile.visitDrafts.some(d=>d.id===manual.id))profile.visitDrafts.push(manual);
     await Promise.allSettled(docs.map(d=>removeBlob(patient+'/'+d.id)));
     route.reading=false;status.textContent='Не удалось сохранить комплект. Проверьте свободное место и повторите загрузку.';buttonList.forEach(b=>b.disabled=false);return;
   }
-  route.reading=false;
+  route.reading=false;delete route.manualId;
   if(patient!==person.id||route!==routes.at(-1)||!panel.open)return;
   render();
   if(mode==='queue'){replaceRoute('resumeVisit',docs[0].id);return}

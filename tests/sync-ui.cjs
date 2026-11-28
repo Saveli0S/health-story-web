@@ -63,6 +63,19 @@ const base=process.env.HEALTH_SYNC_URL||'http://127.0.0.1:8765/';
    await webAdmin.getByText(/выдача и отзыв доступа доступны/i).waitFor();
    await edit(webAdmin,'p-adult','weight','70');await sync(webAdmin);await sync(master);
    assert.equal(await value(master,'p-adult'),'70');
+   phase='text-only visit draft sync and backup';
+   await goto(webAdmin,'?profile=p-adult&new=visit');
+   await webAdmin.locator('#visit-form [name=title]').fill('Черновик только с текстом');
+   await webAdmin.keyboard.press('Escape');await sync(webAdmin);await sync(master);
+   await goto(master,'?profile=p-adult');
+   await master.getByRole('button',{name:/Черновик только с текстом/}).click();
+   assert.equal(await master.locator('#visit-form [name=title]').inputValue(),'Черновик только с текстом');
+   await master.keyboard.press('Escape');
+   await sync(master);
+   assert(await master.evaluate(async()=>{
+     const key=await archiveKey(deviceAuthority(family.id).recovery),archive=await encryptedArchive(key);
+     return archive.size>0;
+   }));
    phase='child consent changes propagate only from admin';
    for(const allowed of [true,false]){
      await goto(webAdmin,'?profile=p-child&section=settings');

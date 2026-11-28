@@ -27,7 +27,11 @@ final class LabUI:XCTestCase {
         matches.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Холестерин ЛПВП"].waitForExistence(timeout:10))
         for date in ["2022-01-11","2023-02-12","2024-03-13"] {
-            let result=app.buttons.matching(NSPredicate(format:"label CONTAINS %@",date)).firstMatch
+            let selector=app.buttons.matching(NSPredicate(format:"label CONTAINS 'Ряд для сравнения'")).firstMatch
+            reach(selector);selector.tap()
+            let option=date=="2024-03-13" ? "Сыворотка":date
+            app.buttons.matching(NSPredicate(format:"label CONTAINS %@",option)).firstMatch.tap()
+            let result=app.buttons.matching(NSPredicate(format:"label BEGINSWITH %@",date)).firstMatch
             reach(result)
             XCTAssertTrue(result.exists)
             if date=="2022-01-11" {XCTAssertTrue(result.label.contains("Дата по бланку"))}
@@ -43,7 +47,7 @@ final class LabUI:XCTestCase {
         let ready=XCTNSPredicateExpectation(predicate:NSPredicate(format:"enabled == true"),object:imported)
         XCTAssertEqual(XCTWaiter.wait(for:[ready],timeout:20),.completed)
         imported.tap()
-        XCTAssertTrue(app.textFields["Дата взятия · ГГГГ-ММ-ДД"].waitForExistence(timeout:20))
+        XCTAssertTrue(app.descendants(matching:.any).matching(identifier:"journal-calendar-Дата взятия образца").firstMatch.waitForExistence(timeout:20))
         let later=app.buttons["Уточнить позже"];reach(later);later.tap()
         app.terminate();openLabs()
         let pending=app.buttons["01-baseline.pdf"].firstMatch;reach(pending);pending.tap()
