@@ -123,6 +123,7 @@ private struct VisitAttachmentReview: View {
     @State private var error=""
     @State private var medicines=[NativeMedicine]()
     @State private var validation=JournalFormValidation()
+    @State private var sourcePosition=NativeSourcePosition()
 
     init(journal:DeviceJournal,owner:String,file:JournalObject){
         self.journal=journal;self.owner=owner;self.file=file
@@ -141,6 +142,9 @@ private struct VisitAttachmentReview: View {
             JournalFieldIssue(field:"attachment-review",message:"Подтвердите сверку с оригиналом.")
         ])
         let visible=validation.visible(issues)
+        let id=caption(file,"id"),name=caption(file,"name")
+        NativeSourceReview(sources:[NativeSourceItem(id:id,name:name)],position:$sourcePosition,
+                           load:{try await journal.attachment(owner:owner,id:$0)}) {
         Form {
             NavigationLink("Открыть оригинал"){DeviceAttachment(journal:journal,owner:owner,id:caption(file,"id"),name:caption(file,"name"))}
             Button(reading ? "Распознаём…" : "Распознать на iPhone"){Task {await recognize()}}.disabled(reading || journal.busy)
@@ -159,7 +163,8 @@ private struct VisitAttachmentReview: View {
             if !error.isEmpty {Text(error)}
             Toggle("Сверено с оригиналом",isOn:$reviewed).journalField("attachment-review",visible)
             Button("Сохранить сведения"){if validation.submit(issues){save()}}.disabled(!journal.editable || journal.busy || reading)
-        }.journalValidation(validation).navigationTitle("Сверка вложения")
+        }.journalValidation(validation)
+        }.navigationTitle("Сверка вложения")
     }
 
     private func recognize() async {

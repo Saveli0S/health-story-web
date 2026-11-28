@@ -2,7 +2,7 @@
 
 function deletionButton(group,id,title='Удалить карточку'){
   if(readOnly||!recordRemoval.entries(current()).some(r=>r.group===group&&r.id===id))return '';
-  return act('removeRecord',title,JSON.stringify({group,id}),'text-button danger');
+  return act('removeRecord',title,JSON.stringify({group,id}),'button danger');
 }
 
 function manageRecords(){

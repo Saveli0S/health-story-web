@@ -13,7 +13,8 @@ final class ReviewUI:XCTestCase {
         }
         let key=app.secureTextFields.firstMatch;XCTAssertTrue(key.waitForExistence(timeout:15));key.tap()
         key.typeText("QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI")
-        tap(app.buttons["Открыть архив"]);tap(app.buttons["Мая Макетова"])
+        tap(app.buttons["Открыть архив"])
+        XCTAssertTrue(app.navigationBars["Профиль"].waitForExistence(timeout:10),app.debugDescription)
         tap(app.buttons.matching(NSPredicate(format:"label CONTAINS 'Синтетический осмотр'")).firstMatch)
         tap(app.buttons["Разбор лечения и цены лекарств"])
         tap(app.buttons["Разобрать лечение в ChatGPT"])

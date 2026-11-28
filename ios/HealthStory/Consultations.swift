@@ -75,18 +75,23 @@ struct ConsultationDraft {
                 + entries(prevention,"history").map{[caption($0,"date"),caption($0,"note")].joined(separator:" ")}
             list.append(tagged(.init(id:"prevent:"+id,kind:"prevent",recordID:id,label:title,details:"Профилактика · "+caption(prevention,"next"),clinical:text.filter{!$0.isEmpty})))
         }
-        for episode in entries(profile,"episodes") {
-            let id=caption(episode,"id")
-            let visitIDs=visits.filter{$0[7] as? String==id}.compactMap{$0[0] as? String}
+        for series in trendSeries(profile) {
+            let values = series.points.map { [$0.date, $0.dateSource, $0.value, $0.unit, $0.range].filter { !$0.isEmpty }.joined(separator: " · ") }
+            list.append(.init(id:"indicator:"+series.id,kind:"indicator",recordID:series.id,label:series.name,
+                              details:series.details,clinical:["Динамика показателя",series.name,series.material]+values))
+        }
+        for episode in NativeTreatments.episodes(profile) {
+            let id=episode.id
+            let visitIDs=visits.filter{NativeTreatments.episode($0,profile)==id}.compactMap{$0[0] as? String}
             let ids=Set(visitIDs)
             var children=visitIDs.map{"visit:"+$0}
             children += files.filter{ids.contains(caption($0,"visit"))}.flatMap{f in ["lab:"+caption(f,"id"),"file:"+caption(f,"id")]}
             children += entries(profile,"exams").filter{ids.contains(caption($0,"visit"))}.map{"exam:"+caption($0,"id")}
             let available=list.filter{children.contains($0.id)}
-            var context=["Эпизод",caption(episode,"name")]
+            var context=["Эпизод",episode.name]
             context += entries(profile,"measurements").filter{caption($0,"episode")==id}.map{m in ["time","name","value","unit"].map{caption(m,$0)}.filter{!$0.isEmpty}.joined(separator:" · ")}
             context += entries(profile,"questions").filter{caption($0,"episode")==id}.map{caption($0,"text")}
-            var source=ConsultationSource(id:"episode:"+id,kind:"episode",recordID:id,label:caption(episode,"name"),details:"Визиты и связанные заключения и анализы",clinical:context)
+            var source=ConsultationSource(id:"episode:"+id,kind:"episode",recordID:id,label:episode.name,details:"Визиты и связанные заключения и анализы",clinical:context)
             source.children=available.map(\.id)
             source.tags=Array(Set(available.flatMap(\.tags))).sorted()
             list.append(source)
@@ -137,6 +142,20 @@ struct Consultations:View {
     }
 }
 
+struct NativeConsultationLink: View {
+    @ObservedObject var journal: DeviceJournal
+    let owner: String, source: String
+    @State private var composing = false
+
+    var body: some View {
+        Button("Обсудить с ИИ", systemImage: "sparkles") { composing = true }
+            .disabled(!journal.editable || journal.busy)
+            .sheet(isPresented: $composing) {
+                NavigationStack { ConsultationComposer(journal: journal, owner: owner, initialSource: source) }
+            }
+    }
+}
+
 private struct ConsultationComposer:View {
     @ObservedObject var journal:DeviceJournal;let owner:String
     @Environment(\.dismiss) var dismiss
@@ -148,6 +167,11 @@ private struct ConsultationComposer:View {
     @State private var selected=Set<String>()
     @State private var prepared: String?
     @State private var validation=JournalFormValidation()
+    init(journal: DeviceJournal, owner: String, initialSource: String? = nil) {
+        self.journal = journal
+        self.owner = owner
+        _selected = State(initialValue: Set(initialSource.map { [$0] } ?? []))
+    }
     var body:some View {
         let profile=journal.profile(owner)
         let all=ConsultationDraft.sources(profile,tags:entries(journal.data,"tags"))

@@ -67,6 +67,59 @@ struct DeviceHome:View {
     @ObservedObject var journal:DeviceJournal
     var chatGPTAccount: NativeChatGPTAccount?
     @Environment(\.scenePhase) private var phase
+    @State private var showingFamily=false
+    @State private var selectedProfile:String?
+    @State private var pendingProfile:String?
+
+    private var ownProfile:String? {
+        let family=journal.data["family"] as? JournalObject ?? [:]
+        let id=journal.paired ? caption(journal.access,"member") : caption(family,"adminId")
+        return journal.members.contains{caption($0,"id")==id} ? id : nil
+    }
+
+    var body:some View {
+        NavigationStack {
+            Group {
+                if let ownProfile {
+                    DeviceProfile(journal:journal,owner:ownProfile,chatGPTAccount:chatGPTAccount,openFamily:{
+                        pendingProfile=nil
+                        showingFamily=true
+                    })
+                } else {
+                    DeviceFamilyMenu(journal:journal,chatGPTAccount:chatGPTAccount){selectedProfile=$0}
+                }
+            }
+            .navigationDestination(item:$selectedProfile){id in
+                if journal.members.contains(where:{caption($0,"id")==id}) {
+                    DeviceProfile(journal:journal,owner:id,chatGPTAccount:chatGPTAccount)
+                } else {
+                    ContentUnavailableView("Профиль недоступен",systemImage:"person.crop.circle")
+                }
+            }
+        }
+        .sheet(isPresented:$showingFamily,onDismiss:{
+            selectedProfile=pendingProfile
+            pendingProfile=nil
+        }){
+            NavigationStack {
+                DeviceFamilyMenu(journal:journal,chatGPTAccount:chatGPTAccount){id in
+                    pendingProfile=id==ownProfile ? nil:id
+                    showingFamily=false
+                }
+                .toolbar {
+                    ToolbarItem(placement:.cancellationAction){Button("Закрыть"){showingFamily=false}}
+                }
+            }
+        }
+        .onChange(of:phase){_,p in if p == .active {journal.schedule()}}
+        .task {while !Task.isCancelled {try? await Task.sleep(for:.seconds(60));if !Task.isCancelled && phase == .active {await journal.sync()}}}
+    }
+}
+
+private struct DeviceFamilyMenu:View {
+    @ObservedObject var journal:DeviceJournal
+    let chatGPTAccount:NativeChatGPTAccount?
+    let openProfile:(String)->Void
     @State private var exported:BinaryDocument?
     @State private var exporting=false
     @State private var requestingKey=false
@@ -82,7 +135,7 @@ struct DeviceHome:View {
     var body:some View {
         let family = journal.data["family"] as? JournalObject ?? [:]
         let familyName = caption(family,"name")
-        NavigationStack {List {
+        List {
             Section {
                 JournalHero(title: familyName.isEmpty ? "Семья" : familyName, label: "Семейный дневник", symbol: "heart.text.square") {
                     EmptyView()
@@ -93,9 +146,7 @@ struct DeviceHome:View {
                     let member = journal.members.first{caption($0,"id")==id} ?? [:]
                     let name = caption(member,"name")
                     let role = caption(family,"adminId")==id ? "Администратор" : caption(member,"role")
-                    NavigationLink {
-                        DeviceProfile(journal:journal,owner:id)
-                    } label: {
+                    Button {openProfile(id)} label: {
                         HStack(spacing: 12) {
                             Text(name.split(separator:" ").prefix(2).compactMap(\.first).map(String.init).joined())
                                 .foregroundStyle(JournalTheme.green)
@@ -107,6 +158,10 @@ struct DeviceHome:View {
                                 Text(name).font(JournalTheme.body.weight(.semibold)).foregroundStyle(JournalTheme.ink)
                                 Text(role).font(JournalTheme.caption).foregroundStyle(JournalTheme.secondary)
                             }
+                            Spacer()
+                            Image(systemName:"chevron.right")
+                                .font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                                .accessibilityHidden(true)
                         }
                         .padding(.vertical, 4)
                     }
@@ -162,11 +217,9 @@ struct DeviceHome:View {
             }}
             if let message=journal.message {Text(message).foregroundStyle(.secondary)}
         }.listStyle(.insetGrouped).listSectionSpacing(18).journalBackground()
-            .navigationTitle("Лист здоровья").navigationBarTitleDisplayMode(.inline)}
+            .navigationTitle("Моя семья").navigationBarTitleDisplayMode(.inline)
         .fileExporter(isPresented:$exporting,document:exported,contentType:.data,defaultFilename:"family.health"){r in if case .failure(let e)=r {journal.message=e.localizedDescription}}
         .sheet(isPresented:$requestingKey){JournalBackupKeyForm(action:"Собрать копию",submit:saveBackup)}
-        .onChange(of:phase){_,p in if p == .active {journal.schedule()}}
-        .task {while !Task.isCancelled {try? await Task.sleep(for:.seconds(60));if !Task.isCancelled && phase == .active {await journal.sync()}}}
     }
     private func saveBackup(_ code:String=""){
         Task {
@@ -179,6 +232,8 @@ private struct VisitDestination:Identifiable {let resumeID:String?;var id:String
 private struct DeviceProfile:View {
     @ObservedObject var journal:DeviceJournal
     let owner:String
+    let chatGPTAccount:NativeChatGPTAccount?
+    var openFamily:(()->Void)?=nil
     @State private var visitEditor:VisitDestination?
     @State private var courseEditor:CourseEditorChoice?
     @State private var query=""
@@ -239,11 +294,8 @@ private struct DeviceProfile:View {
                     let hit=query.trim.isEmpty ? nil:details(row).first{tags.matches(query,key:"",fields:[$0])}
                     visitLink(row,searchMatch:hit)
                 }
-                if query.isEmpty && visits.count>3 {
-                    NavigationLink("Все визиты · "+String(visits.count)){
-                        List{ForEach(visits.indices,id:\.self){i in visitLink(visits[i])}}
-                            .journalBackground().navigationTitle("История визитов")
-                    }
+                if query.isEmpty {
+                    NavigationLink("История визитов"){NativeVisitHistory(journal:journal,owner:owner)}
                 }
             } header: {
                 JournalSectionHeading(query.isEmpty ? "Последние визиты":"Найденные визиты")
@@ -275,6 +327,9 @@ private struct DeviceProfile:View {
             }
             if query.isEmpty {
                 NativeClinicalLinks(journal:journal,owner:owner)
+                NavigationLink {
+                    NativeProfileSettings(journal:journal,owner:owner,chatGPTAccount:chatGPTAccount)
+                } label: { JournalRowLabel(title:"Настройки",symbol:"gearshape") }
                 if journal.editable {
                     NavigationLink("Управление данными"){ManageNativeRecords(journal:journal,owner:owner)}
                 }
@@ -283,6 +338,7 @@ private struct DeviceProfile:View {
                 NativeClinicalSearch(journal:journal,owner:owner,query:query,tags:tags)
             }
             Section {
+                if query.isEmpty { NavigationLink("Все документы"){NativeDocumentBrowser(journal:journal,owner:owner)} }
                 NativeFiles(journal:journal,owner:owner,items:entries(p,"files").filter{file in
                     let kind=file["lab"] != nil || caption(file,"category")=="Лаборатория" ? "lab:" : "file:"
                     return file["examDraft"] == nil && (query.isEmpty || file["lab"]==nil)
@@ -291,9 +347,15 @@ private struct DeviceProfile:View {
             } header: {
                 JournalSectionHeading("Документы")
             }
+            if openFamily != nil,let message=journal.message {Text(message).foregroundStyle(.secondary)}
         }.listStyle(.insetGrouped).listSectionSpacing(18).journalBackground()
         .navigationTitle("Профиль").navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if let openFamily {
+                ToolbarItem(placement:.topBarLeading) {
+                    Button("Моя семья",action:openFamily)
+                }
+            }
             if journal.editable && !currentCourses.isEmpty {
                 ToolbarItem(placement:.topBarTrailing) {
                     Button("Новый визит",systemImage:"plus"){visitEditor=VisitDestination(resumeID:nil)}
@@ -477,21 +539,19 @@ struct NativeVisitDetails:View {
                 JournalRowLabel(title:"Разбор лечения и цены лекарств",symbol:"sparkles")
             }
             TreatmentDecisions(rows:entries(p,"changes").filter{caption($0,"visit")==visit},profile:p)
+            if journal.editable {
+                NavigationLink("Решения по предыдущей схеме"){NativeTherapyEditor(journal:journal,owner:owner,visit:visit)}
+            }
             NavigationLink {VisitBrief(journal:journal,owner:owner,episodeID:NativeTreatments.episode(row,p))} label:{
                 JournalRowLabel(title:"Сводка по этому эпизоду",symbol:"list.bullet.clipboard")
             }
             NativeRecordTags(journal:journal,owner:owner,kind:.visit,id:visit)
             VisitNotes(journal:journal,owner:owner,visit:visit)
+            NavigationLink("Назначение и вложения"){NativeVisitSources(journal:journal,owner:owner,visit:visit)}
+            NativeVisitLinkSection(journal:journal,owner:owner,visit:visit)
+            if journal.editable {NativeConsultationLink(journal:journal,owner:owner,source:"visit:"+visit)}
             Section("Результаты обследований"){ExamLinks(journal:journal,owner:owner,rows:entries(p,"exams").filter{caption($0,"visit")==visit})}
-            Section("Рекомендации врача"){
-                ForEach(entries(p,"recommendations").filter{caption($0,"visit")==visit}.map{caption($0,"text")},id:\.self){Text($0)}
-                let sheets=entries(p,"files").filter{caption($0,"visit")==visit && $0["checked"] as? Bool==true && !caption($0,"recommendation").isEmpty}
-                ForEach(sheets.indices,id:\.self){i in
-                    let sheet=sheets[i]
-                    Text(caption(sheet,"recommendation"))
-                    NavigationLink("Оригинал рекомендации"){DeviceAttachment(journal:journal,owner:owner,id:caption(sheet,"id"),name:caption(sheet,"name"))}
-                }
-            }
+            NativeVisitRecommendations(journal:journal,owner:owner,visit:visit)
             Section("Вложения"){
                 VisitAttachmentLinks(journal:journal,owner:owner,rows:entries(p,"files").filter{caption($0,"visit")==visit})
                 if journal.editable {
@@ -599,7 +659,12 @@ private struct VisitEditor: View {
         let episodes=entries(journal.profile(owner),"episodes")
         let issues=validationIssues(episodes:episodes)
         let visible=validation.visible(issues)
-        NavigationStack { Form {
+        NavigationStack {
+            NativeSourceReview(sources:draft.files.map{NativeSourceItem(id:$0.id,name:$0.name)},position:$draft.sourcePosition,load:{ id in
+                guard let file=draft.files.first(where:{$0.id==id}) else {throw JournalError("Вложение недоступно.")}
+                return FamilyArchive.Original(id:id,type:file.mime,bytes:file.bytes)
+            }) {
+            Form {
             Section("Визит") {
                 Picker("Эпизод",selection:$draft.episodeID){Text("Новый эпизод").tag(String?.none)
                     ForEach(episodes.indices,id:\.self){i in Text(episodes[i]["name"] as? String ?? "").tag(episodes[i]["id"] as? String)}
@@ -653,7 +718,8 @@ private struct VisitEditor: View {
             if !draft.files.isEmpty {
                 Button("Отложить сверку визита"){if persist(){dismiss()}}.disabled(reading || journal.busy)
             }
-        }.journalValidation(validation).journalBackground().disabled(!restored).navigationTitle("Новый визит").toolbar {
+            }.journalValidation(validation)
+            }.journalBackground().disabled(!restored).navigationTitle("Новый визит").toolbar {
             ToolbarItem(placement:.cancellationAction){Button(draft.files.isEmpty ? "Отмена":"Закрыть"){if !restored || draft.files.isEmpty || persist(){dismiss()}}.disabled(reading)}
             ToolbarItem(placement:.confirmationAction){Button("Сохранить"){
                 guard validation.submit(issues) else{return}

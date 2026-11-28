@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 
 parser=argparse.ArgumentParser()
 parser.add_argument("device")
-parser.add_argument("--case",choices=["consultation","chatgpt","api-keys","cards","remove","treatment","review","review-direct","visit-files","layout","archive-unlock","archive-cloud-key","archive-inspection","sync","lab","batch","pharmacy-live","validation","record-links"],default="consultation")
+parser.add_argument("--case",choices=["consultation","chatgpt","api-keys","cards","remove","treatment","review","review-direct","visit-files","layout","archive-unlock","archive-cloud-key","archive-inspection","sync","lab","batch","pharmacy-live","validation","record-links","parity"],default="consultation")
 parser.add_argument("--sync-fixture",type=Path)
 parser.add_argument("--sync-relay")
 args=parser.parse_args()
@@ -44,6 +44,7 @@ if args.case=="cards": bundle="by.healthstory.cardediting.qa"
 if args.case=="remove": bundle="by.healthstory.recordremoval.qa"
 if args.case=="validation": bundle="by.healthstory.validation.qa"
 if args.case=="record-links": bundle="by.healthstory.recordlinks.qa"
+if args.case=="parity": bundle="by.healthstory.parity.qa"
 work=Path(tempfile.mkdtemp(prefix="hs-corpus-uitest-"))
 print("Evidence:",work,flush=True)
 ios=work/"ios"
@@ -132,6 +133,7 @@ else:
     screens["validation"]="ValidationUI"
     screens["api-keys"]="APIKeysUI"
     screens["record-links"]="RecordLinksUI"
+    screens["parity"]="ParityUI"
     shutil.copy(native/(screens.get(args.case,"ConsultationUI")+".swift"),ios/"CorpusUI")
 project_file=project/"project.pbxproj"
 data=json.loads(subprocess.check_output(["plutil","-convert","json","-o","-",project_file]))
@@ -202,7 +204,16 @@ else:
                  manualMeds=[dict(id="medicine",name="Учебный препарат",strength="2 мг",instructions="Учебная схема")]),
             dict(id="source2",parent="source1",kind="Рекомендации",state="read",name="Второй-QA.txt",type="text/plain",raw="SECOND FILE QA")]
     if args.case=="lab":
-        profile["files"]=[]
+        profile["files"]=[
+            dict(id="qa-hdl-"+str(i),name="Липидограмма QA "+date+".txt",type="text/plain",category="Лаборатория",date=date,visit="",
+                 lab=dict(name="Липидограмма QA",rows=[dict(name=name,value=value,unit=unit,specimen=specimen)],
+                          **({"date":"","documentDate":date} if i==0 else {"date":date})))
+            for i,(date,name,value,unit,specimen) in enumerate([
+                ("2022-01-11","ЛПВП-холестерин (HDL)","1,2","ммоль/л",""),
+                ("2023-02-12","HDL-C","54","mg/dL",""),
+                ("2024-03-13","Холестерин ЛПВП","1,4","ммоль/л","Сыворотка"),
+            ])
+        ]
         directory=sandbox/"Documents";directory.mkdir(exist_ok=True)
         for name in ["01-baseline.pdf","05-unclear.png"]: shutil.copy(repo/"tests/medical-corpus/labs"/name,directory/name)
         shutil.copy(repo/"tests/medical-corpus/labs/01-baseline.pdf",directory/"01-duplicate.pdf")
@@ -219,6 +230,12 @@ else:
     if args.case in ("review","review-direct"):
         from review_fixture import profile as review_profile, verify
         profile=review_profile()
+    if args.case=="parity":
+        profile["addedVisits"][0].append([dict(id="qa-previous",name="Учебный препарат",strength="5 мг",form="таблетки",instructions="Вымышленная схема")])
+        profile["addedVisits"].append(["repeat","2026-01-10","Повторный визит QA","d","Эпизод QA","","scope","ep"])
+        profile["files"][0]["name"]="Бланк QA.txt"
+        profile["files"].append(dict(id="qa-pdf",name="Многостраничный бланк QA.pdf",category="Лаборатория",type="application/pdf",visit="",
+            labDraft=dict(name="Учебный бланк",date="2026-01-08",rows=[dict(name="Показатель QA",value="1",unit="ед.")])))
     if args.case=="record-links":
         profile["addedDoctors"].append(dict(id="d-other",values=["Другой врач QA","Хирург","Стенд"]))
         profile["addedVisits"].append(["another","2026-01-07","Другой врач в эпизоде QA","d-other","Эпизод QA","","scope","ep"])
@@ -230,6 +247,11 @@ else:
     family=dict(id="family-qa",kind="family",name="Стенд",adminId="p-main",members=members)
     payload=dict(version=2,data=dict(schemaVersion=2,family=family,profiles={"p-main":profile,"p-other":{"files":[],"fields":[{"id":"chronic","label":"QA","value":"PRIVATE-OTHER-PROFILE"}]}}),
                  files=[{"id":"p-main/"+f["id"],"type":"text/plain","bytes":base64.b64encode(b"QA").decode()} for f in profile["files"]])
+    if args.case=="parity":
+        original=next(f for f in payload["files"] if f["id"]=="p-main/analysis")
+        original["bytes"]=base64.b64encode(b"QA SOURCE PREVIEW").decode()
+        pdf=next(f for f in payload["files"] if f["id"]=="p-main/qa-pdf")
+        pdf.update(type="application/pdf",bytes=base64.b64encode((repo/"tests/medical-corpus/visits/V02-two-page-visit.pdf").read_bytes()).decode())
     if args.case=="batch":
         payload["files"]=[dict(id="p-main/"+f["id"],type="text/plain",bytes=base64.b64encode(f["raw"].encode()).decode()) for f in profile["visitDrafts"]]
     if args.case=="record-links":
@@ -249,10 +271,21 @@ else:
         copy={"version":2,"data":{"schemaVersion":2,"family":{"id":"family-copy","kind":"family","name":"Семья из копии","adminId":"p-copy","members":[{"id":"p-copy","name":"Профиль из копии","role":"Взрослый"}]},"profiles":{"p-copy":{"files":[{"id":"proof","name":"Оригинал из копии.pdf"}]}}},"files":[{"id":"p-copy/proof","type":"application/pdf","bytes":base64.b64encode(pdf).decode()}]}
         subprocess.run(["node","-e",encoder,inspection],input=json.dumps(copy).encode(),check=True)
 run("xcodebuild","test-without-building","-xctestrun",next(products.glob("Corpus*.xctestrun")),"-destination",dest,"-parallel-testing-enabled","NO","-resultBundlePath",work/"result.xcresult",log="test.log")
-if treatment or args.case in ("review","review-direct","visit-files","lab","batch","cards","remove","record-links","validation"):
+if treatment or args.case in ("review","review-direct","visit-files","lab","batch","cards","remove","record-links","validation","parity"):
     folder=Path(subprocess.check_output(["xcrun","simctl","get_app_container",device,bundle,"data"],text=True).strip())/"Library/Application Support"
     decoder="""const {createDecipheriv}=require('crypto'),fs=require('fs'),b=fs.readFileSync(process.argv[1]),c=createDecipheriv('aes-256-gcm',Buffer.alloc(32,66),b.subarray(4,16));c.setAuthTag(b.subarray(-16));process.stdout.write(Buffer.concat([c.update(b.subarray(16,-16)),c.final()]));"""
     saved=json.loads(subprocess.check_output(["node","-e",decoder,folder/"family.health"]))
+    if args.case=="parity":
+        profile=saved["data"]["profiles"]["p-main"]
+        assert [row for row in profile["visitLinks"] if row["visit"]=="repeat" and row["target"]=="analysis"]
+        assert len([f for f in saved["files"] if f["id"]=="p-main/analysis"])==1
+        decision=next(row for row in profile["changes"] if row["visit"]=="repeat")
+        assert decision["kind"]=="continue" and decision["medId"]=="qa-previous" and decision["before"]["strength"]=="5 мг"
+        assert profile["addedVisits"][0][8][0]["id"]=="qa-previous"
+        source=next(row for row in profile["files"] if row["id"]=="qa-pdf")["labPosition"]
+        assert source["sourceId"]=="qa-pdf" and source["page"]==2, source
+        print("PASS native episode history, preselected consultation, linked lab, original/fields switch and previous therapy decision")
+        sys.exit(0)
     if args.case=="validation":
         p=saved["data"]["profiles"]["p-main"]
         visit=next(v for v in p["addedVisits"] if v[2]=="Validation visit")
@@ -316,7 +349,9 @@ if treatment or args.case in ("review","review-direct","visit-files","lab","batc
         sys.exit(0)
     if args.case=="lab":
         import hashlib
-        records=saved["data"]["profiles"]["p-main"]["files"]
+        saved_files=saved["data"]["profiles"]["p-main"]["files"]
+        assert [f for f in saved_files if f["id"].startswith("qa-hdl-")]==profile["files"]
+        records=[f for f in saved_files if not f["id"].startswith("qa-hdl-")]
         assert len(records)==2 and all(not f["visit"] for f in records)
         assert len(saved["data"]["profiles"]["p-main"]["addedVisits"])==len(profile["addedVisits"])
         originals={f["id"]:base64.b64decode(f["bytes"]) for f in saved["files"]}
@@ -326,8 +361,9 @@ if treatment or args.case in ("review","review-direct","visit-files","lab","batc
         baseline=next(f for f in records if f["name"].endswith(".pdf"))
         assert "labDraft" not in baseline and baseline["lab"]["date"]=="2025-01-08"
         assert any(r["name"]=="Гемоглобин" and r["value"]=="132" and r["unit"]=="г/л" for r in baseline["lab"]["rows"])
-        assert "lab" not in next(f for f in records if f["name"].endswith(".png"))
-        print("PASS standalone PDF+image import, persisted draft, verified result and both original SHA-256 values")
+        image=next(f for f in records if f["name"].endswith(".png"))
+        assert "lab" not in image and image["labDraft"]["rows"], "the second file must be recognized without opening it"
+        print("PASS batch PDF+image recognition, verified result, direct profile search and both original SHA-256 values")
         sys.exit(0)
     if args.case=="review-direct":
         reviewed=saved["data"]["profiles"]["p-main"]

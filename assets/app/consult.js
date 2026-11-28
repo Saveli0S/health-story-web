@@ -159,7 +159,7 @@ function consultContext(selected){
     const info=reportInfo(lab);
     const results=[];
     for(const row of info.rows){
-      const point=labSeriesPoint(row,info.name,lab.id);
+      const point=labSeriesPoint(row,info.name);
       const selectedTrend=indicators.has(point.key);
       if(!labIds.has(lab.id)&&!selectedTrend)continue;
       const result={показатель:row.name,результат:row.value,единица:row.unit,диапазон:row.range,биоматериал:point.specimen||'Не указан'};

@@ -10,7 +10,7 @@ final class RecordRemovalUI: XCTestCase {
         key.tap()
         key.typeText("QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI")
         app.buttons["Открыть архив"].tap()
-        app.buttons["Мая Макетова"].tap()
+        XCTAssertTrue(app.navigationBars["Профиль"].waitForExistence(timeout:10),app.debugDescription)
         let manager=app.buttons["Управление данными"]
         for _ in 0..<4 {if manager.isHittable {break};app.swipeUp()}
         XCTAssertTrue(manager.exists)

@@ -33,6 +33,7 @@ enum VisitDrafts {
             if let lab=file.lab {row["labDraft"]=lab.json}
             if file.id==root {
                 row["fields"]=fields(draft);row["manualMeds"]=medicines(draft);row["recognizedDate"]=draft.recognizedDate
+                row["position"]=draft.sourcePosition.json
             }
             return row
         }
@@ -42,6 +43,7 @@ enum VisitDrafts {
         let mainHeader=(rows.first{!caption($0["header"] as? JournalObject ?? [:],"title").isEmpty} ?? main)["header"] as? JournalObject ?? [:]
         let fields=mainHeader.merging(main["fields"] as? JournalObject ?? [:]){_,new in new}
         var draft=NativeVisitDraft()
+        draft.sourcePosition=NativeSourcePosition(main["position"] as? JournalObject ?? [:])
         draft.title=caption(fields,"title");draft.note=caption(fields,"note");draft.clinic=caption(fields,"clinic")
         draft.doctor=caption(fields,"doctorName");draft.specialty=caption(fields,"specialty");draft.recommendation=caption(fields,"recommendation")
         let selected=caption(fields,"doctor")

@@ -1,0 +1,205 @@
+{
+  "engine": "iPhone WebKit emulation",
+  "mode": "workflow",
+  "outcomes": [
+    {
+      "id": "V01",
+      "header": {
+        "episodeName": "Острый фарингит",
+        "doctorName": "Веточкина Ульяна Львовна",
+        "specialty": "Терапевт",
+        "date": "2026-03-12",
+        "title": "Первичный приём терапевта",
+        "note": "Першение в горле, утомляемость.",
+        "clinic": "Клиника «Тестовый клевер»"
+      },
+      "mismatches": [],
+      "manualCorrections": [],
+      "verifiedPreview": [
+        "V01-visit.pdf"
+      ],
+      "headerPrompts": [
+        ""
+      ],
+      "medicines": [
+        {
+          "name": "Клеверин",
+          "strength": "5 мг",
+          "form": "таблетки",
+          "instructions": "По 1 таблетке в день, 3 дня."
+        }
+      ],
+      "verificationPrompts": [
+        ""
+      ],
+      "recommendation": "Принести дневник наблюдений на контрольный осмотр.",
+      "errors": [],
+      "remote": [],
+      "exactExtraction": true,
+      "workflowPassed": true
+    },
+    {
+      "id": "V02",
+      "header": {
+        "episodeName": "Острый фарингит",
+        "doctorName": "Полевой Ян Ильич",
+        "specialty": "Оториноларинголог",
+        "date": "2026-03-19",
+        "title": "Выписка о повторной консультации",
+        "note": "При глотании остаётся небольшая боль.",
+        "clinic": "Бюро «Янтарный макет»"
+      },
+      "mismatches": [],
+      "manualCorrections": [],
+      "verifiedPreview": [
+        "V02-two-page-visit.pdf"
+      ],
+      "headerPrompts": [
+        ""
+      ],
+      "medicines": [
+        {
+          "name": "Макетол",
+          "strength": "0,05 %",
+          "form": "спрей",
+          "instructions": "По 1 дозе 2 раза в день, 2 дня."
+        }
+      ],
+      "verificationPrompts": [
+        ""
+      ],
+      "recommendation": "Записать дату окончания курса.\nНа повторный приём взять первый лист выписки.",
+      "errors": [],
+      "remote": [],
+      "exactExtraction": true,
+      "workflowPassed": true
+    },
+    {
+      "id": "V03",
+      "header": {
+        "episodeName": "",
+        "doctorName": "",
+        "specialty": "",
+        "date": "",
+        "title": "",
+        "note": "",
+        "clinic": ""
+      },
+      "mismatches": [
+        {
+          "field": "episodeName",
+          "expected": "сухость кожи.",
+          "actual": ""
+        },
+        {
+          "field": "doctorName",
+          "expected": "Лаврова М. П.",
+          "actual": ""
+        },
+        {
+          "field": "date",
+          "expected": "2026-04-21",
+          "actual": ""
+        },
+        {
+          "field": "note",
+          "expected": "сухость кожи.",
+          "actual": ""
+        },
+        {
+          "field": "clinic",
+          "expected": "Клиника Листопад",
+          "actual": ""
+        },
+        {
+          "field": "medicine.name",
+          "expected": "Дермотест",
+          "actual": ""
+        },
+        {
+          "field": "medicine count",
+          "expected": 1,
+          "actual": 0
+        },
+        {
+          "field": "recommendation",
+          "expected": "повторный осмотр.",
+          "actual": ""
+        }
+      ],
+      "manualCorrections": [
+        "episodeName",
+        "doctorName",
+        "date",
+        "title",
+        "note"
+      ],
+      "verifiedPreview": [
+        "V03-handwriting.png"
+      ],
+      "headerPrompts": [
+        "Уточните по оригиналуКакую дату визита указал врач?Как называется визит?Какой эпизод или диагноз указан?Как зовут врача?",
+        "Что написано в этих строках?Распознаватель не уверен в отдельных словах. Сравните строки с оригиналом и исправьте нужные поля.Стр. 1 · Клана ЛистопадСтр. 1 · Boar : Aabpota ARСтр. 1 · Haode: Сухость Kore.Стр. 1 · Duarnoy.: cyroems kore.Стр. 1 · Иеление.: ДОермотест : 7 mz.Стр. 1 · | Fexomengagun ; повторней ослотр.Стр. 1 · | = eee"
+      ],
+      "medicines": [],
+      "verificationPrompts": [
+        "Уточните по оригиналуЕсть ли на оригинале лекарственные назначения? Добавьте пропущенные строки или отметьте отсутствие.",
+        "Что написано в этих строках?Распознаватель не уверен в отдельных словах. Сравните строки с оригиналом и исправьте нужные поля.Стр. 1 · Клана ЛистопадСтр. 1 · Boar : Aabpota ARСтр. 1 · Haode: Сухость Kore.Стр. 1 · Duarnoy.: cyroems kore.Стр. 1 · Иеление.: ДОермотест : 7 mz.Стр. 1 · | Fexomengagun ; повторней ослотр.Стр. 1 · | = eee"
+      ],
+      "deferred": true,
+      "blockedAnalysis": true,
+      "transcription": {
+        "nameAndHeaderFromHumanTranscript": true,
+        "unknownDoseBlocked": true,
+        "punctuationOnlyRegimenBlocked": true,
+        "reviewEnabledAfterExplicitClarification": true
+      },
+      "recommendation": "",
+      "errors": [],
+      "remote": [],
+      "exactExtraction": false,
+      "workflowPassed": true
+    },
+    {
+      "id": "V04",
+      "header": {
+        "episodeName": "Синдром сухого глаза",
+        "doctorName": "Тестова Нина Львовна",
+        "specialty": "Офтальмолог",
+        "date": "2026-04-04",
+        "title": "Первичный осмотр",
+        "note": "Сухость глаз к вечеру.",
+        "clinic": "Кабинет «Учебный берег»"
+      },
+      "mismatches": [],
+      "manualCorrections": [],
+      "verifiedPreview": [
+        "V04-a-front.jpg",
+        "V04-b-advice.jpg"
+      ],
+      "headerPrompts": [
+        "",
+        "Что написано в этих строках?Распознаватель не уверен в отдельных словах. Сравните строки с оригиналом и исправьте нужные поля.Стр. 1 · УЧЕБНЫЙ ОБРАЗЕЦ / VO04Стр. 1 · ©Образцол 2 мг капли"
+      ],
+      "medicines": [
+        {
+          "name": "Образцол",
+          "strength": "2 мг",
+          "form": "капли",
+          "instructions": "По 1 капле в день, 2 дня."
+        }
+      ],
+      "verificationPrompts": [
+        "",
+        "Что написано в этих строках?Распознаватель не уверен в отдельных словах. Сравните строки с оригиналом и исправьте нужные поля.Стр. 1 · УЧЕБНЫЙ ОБРАЗЕЦ / VO04Стр. 1 · ©Образцол 2 мг капли"
+      ],
+      "reopenedWithBothOriginalsAndRecommendations": true,
+      "clinicEditPersisted": true,
+      "recommendation": "Взять список капель на следующий приём.",
+      "errors": [],
+      "remote": [],
+      "exactExtraction": true,
+      "workflowPassed": true
+    }
+  ]
+}

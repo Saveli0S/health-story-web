@@ -9,7 +9,7 @@ final class ConsultationUI: XCTestCase {
         XCTAssertTrue(key.waitForExistence(timeout:10),app.debugDescription)
         key.tap();key.typeText("QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI")
         app.buttons["Открыть архив"].tap()
-        app.buttons["Мая Макетова"].tap()
+        XCTAssertTrue(app.navigationBars["Профиль"].waitForExistence(timeout:10),app.debugDescription)
         app.buttons["ИИ-консультация"].tap()
         return app
     }

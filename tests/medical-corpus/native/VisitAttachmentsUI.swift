@@ -14,7 +14,8 @@ final class VisitAttachmentsUI:XCTestCase {
         let key=app.secureTextFields.firstMatch
         XCTAssertTrue(key.waitForExistence(timeout:15));key.tap()
         key.typeText("QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI")
-        tap(app.buttons["Открыть архив"]);tap(app.buttons["Мая Макетова"])
+        tap(app.buttons["Открыть архив"])
+        XCTAssertTrue(app.navigationBars["Профиль"].waitForExistence(timeout:10),app.debugDescription)
         tap(app.buttons.matching(NSPredicate(format:"label CONTAINS 'Осмотр QA'")).firstMatch)
         tap(app.buttons["Прикрепить фото, PDF или другой файл"])
         tap(app.buttons["Выбрать файлы"]);tap(app.buttons["Прикрепить к визиту"])

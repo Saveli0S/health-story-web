@@ -8,9 +8,7 @@ final class ChatGPTUI: XCTestCase {
             key.typeText("QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI")
             app.buttons["Открыть архив"].tap()
         }
-        let profile=app.buttons["Мая Макетова"]
-        XCTAssertTrue(profile.waitForExistence(timeout:10))
-        profile.tap()
+        XCTAssertTrue(app.navigationBars["Профиль"].waitForExistence(timeout:10),app.debugDescription)
         let history=app.buttons["ИИ-консультация"]
         for _ in 0..<4 where !history.isHittable {app.swipeUp()}
         XCTAssertTrue(history.isHittable,app.debugDescription)

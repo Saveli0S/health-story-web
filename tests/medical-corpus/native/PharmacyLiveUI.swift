@@ -11,9 +11,7 @@ final class PharmacyLiveUI: XCTestCase {
         key.tap()
         key.typeText("QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI")
         app.buttons["Открыть архив"].tap()
-        let profile = app.buttons["Мая Макетова"]
-        XCTAssertTrue(profile.waitForExistence(timeout: 10))
-        profile.tap()
+        XCTAssertTrue(app.navigationBars["Профиль"].waitForExistence(timeout:10),app.debugDescription)
         app.buttons.containing(NSPredicate(format: "label BEGINSWITH 'Осмотр QA'")).firstMatch.tap()
         let treatment = app.buttons["Разбор лечения и цены лекарств"]
         for _ in 0..<5 where !treatment.isHittable { app.swipeUp() }

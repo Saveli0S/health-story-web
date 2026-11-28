@@ -10,15 +10,18 @@ const previous=process.argv[2];
 if(!previous)throw Error('Specify the previous release directory');
 const current=path.resolve(__dirname,'..');
 const mobile=process.argv.includes('--iphone');
+const labSearch=process.argv.includes('--lab-search');
 const mime={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.ttf':'font/ttf'};
 async function run(){
   let root=path.resolve(previous);
+  let nextRelease=false;
   const server=http.createServer(async(req,res)=>{
     try {
       const pathname=new URL(req.url,'http://localhost').pathname;
       const name=pathname.replace(/^\/health-story-web\//,'')||'index.html';
       if(!pathname.startsWith('/health-story-web/')||name.includes('..'))throw Error();
-      const bytes=await fs.readFile(path.join(root,name));
+      let bytes=await fs.readFile(path.join(root,name));
+      if(nextRelease&&name==='sw.js')bytes=Buffer.from(bytes.toString().replace(/(const version='[^']+)'/,"$1-next'"));
       const etag='"'+crypto.createHash('sha256').update(bytes).digest('hex')+'"';
       res.setHeader('Cache-Control','public, max-age=600');
       res.setHeader('Content-Type',mime[path.extname(name)]||'application/octet-stream');
@@ -35,7 +38,7 @@ async function run(){
     const ctx=await browser.newContext(mobile?devices['iPhone 13']:{});
     const p=await ctx.newPage();
     p.setDefaultTimeout(15000);
-    const family=process.argv.includes('--family');
+    const family=labSearch||process.argv.includes('--family');
     const pdf=await fs.readFile(path.join(__dirname,'medical-corpus/visits/V02-two-page-visit.pdf'));
     const digest=crypto.createHash('sha256').update(pdf).digest('hex');
     const marker='Заметка до обновления веб-приложения';
@@ -47,12 +50,19 @@ async function run(){
       await p.getByRole('heading',{name:'Родитель',exact:true}).waitFor();
       await p.goto(base+'?section=settings');
       await p.locator('#direct-auto').check();
-      await p.evaluate(async bytes=>{
+      await p.evaluate(async ({bytes,labSearch})=>{
         await fileBlob(person.id+'/old-pdf',new Blob([Uint8Array.from(bytes)],{type:'application/pdf'}));
         current().files.push({id:'old-pdf',name:'Учебный визит.pdf',category:'Другое',type:'application/pdf',date:'2026-11-25'});
+        if(labSearch)for(const [i,date] of ['2024-01-05','2025-01-05'].entries()){
+          current().files.push({id:'trend-'+i,name:'Учебный бланк '+i,type:'application/pdf',category:'Лаборатория',date,
+            lab:{date,category:'Биохимия',name:'Учебные липиды',laboratory:'QA',rows:[
+              {name:'ЛПВП-холестерин (HDL)',value:String(1+i/10),unit:'ммоль/л'},
+              {name:'ЛПНП-холестерин (LDL)',value:String(3+i/10),unit:'ммоль/л'}
+            ]}});
+        }
         if(!saveState())throw Error('Failed to persist the PDF record');
-      },Array.from(pdf));
-      await p.goto(base+'?section=files');
+      },{bytes:Array.from(pdf),labSearch});
+      await p.goto(base+'?section='+(labSearch?'labs':'files'));
     }else{
       await p.goto(base+'?visit=a1');
       await p.locator('dialog [data-action=addNote]').click();
@@ -62,6 +72,16 @@ async function run(){
     }
     await p.evaluate(()=>navigator.serviceWorker.ready);
     await p.waitForFunction(()=>navigator.serviceWorker.controller!=null);
+    async function checkLabSearch(rows, count){
+      await p.getByRole('heading',{name:'Анализы',exact:true}).waitFor();
+      await p.locator('main input[type=search]').fill('хол');
+      for(const marker of [/ЛПВП|HDL/,/ЛПНП|LDL/]){
+        const results=p.locator('main [data-action=trend]').filter({hasText:marker});
+        assert.equal(await results.count(),rows);
+        for(const row of await results.allTextContents())assert.match(row,new RegExp('результатов: '+count));
+      }
+    }
+    if(labSearch)await checkLabSearch(2,1);
     root=current;
     const wanted=(await fs.readFile(path.join(current,'sw.js'),'utf8')).match(/const version='([^']+)'/)[1];
     await p.evaluate(async()=>{
@@ -71,6 +91,20 @@ async function run(){
       await claimed;
     });
     await p.waitForFunction(async v=>(await caches.keys()).filter(k=>k.startsWith('health-story-shell-')).join('')===v,wanted,{timeout:30000});
+    if(labSearch){
+      // An already open document keeps executing its old JavaScript after its worker updates.
+      await checkLabSearch(2,1);
+      await p.reload();
+      await checkLabSearch(1,2);
+      nextRelease=true;
+      await p.evaluate(()=>window.dispatchEvent(new Event('online')));
+      await p.getByText('Доступна новая версия дневника.',{exact:true}).waitFor();
+      assert.equal(await p.locator('main input[type=search]').inputValue(),'хол');
+      await p.getByRole('button',{name:'Открыть актуальную версию'}).click();
+      await checkLabSearch(1,2);
+      assert.equal(await p.locator('#refresh-notice').isVisible(),false);
+      await p.goto(base+'?section=files');
+    }
     for(const offline of [false,true]){
       await ctx.setOffline(offline);
       await p.reload({waitUntil:'domcontentloaded',timeout:30000});
@@ -87,7 +121,7 @@ async function run(){
       const safe=await p.evaluate(()=>typeof anonymizeClinicalText==='function'&&cleanClinicalText('Карта QA-789.').includes('[номер скрыт]'));
       assert.equal(safe,true,offline?'old code after offline reload':'old code after online reload');
     }
-    console.log('PASS',mobile?'iPhone WebKit':'desktop Chrome',family?'updated encrypted family, provider consent and rendered PDF verified online and offline by checksum':'note survived online and offline upgrade');
+    console.log('PASS',mobile?'iPhone WebKit':'desktop Chrome',family?'updated encrypted family, provider consent and rendered PDF verified online and offline by checksum':'note survived online and offline upgrade',labSearch?'grouped laboratory search and open-tab update notice verified':'');
   } finally {await browser?.close();await new Promise(resolve=>server.close(resolve))}
 }
 run().catch(e=>{console.error(e.message);process.exitCode=1});

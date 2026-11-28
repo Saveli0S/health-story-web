@@ -600,7 +600,7 @@ function readAnswerItems(answer,payload,attestations=[]){
     if(!Array.isArray(rows))return missing('В ответе отсутствуют отдельные структурированные оценки препаратов. Запросите сведения по каждому назначению и ссылки на источники.');
     const duplicates=medications.filter(x=>norm(x.название)===norm(m.название)).length>1;
     const matches=rows.filter(x=>typeof x?.название==='string'&&norm(x.название)===norm(m.название)&&
-      (x.дозировка?norm(String(x.дозировка))===norm(m.дозировка||''):!duplicates));
+      norm(String(x.дозировка??''))===norm(m.дозировка||''));
     if(matches.length!==1||duplicates&&!m.дозировка)return missing('Не удалось однозначно сопоставить ответ с названием и дозировкой назначения.');
     if(duplicates&&medications.filter(x=>norm(x.название)===norm(m.название)&&norm(x.дозировка||'')===norm(m.дозировка||'')).length>1)
       return missing('Одинаковое название и дозировка встречаются в нескольких назначениях. Уточните, к какой схеме относится оценка.');

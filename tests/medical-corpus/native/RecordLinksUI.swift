@@ -9,7 +9,7 @@ final class RecordLinksUI:XCTestCase {
             key.tap();key.typeText("QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI")
             app.buttons["Открыть архив"].tap()
         }
-        app.buttons["Мая Макетова"].tap()
+        XCTAssertTrue(app.navigationBars["Профиль"].waitForExistence(timeout:10),app.debugDescription)
         func reach(_ element:XCUIElement) {
             for _ in 0..<9 {
                 if element.exists && element.isHittable {element.tap();return}

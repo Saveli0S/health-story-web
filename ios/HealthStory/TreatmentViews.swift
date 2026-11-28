@@ -1,12 +1,17 @@
 import SwiftUI
 
 struct CoursePeriod: Equatable {
-    var start: String, planned: String, end: String, closed: Bool, unknown: Bool, note: String
+    var start: String, planned: String, end: String, closed: Bool, unknown: Bool, note: String, unconfirmed: Bool
     init(_ record: JournalObject = [:]) {
         start=caption(record,"start"); planned=caption(record,"planned"); end=caption(record,"end")
         closed=record["closed"] as? Bool == true; unknown=record["unknown"] as? Bool == true; note=caption(record,"note")
+        unconfirmed=record["unconfirmed"] as? Bool == true
     }
-    var json: JournalObject { ["start":start,"planned":planned,"end":end,"closed":closed,"unknown":unknown,"note":note] }
+    var json: JournalObject {
+        var result:JournalObject=["start":start,"planned":planned,"end":end,"closed":closed,"unknown":unknown,"note":note]
+        if unconfirmed {result["unconfirmed"]=true}
+        return result
+    }
     var summary: String {
         let finish = closed ? (end.isEmpty ? "окончание неизвестно" : "по "+end) : (planned.isEmpty ? "окончание не указано" : "по плану до "+planned)
         return [start.isEmpty ? "начало не указано" : "с "+start,finish].joined(separator:" · ")
@@ -42,13 +47,14 @@ struct NativeCourse: Identifiable {
     var change:JournalObject?, continued=false
     var period:CoursePeriod { CoursePeriod(medicine["period"] as? JournalObject ?? [:]) }
     var title:String { [caption(medicine,"name"),caption(medicine,"strength")].filter{!$0.isEmpty}.joined(separator:" · ") }
-    var active:Bool { !period.closed && change==nil && !continued }
+    var active:Bool { !period.closed && !period.unconfirmed && change==nil && !continued }
     var status:String {
         if let change {
             let status=["stop":"Отменён","replace":"Заменён","dose":"Доза изменена"][caption(change,"kind")] ?? "Схема изменена"
             return status+" · "+caption(change,"date")
         }
         if continued{return "Продолжение предыдущей схемы"}
+        if period.unconfirmed{return "Приём не подтверждён"}
         return period.closed ? "Завершён":"Курс идёт"
     }
 }
@@ -110,13 +116,16 @@ enum NativeTreatments {
         guard let current=all(p).first(where:{$0.id==course.id}),current.period==course.period,
               signature(current.medicine)==signature(course.medicine),
               current.change==nil,!current.continued else {throw JournalError("Курс изменился. Откройте его заново.")}
-        func updated(_ m:JournalObject)->JournalObject {
+        try update(course,in:&p) { m in
             var m=m, old=m["period"] as? JournalObject ?? [:]
+            if !period.unconfirmed {old.removeValue(forKey:"unconfirmed")}
             old.merge(period.json){_,new in new};m["period"]=old;return m
         }
+    }
+    static func update(_ course:NativeCourse,in p:inout JournalObject,updated:(JournalObject)throws->JournalObject)throws {
         func modify(_ meds:inout [JournalObject])throws {
             guard let i=meds.lastIndex(where:{medicineID($0)==course.id.medicine}) else {throw JournalError("Назначение больше недоступно.")}
-            meds[i]=updated(meds[i])
+            meds[i]=try updated(meds[i])
         }
         switch course.id.type {
         case .visit:
@@ -130,7 +139,7 @@ enum NativeTreatments {
         case .change:
             var changes=entries(p,"changes")
             guard let i=changes.firstIndex(where:{caption($0,"id")==course.id.id}),let m=changes[i]["replacement"] as? JournalObject else {throw JournalError("Решение врача больше недоступно.")}
-            changes[i]["replacement"]=updated(m);p["changes"]=changes
+            changes[i]["replacement"]=try updated(m);p["changes"]=changes
         }
     }
 }
@@ -158,7 +167,9 @@ private struct CourseLabel:View {
             Text(item.title).font(.headline)
             let regimen=[caption(item.medicine,"form"),caption(item.medicine,"instructions")].filter{!$0.isEmpty}.joined(separator:" · ")
             if !regimen.isEmpty{Text(regimen)}
-            Text(item.period.summary).font(.subheadline).foregroundStyle(.secondary)
+            if !item.period.unconfirmed {
+                Text(item.period.summary).font(.subheadline).foregroundStyle(.secondary)
+            }
             if !item.active{Text(item.status).font(.subheadline).bold()}
             if !item.period.note.isEmpty{Text(item.period.note).font(.footnote)}
         }
@@ -208,6 +219,9 @@ struct TreatmentSection:View {
                     VStack(alignment:.leading,spacing:6){CourseLabel(item:item)
                         if journal.editable && item.change==nil && !item.continued{
                             Button("Изменить даты"){editor = .period(item)}.buttonStyle(.borderless).accessibilityIdentifier("course-period-"+item.id.medicine)
+                            NavigationLink("Редактировать назначение") {
+                                NativePrescriptionEditor(journal:journal,owner:owner,course:item)
+                            }
                         }
                     }
                     .listRowBackground(visit == nil ? JournalTheme.treatment : Color.white)
@@ -238,6 +252,7 @@ private struct CoursePeriodEditor:View {
         if !data.closed {data.unknown=false;data.end=""}
         else if data.unknown {data.end=""}
         else if data.end.isEmpty {data.end=dayString()}
+        if !data.closed || !data.start.isEmpty || !data.end.isEmpty {data.unconfirmed=false}
         return data
     }
     private func optionalDate(_ title:String,_ key:WritableKeyPath<CoursePeriod,String>,field:String,issues:[JournalFieldIssue],future:Bool=false)->some View {
@@ -258,7 +273,10 @@ private struct CoursePeriodEditor:View {
         Section("Период приёма"){
             optionalDate("Фактическое начало",\CoursePeriod.start,field:"course-start",issues:visible)
             optionalDate("Плановое окончание",\CoursePeriod.planned,field:"course-planned",issues:visible,future:true)
-            Toggle("Курс завершён",isOn:$period.closed)
+            if item.period.unconfirmed {
+                Text("Приём не подтверждён").font(.subheadline).foregroundStyle(.secondary)
+            }
+            Toggle(period.unconfirmed ? "Хранить только в истории" : "Курс завершён",isOn:$period.closed)
             if period.closed{
                 Toggle("Дата неизвестна",isOn:$period.unknown)
                 if !period.unknown{
@@ -432,9 +450,8 @@ private struct EpisodeBriefContent:View {
         } header: {
             JournalSectionHeading("Эпизод")
         }
-        Section("Визиты"){ForEach(visits.indices,id:\.self){i in
-            let v=visits[i];NavigationLink(NativeTreatments.field(v,1)+" · "+NativeTreatments.field(v,2)){NativeVisitDetails(journal:journal,owner:owner,row:v)}
-        }}
+        if journal.editable { NativeConsultationLink(journal:journal,owner:owner,source:"episode:"+id) }
+        NativeEpisodeTimeline(journal:journal,owner:owner,episode:id,visits:visits)
         Section("Действующие назначения"){if active.isEmpty{Text("Нет активных курсов")};ForEach(active){CourseLabel(item:$0)}}
         let changes=entries(p,"changes").filter{caption($0,"episode")==id || ids.contains(caption($0,"visit"))}
         TreatmentDecisions(rows:changes,profile:p)

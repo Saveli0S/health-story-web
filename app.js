@@ -60,9 +60,13 @@ function act(action,text,id='',classes='text-button',mark=''){
 function external(url,title,classes='external'){return '<a class="'+classes+'" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">'+esc(title)+' ↗</a>'}
 function visitById(id){return person.visits.find(v=>v[0]===id)}
 function visitRows(visits){
-  return visits.map(([id,date,title,doctor,episode])=>`<button type="button" class="visit-row" data-action="visit" data-id="${esc(id)}" aria-label="${esc(title)}, ${dateLabel(date)}, ${esc(doctorLabel(doctor))}">
-  <span class="dateflag" aria-hidden="true"><strong>${Number(date.slice(-2))}</strong><small>${dateLabel(date,{month:'short'}).slice(0,3)}</small></span>
-  <span class="row-main"><strong>${esc(title)}</strong><span class="sub">${esc(doctorLabel(doctor))}</span><span class="row-inner">${icon('folder',true)}${esc(episode)}</span></span>${icon('right',true)}</button>`).join('');
+  return visits.map(([id,date,title,doctor,episode])=>{
+    const fullDate=dateLabel(date,{day:'numeric',month:'long',year:'numeric'});
+    const year=fullDate==='Дата неизвестна'?'':date.slice(0,4);
+    return `<button type="button" class="visit-row" data-action="visit" data-id="${esc(id)}" aria-label="${esc(title)}, ${fullDate}, ${esc(doctorLabel(doctor))}">
+    <span class="dateflag" aria-hidden="true"><strong>${year?Number(date.slice(-2)):'··'}</strong>${year?`<small>${dateLabel(date,{month:'short'}).slice(0,3)}</small><small class="dateflag-year">${esc(year)}</small>`:''}</span>
+    <span class="row-main"><strong>${esc(title)}</strong><span class="sub">${esc(doctorLabel(doctor))}</span><span class="row-inner">${icon('folder',true)}${esc(episode)}</span></span>${icon('right',true)}</button>`;
+  }).join('');
 }
 const sectionIcons={overview:'grid',visits:'calendar',labs:'lab',exams:'book',files:'clip',consults:'spark',settings:'settings'};
 function sectionNav(){return `<div class="workspace-tools"><nav class="section-nav" aria-label="Разделы профиля">${Object.entries(sectionNames).filter(([key])=>key!=='settings').map(([key,label])=>`<button data-action="section" data-id="${key}" ${section===key?'aria-current="page"':''}>${icon(sectionIcons[key],true)}${label}</button>`).join('')}</nav>
@@ -151,6 +155,7 @@ function storeVisitEdit(form,v,updated){
 function showVisit(id){
   const v=visitById(id),meds=prescribedForReview(id),{files,reports:linked,medicines}=visitLinkedRecords(id);
   const reviews=current().reviews.filter(r=>r.visit===id).slice().reverse(),notes=current().notes.filter(n=>n.visit===id);
+  const deleteVisit=deletionButton('addedVisits',id,'Удалить визит');
   openPanel(person.name,v[2],`
     <p class="detail-meta">${icon('calendar')}${dateLabel(v[1],{day:'numeric',month:'long',year:'numeric'})}</p>
     <p class="detail-meta">${visitClinic(v)?'Клиника · '+esc(visitClinic(v)):''} ${readOnly?'':act('editVisitClinic',visitClinic(v)?'Изменить клинику':'Указать клинику',id,'text-button')}</p>
@@ -173,7 +178,8 @@ function showVisit(id){
     <section class="panel-section"><h3>Результаты обследований</h3>${examListing(current().exams.filter(e=>e.visit===id))||'<p class="hint">Нет связанных обследований.</p>'}${readOnly?'':act('newExam','Добавить обследование',id,'text-button','plus')}</section>
     <section id="visit-files" class="panel-section"><h3>Вложения</h3>${files.map(f=>resultRow('file',f.id,f.name,f.category,'clip')).join('')||'<p class="hint">Пока нет файлов.</p>'}${readOnly?'':act('upload','Прикрепить файл',id,'text-button','plus')}</section>
     <section id="visit-notes" class="panel-section"><h3>Пометки к визиту</h3>${notes.map(n=>'<div class="note"><small>'+esc(n.author)+' · '+esc(stamp(n.time))+'</small><p>'+esc(n.text)+'</p></div>').join('')||'<p class="hint">Пометок пока нет.</p>'}
-    ${readOnly?'':act('addNote','Добавить пометку',id,'text-button','plus')}</section>${deletionButton('addedVisits',id,'Удалить визит')}`);
+    ${readOnly?'':act('addNote','Добавить пометку',id,'button secondary','plus')}</section>
+    ${deleteVisit?'<footer class="visit-footer">'+deleteVisit+'</footer>':''}`);
 }
 function showDoctor(id){
   const doctor=person.doctors[id];if(!doctor)return;
@@ -302,6 +308,7 @@ document.addEventListener('change',e=>{
   const el=e.target;
   if(el.id==='search-kind'){filterSearch();return}
   if(readOnly)return;
+  if(el.dataset.recommendationCheck){saveRecommendationCheck(el);return}
   appExtrasChange(el);
   if(el.closest('#manual-form')){
     const f=el.form,saved=current().prompts[f.dataset.id];
@@ -379,12 +386,29 @@ document.addEventListener('keydown',event=>{
   const target=event.target.closest('.trend-chart [role=button]');
   if(target&&['Enter',' '].includes(event.key)){event.preventDefault();target.dispatchEvent(new MouseEvent('click',{bubbles:true}))}
 });
+const refreshNotice=document.querySelector('#refresh-notice');
 if('serviceWorker' in navigator && window.isSecureContext && location.protocol!=='file:'){
-  navigator.serviceWorker.register('sw.js').catch(()=>{});
+  const workers=navigator.serviceWorker;
+  let controller=workers.controller;
+  workers.addEventListener('controllerchange',()=>{
+    const next=workers.controller;
+    if(controller&&next&&next!==controller){
+      document.querySelector('#refresh-message').textContent='Доступна новая версия дневника.';
+      refreshNotice.hidden=false;
+    }
+    controller=next;
+  });
+  const registration=workers.register('sw.js',{updateViaCache:'none'}).catch(()=>null);
+  function checkForShellUpdate(){
+    if(!document.hidden)registration.then(reg=>reg?.update()).catch(()=>{});
+  }
+  checkForShellUpdate();
+  document.addEventListener('visibilitychange',checkForShellUpdate);
+  window.addEventListener('online',checkForShellUpdate);
 }
 window.addEventListener('storage',event=>{
   if(event.key===stateKey&&event.newValue&&event.newValue!==savedView){
-    document.querySelector('#refresh-notice').hidden=false;
+    refreshNotice.hidden=false;
   }
 });
 document.querySelector('#refresh-local').addEventListener('click',()=>location.reload());

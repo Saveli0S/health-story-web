@@ -138,11 +138,16 @@ struct JournalVisitLabel: View {
                 if let date {
                     Text(date.formatted(.dateTime.month(.abbreviated).locale(Locale(identifier: "ru_RU"))))
                         .font(JournalTheme.caption)
+                    Text(verbatim: String(day.prefix(4)))
+                        .font(.caption2)
+                        .monospacedDigit()
                 }
             }
             .foregroundStyle(JournalTheme.green)
-            .frame(minWidth: 48, minHeight: 49)
+            .padding(.vertical, 5)
+            .frame(minWidth: 48, minHeight: 56)
             .padding(.horizontal, 4)
+            .fixedSize(horizontal: true, vertical: false)
             .background(JournalTheme.leaf, in: .rect(cornerRadius: 9))
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {

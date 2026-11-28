@@ -22,16 +22,38 @@ function indicatorGroups(){
   const groups=new Map();
   for(const file of labs()){
     const info=reportInfo(file);
+    const date=info.date||info.documentDate||'';
+    const dateSource=info.date?(info.dateEstimated?'Дата подставлена':''):(info.documentDate?'Дата по бланку':'');
     for(const row of info.rows){
-      const series=labSeriesPoint(row,info.name,file.id);
-      if(!groups.has(series.key))groups.set(series.key,{key:series.key,name:series.name,specimen:series.specimen,unit:series.unit,points:[]});
-      groups.get(series.key).points.push({...series,raw:row,date:info.date,dateEstimated:info.dateEstimated,source:file.id,lab:info.laboratory});
+      const series=labSeriesPoint(row,info.name);
+      if(!groups.has(series.key))groups.set(series.key,{key:series.key,marker:series.marker,name:series.name,specimen:series.specimen,unit:series.unit,points:[]});
+      groups.get(series.key).points.push({...series,raw:row,date,dateSource,source:file.id,lab:info.laboratory,report:info.name});
     }
   }
   return [...groups.values()].sort((a,b)=>a.name.localeCompare(b.name,'ru'));
 }
 function seriesDescription(group){
-  return [group.specimen||'Биоматериал не уточнён',group.unit,!group.specimen&&group.points?.[0]?.date?dateLabel(group.points[0].date):''].filter(Boolean).join(' · ');
+  return [group.specimen||'Биоматериал не уточнён',group.unit].filter(Boolean).join(' · ');
+}
+function labDateLabel(date){
+  return dateLabel(date,{day:'numeric',month:'long',year:'numeric'});
+}
+function indicatorCards(){
+  const cards=new Map();
+  for(const group of indicatorGroups()){
+    const id='indicator:'+group.marker;
+    if(!cards.has(id))cards.set(id,{id,name:group.name,series:[]});
+    cards.get(id).series.push(group);
+  }
+  return [...cards.values()];
+}
+function indicatorSearchRows(){
+  return indicatorCards().map(card=>{
+    const points=card.series.flatMap(group=>group.points);
+    const description=card.series.length===1?seriesDescription(card.series[0]):'Разные биоматериалы или единицы';
+    return {type:'trend',id:card.id,title:card.name,icon:'trend',meta:description+' · результатов: '+points.length,
+      terms:[...new Set(points.flatMap(p=>[p.search,p.raw.name,p.report,p.lab,tagLabels('lab',p.source)]))].filter(Boolean).join(' ')};
+  });
 }
 function labDraftListing(query,category){
   if(readOnly)return '';
@@ -55,21 +77,35 @@ function labInput(row={}){
     <label>Референсный диапазон из бланка<input name="range" value="${esc(row.range)}"></label>${act('dropLab','Убрать показатель','','inline-action')}</fieldset>`;
 }
 const labReads=new Map();
+function readLabDraft(patient,id,progress=()=>{}){
+  const archive=stateKey,generation=prototypeState.generation;
+  const findFile=()=>stateKey===archive&&prototypeState.generation===generation?
+    prototypeState.profiles[patient]?.files.find(file=>file.id===id&&file.category==='Лаборатория'):null;
+  const file=findFile(),key=archive+'/'+patient+'/'+id;
+  if(!file||file.labDraft||file.lab)return Promise.resolve(file?.labDraft||file?.lab);
+  if(!labReads.has(key))labReads.set(key,(async()=>{
+    let raw='';const issues=[];
+    try {
+      const blob=await fileBlob(patient+'/'+id);
+      raw=await recognizeDocument(new File([blob],file.name,{type:file.type}),isPdf(file),progress,issues,{pdfRows:true});
+    }catch{/* The original remains available for manual reconciliation. */}
+    const target=findFile();
+    if(!target||readOnly)return;
+    if(target.labDraft||target.lab)return target.labDraft||target.lab;
+    const draft=parseLabText(raw,target.name);
+    Object.assign(target,{issues,labRaw:raw,labDraft:draft});
+    saveState();return draft;
+  })().finally(()=>labReads.delete(key)));
+  return labReads.get(key);
+}
 async function verifyLab(id){
   const f=current().files.find(x=>x.id===id&&x.category==='Лаборатория');if(!f)return;
   const patient=person.id, route=routes.at(-1);
   let draft=f.labDraft||f.lab;
   if(!draft){
     openPanel(person.name,'Чтение бланка','<p id="lab-progress" role="status">Распознаём документ на устройстве…</p>');
-    if(!labReads.has(id))labReads.set(id,(async()=>{
-      let raw='';const issues=[];try{
-        const blob=await fileBlob(patient+'/'+id);
-        raw=await recognizeDocument(new File([blob],f.name,{type:f.type}),isPdf(f),msg=>{if(routes.at(-1)===route){const el=document.querySelector('#lab-progress');if(el)el.textContent=msg}},issues,{pdfRows:true});
-      }catch{/* Manual reconciliation is available if the original cannot be read. */}
-      f.issues=issues;f.labRaw=raw;f.labDraft=parseLabText(raw,f.name);saveState();return f.labDraft;
-    })().finally(()=>labReads.delete(id)));
-    draft=await labReads.get(id);
-    if(!panel.open||routes.at(-1)!==route||person.id!==patient)return;
+    draft=await readLabDraft(patient,id,msg=>{if(routes.at(-1)===route){const el=document.querySelector('#lab-progress');if(el)el.textContent=msg}});
+    if(!draft||!panel.open||routes.at(-1)!==route||person.id!==patient)return;
   }
   const today=todayLocal(),date=draft.date||today;
   const estimatedDate=!draft.date||draft.dateEstimated===true?date:'';
@@ -126,34 +162,92 @@ function saveLab(form,defer=false){
 function labCard(id){
   const f=labs().find(x=>x.id===id);if(!f)return;
   const data=reportInfo(f);
-  openPanel('Лабораторный бланк',data.name,'<p class="detail-meta">'+esc([dateLabel(data.date),data.dateEstimated?'Дата подставлена':'',data.laboratory].filter(Boolean).join(' · '))+'</p>'+
+  openPanel('Лабораторный бланк',data.name,'<p class="detail-meta">'+esc([labDateLabel(data.date),data.dateEstimated?'Дата подставлена':'',data.laboratory].filter(Boolean).join(' · '))+'</p>'+
     tagStrip('lab',id)+data.rows.map(r=>{
-      const point=labSeriesPoint(r,data.name,id);
+      const point=labSeriesPoint(r,data.name);
       return '<div class="lab-value"><div><small>'+esc([r.name,point.specimen].filter(Boolean).join(' · '))+'</small><strong>'+esc(r.value)+' '+esc(r.unit)+'</strong><small>'+esc(r.range?'Диапазон по бланку '+r.range:'Диапазон не указан')+'</small></div>'+act('trend','Динамика',point.key,'inline-action','trend')+'</div>';
     }).join('')+
     '<div class="actions">'+(f.visit?act('visit','К визиту',f.visit,'button secondary'):'')+act('file','Исходный бланк',id,'button secondary','clip')+(!readOnly?act('consult','Обсудить с ИИ','lab:'+id,'button primary','spark'):'')+'</div>'+
     (!readOnly&&f.lab?act('verifyLab','Исправить результаты',id,'text-button','edit'):'')+deletionButton('files',id,'Удалить анализ и бланк'));
 }
+function placePointCaptions(marks,width,height){
+  const inset=9,captionHeight=34,gap=6,placed=[],lanes=[];
+  const segments=marks.slice(1).map((mark,i)=>[marks[i],mark]);
+  function crosses(box,[a,b]){
+    const left=Math.max(a.x,box.x),right=Math.min(b.x,box.x+box.w);
+    if(left>right)return false;
+    const y=x=>a.y+(b.y-a.y)*(x-a.x)/(b.x-a.x);
+    const top=a.x===b.x?Math.min(a.y,b.y):Math.min(y(left),y(right));
+    const bottom=a.x===b.x?Math.max(a.y,b.y):Math.max(y(left),y(right));
+    return top<box.y+captionHeight&&bottom>box.y;
+  }
+  for(const mark of marks){
+    const {x,y,labelWidth:w}=mark;
+    const side=y>height/2?1:-1;
+    const positions=[[0,side],[0,-side],[-1,0],[1,0],[-1,side],[1,side],[-1,-side],[1,-side]];
+    const candidates=[12,24,36].flatMap(distance=>positions.map(([dx,dy])=>({w,
+      x:Math.max(inset,Math.min(width-inset-w,x-w/2+dx*(w/2+distance))),
+      y:y-captionHeight/2+dy*(captionHeight/2+distance)})))
+      .filter(box=>box.y>=inset&&box.y+captionHeight<=height-inset&&
+        !marks.some(p=>p.x>box.x-gap&&p.x<box.x+box.w+gap&&p.y>box.y-gap&&p.y<box.y+captionHeight+gap)&&
+        !placed.some(p=>box.x<p.x+p.w+gap&&box.x+box.w+gap>p.x&&box.y<p.y+captionHeight+gap&&box.y+captionHeight+gap>p.y));
+    const near=candidates.find(box=>!segments.some(segment=>crosses(box,segment)))||candidates[0];
+    if(near){mark.caption=near;placed.push(near);continue}
+    let lane=lanes.at(-1);
+    if(!lane||lane.right+gap+w>width-inset){lane={right:inset-gap};lanes.push(lane)}
+    mark.caption={x:Math.min(width-inset-w,Math.max(lane.right+gap,x-w/2)),y:inset-lanes.length*(captionHeight+gap),w};
+    lane.right=mark.caption.x+w;
+  }
+  return lanes.length*(captionHeight+gap);
+}
+
 function pointChart(points,action){
-  const plotted=points.map((p,index)=>({...p,index,n:Number(String(p.value).replace(',','.')),t:Date.parse(p.date)}))
+  const plotted=points.map(p=>({...p,n:Number(String(p.value).replace(',','.')),t:Date.parse(p.date)}))
     .filter(p=>/^[+-]?\d+(?:[.,]\d+)?$/.test(String(p.value))&&Number.isFinite(p.n)&&Number.isFinite(p.t));
   if(!plotted.length)return '<p class="hint">В списке доступны исходные результаты. Для графика нужны числовые значения.</p>';
   const lo=Math.min(...plotted.map(p=>p.n)),hi=Math.max(...plotted.map(p=>p.n)),start=plotted[0].t,end=plotted.at(-1).t;
-  const dates=start===end?'<text text-anchor="middle" x="240" y="151">'+esc(plotted[0].date.slice(0,10))+'</text>':
-    '<text x="32" y="151">'+esc(plotted[0].date.slice(0,10))+'</text><text text-anchor="end" x="444" y="151">'+esc(plotted.at(-1).date.slice(0,10))+'</text>';
-  const xy=plotted.map(p=>({...p,x:start===end?240:62+368*(p.t-start)/(end-start),y:hi===lo?76:120-88*(p.n-lo)/(hi-lo)}));
-  const pointLabel=p=>[p.date,p.dateEstimated?'Дата подставлена':'',p.value+' '+(p.unit||''),p.raw?['По бланку',p.raw.name,p.raw.value,p.raw.unit,p.raw.range?'(референс '+p.raw.range+')':''].filter(Boolean).join(' '):p.range?'Диапазон '+p.range:'',p.lab,action==='file'?'Открыть оригинал':'Открыть измерение'].filter(Boolean).join(' · ');
-  return `<svg class="trend-chart" viewBox="0 0 480 158" role="group" aria-label="График по датам"><path d="M62 135H440" stroke="#b9cbbc"/><text class="chart-axis" x="55" y="${xy.find(p=>p.n===hi).y+4}" text-anchor="end">${esc(hi.toLocaleString('ru'))}</text>${hi!==lo?'<text class="chart-axis" x="55" y="124" text-anchor="end">'+esc(lo.toLocaleString('ru'))+'</text>':''}<polyline fill="none" stroke="#337256" stroke-width="3" points="${xy.map(p=>p.x+','+p.y).join(' ')}"/>
-    ${xy.map(p=>'<g role="button" tabindex="0" data-action="'+action+'" data-id="'+esc(p.source)+'" aria-label="'+esc(pointLabel(p))+'"><title>'+esc(pointLabel(p))+'</title><circle cx="'+p.x+'" cy="'+p.y+'" r="12" fill="transparent"/><circle cx="'+p.x+'" cy="'+p.y+'" r="5" fill="#246044"/></g>').join('')}
-    ${dates}</svg>`;
+  const width=360,left=48,right=331,plotHeight=219,axis=206;
+  const marks=plotted.map(p=>{
+    const x=start===end?(left+right)/2:left+(right-left)*(p.t-start)/(end-start);
+    const y=hi===lo?110:162-107*(p.n-lo)/(hi-lo);
+    const date=[p.date.slice(0,10).split('-').reverse().join('.'),p.date.slice(11,16)].filter(Boolean).join(' ');
+    const value=String(p.value).replace('.',',');
+    const labelWidth=Math.min(width-18,Math.max(72,date.length*7+10,value.length*8+10));
+    return {...p,x,y,dateLabel:date,valueLabel:value,labelWidth};
+  });
+  const extraHeight=placePointCaptions(marks,width,plotHeight);
+  const pointLabel=p=>[p.date,p.value+' '+(p.unit||''),p.dateSource,p.raw?['По бланку',p.raw.name,p.raw.value,p.raw.unit,p.raw.range?'(референс '+p.raw.range+')':''].filter(Boolean).join(' '):p.range?'Диапазон '+p.range:'',p.lab,action==='file'?'Открыть оригинал':'Открыть измерение'].filter(Boolean).join(' · ');
+  return `<svg class="trend-chart" viewBox="0 ${-extraHeight} ${width} ${plotHeight+extraHeight}" role="group" aria-label="График по датам">
+    <path d="${(hi===lo?[110]:[55,108.5,162]).map(y=>`M${left} ${y}H${right}`).join(' ')}" stroke="#d9e6d9"/>
+    <path d="M${left} ${axis}H${right}" stroke="#b9cbbc"/>
+    ${marks.map(p=>{
+      const {x,y,w}=p.caption;
+      const anchorX=Math.max(x+5,Math.min(x+w-5,p.x)),anchorY=Math.max(y,Math.min(y+34,p.y));
+      return `<path class="point-leader" aria-hidden="true" d="M${anchorX} ${anchorY} L${p.x} ${p.y}"/>`;
+    }).join('')}
+    <polyline fill="none" stroke="#337256" stroke-width="2.5" points="${marks.map(p=>p.x+','+p.y).join(' ')}"/>
+    ${marks.map(p=>'<g role="button" tabindex="0" data-action="'+action+'" data-id="'+esc(p.source)+'" aria-label="'+esc(pointLabel(p))+'"><title>'+esc(pointLabel(p))+'</title><circle cx="'+p.x+'" cy="'+p.y+'" r="12" fill="transparent"/><circle cx="'+p.x+'" cy="'+p.y+'" r="4.5" fill="#246044"/></g>').join('')}
+    ${marks.map(p=>{
+      const {x,y,w}=p.caption,center=x+w/2;
+      return `<rect class="point-caption" aria-hidden="true" x="${x}" y="${y}" width="${w}" height="34" rx="6"/>
+        <text class="point-value" aria-hidden="true" text-anchor="middle" x="${center}" y="${y+14}">${esc(p.valueLabel)}</text>
+        <text class="point-date" aria-hidden="true" text-anchor="middle" x="${center}" y="${y+28}">${esc(p.dateLabel)}</text>`;
+    }).join('')}
+    </svg>`;
 }
 function indicatorView(id){
   const fixture=/^\d+$/.test(id)?labRows[Number(id)]:null;
-  const groups=indicatorGroups();
-  const group=fixture?groups.find(g=>g.points.some(p=>p.raw.name===fixture.name&&Object.hasOwn(fixture.values,p.source))):groups.find(g=>g.key===id);
-  if(!group)return;
+  const card=indicatorCards().find(c=>c.id===id||c.series.some(g=>fixture?
+    g.points.some(p=>p.raw.name===fixture.name&&Object.hasOwn(fixture.values,p.source)):g.key===id));
+  if(card)openPanel('Динамика показателя',card.name,card.series.map(indicatorSeriesView).join(''));
+}
+function indicatorSeriesView(group){
   const points=group.points.sort((a,b)=>a.date.localeCompare(b.date));
-  openPanel('Динамика показателя',group.name,'<p class="detail-meta">'+esc(group.unit)+'</p><p class="hint">'+esc(group.specimen||'Биоматериал не уточнён. Показан только этот бланк.')+'</p>'+pointChart(points,'file')+
-    '<h3>Бланки по датам</h3>'+points.map(p=>resultRow('file',p.source,dateLabel(p.date)+' · '+p.raw.name+' '+p.raw.value+' '+p.raw.unit,[p.dateEstimated?'Дата подставлена':'',p.lab,p.raw.range?'Диапазон '+p.raw.range:'Диапазон не указан'].filter(Boolean).join(' · '),'lab')).join('')+
-    (readOnly?'':act('consult','Обсудить с ИИ','indicator:'+group.key,'button primary','spark')));
+  return '<section class="panel-section"><p class="detail-meta">'+esc(group.unit)+'</p><p class="hint">'+esc(group.specimen||'Биоматериал не уточнён')+'</p>'+pointChart(points,'file')+
+    '<h3>Результаты за всё время</h3>'+points.map(p=>{
+      const comparison=p.unit!==p.raw.unit&&p.value!==p.raw.value?'Для сравнения '+p.value.replace('.',',')+' '+p.unit:'';
+      const details=[p.raw.name,comparison,p.dateSource,p.lab,p.raw.range?'Диапазон '+p.raw.range:'Диапазон не указан'];
+      return resultRow('file',p.source,labDateLabel(p.date)+' · '+[p.raw.value,p.raw.unit].filter(Boolean).join(' '),details.filter(Boolean).join(' · '),'lab');
+    }).join('')+
+    (readOnly?'':act('consult','Обсудить с ИИ','indicator:'+group.key,'button primary','spark'))+'</section>';
 }

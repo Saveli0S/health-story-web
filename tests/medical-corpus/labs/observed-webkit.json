@@ -1,0 +1,479 @@
+{
+  "browser": "iPhone 13 WebKit emulation",
+  "documents": [
+    {
+      "file": "01-baseline.pdf",
+      "fields": {
+        "name": true,
+        "date": true,
+        "laboratory": true
+      },
+      "exactRows": [
+        true,
+        true,
+        true
+      ],
+      "expectedRowCount": 3,
+      "actual": {
+        "name": "Общий анализ крови и биохимия",
+        "date": "2025-01-08",
+        "laboratory": "Лаборатория Северный макет",
+        "raw": "Лаборатория Северный макет\nОбщий анализ крови и биохимия\nПациент: Лада Макетова, QA-17\nДата взятия образца: 08.01.2025\nДата выдачи: 09.01.2025\nЦельная кровь (Hb) / плазма (глюкоза, СРБ)\nПоказатель   Результат   Единицы   Референс\nГемоглобин   132   г/л   120–150\nГлюкоза   4,8   ммоль/л   3,9–5,5\nС-реактивный белок   <1   мг/л   0–5\nСинтетический документ · тест интерфейса   1",
+        "rows": [
+          {
+            "name": "Гемоглобин",
+            "value": "132",
+            "unit": "г/л",
+            "range": "120–150",
+            "specimen": "Цельная кровь"
+          },
+          {
+            "name": "Глюкоза",
+            "value": "4,8",
+            "unit": "ммоль/л",
+            "range": "3,9–5,5",
+            "specimen": "Плазма"
+          },
+          {
+            "name": "С-реактивный белок",
+            "value": "<1",
+            "unit": "мг/л",
+            "range": "0–5",
+            "specimen": "Плазма"
+          }
+        ]
+      },
+      "savedRows": [
+        [
+          "Гемоглобин · Цельная кровь",
+          "132 г/л",
+          "Диапазон по бланку 120–150"
+        ],
+        [
+          "Глюкоза · Плазма",
+          "4,8 ммоль/л",
+          "Диапазон по бланку 3,9–5,5"
+        ],
+        [
+          "С-реактивный белок · Плазма",
+          "<1 мг/л",
+          "Диапазон по бланку 0–5"
+        ]
+      ],
+      "originalPreview": "CANVAS"
+    },
+    {
+      "file": "02-followup-en.pdf",
+      "fields": {
+        "name": true,
+        "date": true,
+        "laboratory": true
+      },
+      "exactRows": [
+        true,
+        true,
+        true
+      ],
+      "expectedRowCount": 3,
+      "actual": {
+        "name": "Haematology and chemistry",
+        "date": "2025-02-12",
+        "laboratory": "North Mock Lab",
+        "raw": "North Mock Lab\nHaematology and chemistry\nREPORT NM-217   |   QA-17   |   Synthetic record\nPatient   Lada Maketova\nIssued   14 Feb 2025\nCollected 12 Feb 2025\nWhole blood / EDTA\nAnalyte   Units   Result   Reference\nHaemoglobin (HGB)   g/dL   13.8   12.0–15.0\nSynthetic QA record | NM-217   1\n\nNorth Mock Lab\nHaematology and chemistry\nREPORT NM-217   |   QA-17   |   Synthetic record\nPatient   Lada Maketova\nIssued   14 Feb 2025\nCollected 12 Feb 2025\nPlasma / heparin\nAnalyte   Units   Result   Reference\nGlucose   mmol/L   5.1   3.9–5.5\nC-reactive protein   mg/L   1.4\nSynthetic QA record | NM-217   2",
+        "rows": [
+          {
+            "name": "Haemoglobin (HGB)",
+            "value": "13.8",
+            "unit": "g/dL",
+            "range": "12.0–15.0",
+            "specimen": "Цельная кровь"
+          },
+          {
+            "name": "Glucose",
+            "value": "5.1",
+            "unit": "mmol/L",
+            "range": "3.9–5.5",
+            "specimen": "Плазма"
+          },
+          {
+            "name": "C-reactive protein",
+            "value": "1.4",
+            "unit": "mg/L",
+            "range": "",
+            "specimen": "Плазма"
+          }
+        ]
+      },
+      "savedRows": [
+        [
+          "Haemoglobin (HGB) · Цельная кровь",
+          "13.8 g/dL",
+          "Диапазон по бланку 12.0–15.0"
+        ],
+        [
+          "Glucose · Плазма",
+          "5.1 mmol/L",
+          "Диапазон по бланку 3.9–5.5"
+        ],
+        [
+          "C-reactive protein · Плазма",
+          "1.4 mg/L",
+          "Диапазон не указан"
+        ]
+      ],
+      "originalPreview": "CANVAS"
+    },
+    {
+      "file": "03-followup-scan.pdf",
+      "fields": {
+        "name": true,
+        "date": true,
+        "laboratory": true
+      },
+      "exactRows": [
+        true,
+        true
+      ],
+      "expectedRowCount": 2,
+      "actual": {
+        "name": "Анализ крови",
+        "date": "2025-03-13",
+        "laboratory": "Лаборатория Контур макет",
+        "raw": "Лаборатория Контур макет\n\nАнализ крови\n\nПациент: Лада Макетова / QA-17\nНапечатано: 14.03.2025\n\nДата забора: 13.03.2025\n\nМатериал: кровь (Hb), плазма (глюкоза)\nHb 14,0 г/дл\n\nРеференс: 12,0-15,0\n\nГлюкоза плазмы 5,0 ммоль/л\nСИНТЕТИЧЕСКИЙ БЛАНК / ©А-17",
+        "rows": [
+          {
+            "name": "Hb",
+            "value": "14,0",
+            "unit": "г/дл",
+            "range": "12,0–15,0",
+            "specimen": "Цельная кровь"
+          },
+          {
+            "name": "Глюкоза плазмы",
+            "value": "5,0",
+            "unit": "ммоль/л",
+            "range": "",
+            "specimen": "Плазма"
+          }
+        ]
+      },
+      "savedRows": [
+        [
+          "Hb · Цельная кровь",
+          "14,0 г/дл",
+          "Диапазон по бланку 12,0–15,0"
+        ],
+        [
+          "Глюкоза плазмы · Плазма",
+          "5,0 ммоль/л",
+          "Диапазон не указан"
+        ]
+      ],
+      "originalPreview": "CANVAS"
+    },
+    {
+      "file": "04-urine-scan.jpg",
+      "fields": {
+        "name": true,
+        "date": true,
+        "laboratory": true
+      },
+      "exactRows": [
+        true,
+        true
+      ],
+      "expectedRowCount": 2,
+      "actual": {
+        "name": "Анализ мочи",
+        "date": "2025-04-15",
+        "laboratory": "Лаборатория Восток макет",
+        "raw": "Лаборатория Восток макет\nАнализ мочи\n\nПациент: Лада Макетова / QA-17\nНапечатано: 16.04.2025\n\nДата забора: 15.04.2025\n\nМатериал: разовая порция мочи\nГлюкоза 0,3 ммоль/л\n\nНитриты отрицательно\nСИНТЕТИЧЕСКИЙ БЛАНК / @А-17",
+        "rows": [
+          {
+            "name": "Глюкоза",
+            "value": "0,3",
+            "unit": "ммоль/л",
+            "range": "",
+            "specimen": "Моча"
+          },
+          {
+            "name": "Нитриты",
+            "value": "отрицательно",
+            "unit": "",
+            "range": "",
+            "specimen": "Моча"
+          }
+        ]
+      },
+      "savedRows": [
+        [
+          "Глюкоза · Моча",
+          "0,3 ммоль/л",
+          "Диапазон не указан"
+        ],
+        [
+          "Нитриты · Моча",
+          "отрицательно ",
+          "Диапазон не указан"
+        ]
+      ],
+      "originalPreview": "IMG"
+    },
+    {
+      "file": "05-unclear.png",
+      "fields": {
+        "name": true,
+        "date": true,
+        "laboratory": true
+      },
+      "exactRows": [
+        true
+      ],
+      "expectedRowCount": 1,
+      "actual": {
+        "name": "Анализ мочи на белок",
+        "date": "2025-05-12",
+        "laboratory": "Лаборатория Восток макет",
+        "raw": "Лаборатория Восток макет\nАнализ мочи на белок\nПациент: Лада Макетова / QA-17\nНапечатано: 13.05.2025\n\nДата забора: 12.05.2025\n\nМатериал: разовая порция мочи\nБелок ? мг/л\n\nРеференс: 0-100\n\nСИНТЕТИЧЕСКИЙ БЛАНК / QA-17",
+        "rows": [
+          {
+            "name": "Белок",
+            "value": "?",
+            "unit": "мг/л",
+            "range": "0–100",
+            "specimen": "Моча"
+          }
+        ]
+      },
+      "blockedUnclear": true,
+      "retainedDraft": true
+    }
+  ],
+  "trends": [
+    {
+      "from": "01-baseline.pdf",
+      "name": "Гемоглобин",
+      "group": "hb-blood",
+      "sourceSetMatches": true,
+      "valuesMatch": true,
+      "displayedUnit": "г/л",
+      "canonicalUnitMatches": true,
+      "listShowsSource": true,
+      "opensOriginal": true,
+      "promptMatches": null,
+      "points": [
+        {
+          "source": "01-baseline.pdf",
+          "label": "2025-01-08 · 132 г/л · По бланку Гемоглобин 132 г/л (референс 120–150) · Лаборатория Северный макет · Открыть оригинал"
+        },
+        {
+          "source": "02-followup-en.pdf",
+          "label": "2025-02-12 · 138 г/л · По бланку Haemoglobin (HGB) 13.8 g/dL (референс 12.0–15.0) · North Mock Lab · Открыть оригинал"
+        },
+        {
+          "source": "03-followup-scan.pdf",
+          "label": "2025-03-13 · 140 г/л · По бланку Hb 14,0 г/дл (референс 12,0–15,0) · Лаборатория Контур макет · Открыть оригинал"
+        }
+      ]
+    },
+    {
+      "from": "01-baseline.pdf",
+      "name": "Глюкоза",
+      "group": "glucose-plasma",
+      "sourceSetMatches": true,
+      "valuesMatch": true,
+      "displayedUnit": "ммоль/л",
+      "canonicalUnitMatches": true,
+      "listShowsSource": true,
+      "opensOriginal": true,
+      "promptMatches": null,
+      "points": [
+        {
+          "source": "01-baseline.pdf",
+          "label": "2025-01-08 · 4,8 ммоль/л · По бланку Глюкоза 4,8 ммоль/л (референс 3,9–5,5) · Лаборатория Северный макет · Открыть оригинал"
+        },
+        {
+          "source": "02-followup-en.pdf",
+          "label": "2025-02-12 · 5.1 ммоль/л · По бланку Glucose 5.1 mmol/L (референс 3.9–5.5) · North Mock Lab · Открыть оригинал"
+        },
+        {
+          "source": "03-followup-scan.pdf",
+          "label": "2025-03-13 · 5,0 ммоль/л · По бланку Глюкоза плазмы 5,0 ммоль/л · Лаборатория Контур макет · Открыть оригинал"
+        }
+      ]
+    },
+    {
+      "from": "01-baseline.pdf",
+      "name": "С-реактивный белок",
+      "group": "crp",
+      "sourceSetMatches": true,
+      "valuesMatch": true,
+      "displayedUnit": "мг/л",
+      "canonicalUnitMatches": true,
+      "listShowsSource": true,
+      "opensOriginal": null,
+      "promptMatches": null,
+      "points": [
+        {
+          "source": "02-followup-en.pdf",
+          "label": "2025-02-12 · 1.4 мг/л · По бланку C-reactive protein 1.4 mg/L · North Mock Lab · Открыть оригинал"
+        }
+      ]
+    },
+    {
+      "from": "02-followup-en.pdf",
+      "name": "Haemoglobin (HGB)",
+      "group": "hb-blood",
+      "sourceSetMatches": true,
+      "valuesMatch": true,
+      "displayedUnit": "г/л",
+      "canonicalUnitMatches": true,
+      "listShowsSource": true,
+      "opensOriginal": true,
+      "promptMatches": true,
+      "points": [
+        {
+          "source": "01-baseline.pdf",
+          "label": "2025-01-08 · 132 г/л · По бланку Гемоглобин 132 г/л (референс 120–150) · Лаборатория Северный макет · Открыть оригинал"
+        },
+        {
+          "source": "02-followup-en.pdf",
+          "label": "2025-02-12 · 138 г/л · По бланку Haemoglobin (HGB) 13.8 g/dL (референс 12.0–15.0) · North Mock Lab · Открыть оригинал"
+        },
+        {
+          "source": "03-followup-scan.pdf",
+          "label": "2025-03-13 · 140 г/л · По бланку Hb 14,0 г/дл (референс 12,0–15,0) · Лаборатория Контур макет · Открыть оригинал"
+        }
+      ]
+    },
+    {
+      "from": "02-followup-en.pdf",
+      "name": "Glucose",
+      "group": "glucose-plasma",
+      "sourceSetMatches": true,
+      "valuesMatch": true,
+      "displayedUnit": "ммоль/л",
+      "canonicalUnitMatches": true,
+      "listShowsSource": true,
+      "opensOriginal": true,
+      "promptMatches": null,
+      "points": [
+        {
+          "source": "01-baseline.pdf",
+          "label": "2025-01-08 · 4,8 ммоль/л · По бланку Глюкоза 4,8 ммоль/л (референс 3,9–5,5) · Лаборатория Северный макет · Открыть оригинал"
+        },
+        {
+          "source": "02-followup-en.pdf",
+          "label": "2025-02-12 · 5.1 ммоль/л · По бланку Glucose 5.1 mmol/L (референс 3.9–5.5) · North Mock Lab · Открыть оригинал"
+        },
+        {
+          "source": "03-followup-scan.pdf",
+          "label": "2025-03-13 · 5,0 ммоль/л · По бланку Глюкоза плазмы 5,0 ммоль/л · Лаборатория Контур макет · Открыть оригинал"
+        }
+      ]
+    },
+    {
+      "from": "02-followup-en.pdf",
+      "name": "C-reactive protein",
+      "group": "crp",
+      "sourceSetMatches": true,
+      "valuesMatch": true,
+      "displayedUnit": "мг/л",
+      "canonicalUnitMatches": true,
+      "listShowsSource": true,
+      "opensOriginal": true,
+      "promptMatches": null,
+      "points": [
+        {
+          "source": "02-followup-en.pdf",
+          "label": "2025-02-12 · 1.4 мг/л · По бланку C-reactive protein 1.4 mg/L · North Mock Lab · Открыть оригинал"
+        }
+      ]
+    },
+    {
+      "from": "03-followup-scan.pdf",
+      "name": "Hb",
+      "group": "hb-blood",
+      "sourceSetMatches": true,
+      "valuesMatch": true,
+      "displayedUnit": "г/л",
+      "canonicalUnitMatches": true,
+      "listShowsSource": true,
+      "opensOriginal": true,
+      "promptMatches": null,
+      "points": [
+        {
+          "source": "01-baseline.pdf",
+          "label": "2025-01-08 · 132 г/л · По бланку Гемоглобин 132 г/л (референс 120–150) · Лаборатория Северный макет · Открыть оригинал"
+        },
+        {
+          "source": "02-followup-en.pdf",
+          "label": "2025-02-12 · 138 г/л · По бланку Haemoglobin (HGB) 13.8 g/dL (референс 12.0–15.0) · North Mock Lab · Открыть оригинал"
+        },
+        {
+          "source": "03-followup-scan.pdf",
+          "label": "2025-03-13 · 140 г/л · По бланку Hb 14,0 г/дл (референс 12,0–15,0) · Лаборатория Контур макет · Открыть оригинал"
+        }
+      ]
+    },
+    {
+      "from": "03-followup-scan.pdf",
+      "name": "Глюкоза плазмы",
+      "group": "glucose-plasma",
+      "sourceSetMatches": true,
+      "valuesMatch": true,
+      "displayedUnit": "ммоль/л",
+      "canonicalUnitMatches": true,
+      "listShowsSource": true,
+      "opensOriginal": true,
+      "promptMatches": null,
+      "points": [
+        {
+          "source": "01-baseline.pdf",
+          "label": "2025-01-08 · 4,8 ммоль/л · По бланку Глюкоза 4,8 ммоль/л (референс 3,9–5,5) · Лаборатория Северный макет · Открыть оригинал"
+        },
+        {
+          "source": "02-followup-en.pdf",
+          "label": "2025-02-12 · 5.1 ммоль/л · По бланку Glucose 5.1 mmol/L (референс 3.9–5.5) · North Mock Lab · Открыть оригинал"
+        },
+        {
+          "source": "03-followup-scan.pdf",
+          "label": "2025-03-13 · 5,0 ммоль/л · По бланку Глюкоза плазмы 5,0 ммоль/л · Лаборатория Контур макет · Открыть оригинал"
+        }
+      ]
+    },
+    {
+      "from": "04-urine-scan.jpg",
+      "name": "Глюкоза",
+      "group": "glucose-urine",
+      "sourceSetMatches": true,
+      "valuesMatch": true,
+      "displayedUnit": "ммоль/л",
+      "canonicalUnitMatches": true,
+      "listShowsSource": true,
+      "opensOriginal": true,
+      "promptMatches": true,
+      "points": [
+        {
+          "source": "04-urine-scan.jpg",
+          "label": "2025-04-15 · 0,3 ммоль/л · По бланку Глюкоза 0,3 ммоль/л · Лаборатория Восток макет · Открыть оригинал"
+        }
+      ]
+    },
+    {
+      "from": "04-urine-scan.jpg",
+      "name": "Нитриты",
+      "group": "nitrite-urine",
+      "sourceSetMatches": true,
+      "valuesMatch": true,
+      "displayedUnit": "",
+      "canonicalUnitMatches": true,
+      "listShowsSource": true,
+      "opensOriginal": null,
+      "promptMatches": null,
+      "points": []
+    }
+  ],
+  "externalRequests": [],
+  "errors": []
+}

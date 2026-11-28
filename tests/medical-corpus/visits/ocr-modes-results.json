@@ -1,0 +1,90 @@
+[
+  {
+    "label": "default",
+    "confidence": 43,
+    "raw": "УЧЕБНЫЙ ОБРАЗЕЦ V03\n\nКлана Листопад\n\n24.0%. 2026\n\nBoar : Aabpota AR\n\nHaode: Сухость Kore.\n\nDuarnoy.: cyroems kore.\n\nИеление.: ДОермотест : 7 mz.\n| Fexomengagun ; повторней ослотр.\n| = eee\n",
+    "header": {
+      "episodeName": "",
+      "doctorName": "",
+      "specialty": "",
+      "title": "",
+      "note": "",
+      "clinic": "",
+      "date": ""
+    },
+    "meds": [],
+    "recommendation": ""
+  },
+  {
+    "label": "block",
+    "confidence": 43,
+    "raw": "УЧЕБНЫЙ ОБРАЗЕЦ V03\n\nКлана Листопад\n\n24.0%. 2026\n\nBoar : Aabpota AR\n\nHaode: Сухость Kore.\n\nDuarnoy.: cyroems kore.\n\nИеление.: ДОермотест : 7 mz.\n| Fexomengagun ; повторней ослотр.\n| = eee\n",
+    "header": {
+      "episodeName": "",
+      "doctorName": "",
+      "specialty": "",
+      "title": "",
+      "note": "",
+      "clinic": "",
+      "date": ""
+    },
+    "meds": [],
+    "recommendation": ""
+  },
+  {
+    "label": "sparse",
+    "confidence": 35,
+    "raw": "УЧЕБНЫЙ ОБРАЗЕЦ VO3\n\nЕ AMAA Листопад\n\nПЕНА C026\n\nBoar : Aabpota ils\n\nHaode: Cyxocme Кос.\n\nDarcy: cyrocms gored.\n\nNerenue: Lepuomecrn : 7 me.\n\nFexomengagun ; повторней ослотр\n",
+    "header": {
+      "episodeName": "",
+      "doctorName": "",
+      "specialty": "",
+      "title": "",
+      "note": "",
+      "clinic": "",
+      "date": ""
+    },
+    "meds": [],
+    "recommendation": ""
+  },
+  {
+    "label": "blue-ink-block",
+    "confidence": 43,
+    "raw": "Кланижа- Листопад.\n\n24. ОЧ. 2026\n\nBoar: Aabpoba M17\nManos: Сухость, kone.\nDuarios.: сукость вот.\nЛеление: Оермотест., ? ма.\nPeromengagun: повторив осмотр.\n",
+    "header": {
+      "episodeName": "",
+      "doctorName": "",
+      "specialty": "",
+      "title": "",
+      "note": "",
+      "clinic": "",
+      "date": ""
+    },
+    "meds": [
+      {
+        "id": "dab88341-8e40-4db7-b58d-4ad6426a9e9f",
+        "name": "Леление: Оермотест.",
+        "strength": "? ",
+        "form": "",
+        "instructions": "ма."
+      }
+    ],
+    "recommendation": ""
+  },
+  {
+    "label": "blue-ink-sparse",
+    "confidence": 44,
+    "raw": "УЧЕБНЫЙ ОБРАЗЕЦ VO3\n\nКлеснижа- Листопад.\n\n21.04. 2026\n\nBoar: Aabpoba M17\n\nManods: Cyxocme Kom.\n\nмалой: сукость Kor.\n\nИеление: Depuomeem, 7 mz.\n\nPeromengagun: повторив осмотр\n",
+    "header": {
+      "episodeName": "",
+      "doctorName": "",
+      "specialty": "",
+      "title": "",
+      "note": "",
+      "clinic": "",
+      "date": ""
+    },
+    "meds": [],
+    "recommendation": ""
+  }
+]

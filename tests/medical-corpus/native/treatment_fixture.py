@@ -3,9 +3,11 @@ def profile():
     def med(ident,name,dose,**period):
         return dict(id=ident,name=name,strength=dose,form="таблетки",instructions="Учебная схема",period=dict(start="2025-04-01",planned="",end="",closed=False,unknown=False,note="")|period)
     manual=med("rx-manual","Фикстурин","5 мг");paper=med("rx-paper","Бланкин","10 мг")
+    historical=med("rx-history","Архивин","5 мг",start="",closed=True,unknown=True,unconfirmed=True)
     stopped=med("rx-stopped","Старый","3 мг");replaced=med("rx-old","Сменённый","2 мг")
     replacement=med("rx-replacement","Заменитель","20 мг")
-    p={"files":[dict(id="f1",visit="v1",name="Сверенное назначение",category="Назначения",checked=True,meds=[paper]),
+    p={"files":[dict(id="f1",visit="v1",name="Сверенное назначение",category="Назначения",checked=True,meds=[paper,historical],
+        recommendation="Выполнить ЭКГ через 6 месяцев."),
         dict(id="f2",visit="v1",name="Черновик",category="Назначения",checked=False,meds=[med("rx-pending","Непроверенный","2 мг")]),
         dict(id="fb",visit="v1",name="Кровь",category="Лаборатория",lab=dict(name="Анализ крови QA",date="2025-04-01",rows=[])),
         dict(id="fx",visit="other",name="Посторонний бланк",category="Лаборатория",lab=dict(name="Посторонний бланк",date="2025-04-03",rows=[]))],
@@ -15,7 +17,8 @@ def profile():
         ["other","2025-04-03","Посторонний визит","d","Посторонний эпизод","Другая причина","scope","foreign"]],
         "changes":[dict(id="stop",visit="v2",source="v1",episode="ep",date="2025-04-02",doctor="d",kind="stop",medId="rx-stopped",before=stopped),
             dict(id="replace",visit="v2",source="v1",episode="ep",date="2025-04-02",doctor="d",kind="replace",medId="rx-old",before=replaced,replacement=replacement)],
-        "addedDoctors":[dict(id="d",values=["Доктор QA","Терапевт",""])],"notes":[],"questions":[dict(id="q",episode="ep",text="Вопрос этого эпизода")]}
+        "addedDoctors":[dict(id="d",values=["Доктор QA","Терапевт",""])],"notes":[],"questions":[dict(id="q",episode="ep",text="Вопрос этого эпизода")],
+        "recommendations":[dict(id="rec",visit="v1",text="Сдать общий анализ крови. Выполнить упражнения по бланку.")]}
     return p
 
 def verify(saved, original):
@@ -32,4 +35,6 @@ def verify(saved, original):
             assert a==b
         if a["id"]=="rx-paper":assert b["period"]["note"]=="Course timing confirmed"
     assert saved["files"][1:]==original["files"][1:]
+    assert saved["recommendations"][0]["recommendationChecks"]=={"item:сдать общий анализ крови":True}
+    assert saved["files"][0]["recommendationChecks"]=={}
     assert any(n["text"]=="Shared QA note" and n["author"]=="Мая Макетова" and n["time"] and n["visit"]=="v1" for n in saved["notes"])

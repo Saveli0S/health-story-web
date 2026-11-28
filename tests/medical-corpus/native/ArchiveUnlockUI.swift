@@ -13,7 +13,7 @@ final class ArchiveUnlockUI:XCTestCase {
             XCTAssertTrue(input.waitForExistence(timeout:15))
             input.tap();input.typeText(syntheticKey)
             app.buttons["Открыть архив"].tap()
-            XCTAssertTrue(app.buttons["Мая Макетова"].waitForExistence(timeout:12),app.debugDescription)
+            XCTAssertTrue(app.navigationBars["Профиль"].waitForExistence(timeout:12),app.debugDescription)
         }
 
         app.launch()
@@ -28,12 +28,14 @@ final class ArchiveUnlockUI:XCTestCase {
         app.terminate();app.launch()
         XCTAssertTrue(quick.waitForExistence(timeout:12))
         quick.tap()
-        XCTAssertTrue(app.buttons["Мая Макетова"].waitForExistence(timeout:12),app.debugDescription)
+        XCTAssertTrue(app.navigationBars["Профиль"].waitForExistence(timeout:12),app.debugDescription)
+        app.buttons["Моя семья"].tap()
         app.buttons["Закрыть архив"].tap()
         let forget=app.buttons["Забыть ключ на этом iPhone"]
         XCTAssertTrue(forget.waitForExistence(timeout:10));forget.tap()
         XCTAssertTrue(quick.waitForNonExistence(timeout:5))
         enterKey()
+        app.buttons["Моя семья"].tap()
         app.buttons["Закрыть архив"].tap()
         XCTAssertTrue(option.waitForExistence(timeout:10))
         XCTAssertEqual(option.value as? String,"0")

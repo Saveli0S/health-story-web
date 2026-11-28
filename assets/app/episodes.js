@@ -133,18 +133,41 @@ function saveMeasure(f){
 }
 function measureChart(key){
   const rows=current().measurements.filter(m=>indicatorKey(m.name,m.unit)===key).sort((a,b)=>a.time.localeCompare(b.time));if(!rows.length)return;
-  openPanel('Домашние измерения',rows[0].name,pointChart(rows.map(m=>({date:m.time,value:m.value,unit:m.unit,source:m.id})),'measurePoint')+
+  openPanel('Домашние измерения',rows[0].name,'<p class="detail-meta">'+esc(rows[0].unit)+'</p>'+pointChart(rows.map(m=>({date:m.time,value:m.value,unit:m.unit,source:m.id})),'measurePoint')+
     rows.map(m=>resultRow('measurePoint',m.id,m.value+' '+m.unit,stamp(m.time),'trend')).join('')+(readOnly?'':act('measure','Добавить измерение','','button secondary','plus')));
 }
 function measurePoint(id){const m=current().measurements.find(m=>m.id===id);if(m)openPanel(m.name,m.value+' '+m.unit,'<p>'+esc(stamp(m.time))+'</p>'+(m.episode?act('episode','К эпизоду',m.episode,'button secondary'):'')+deletionButton('measurements',id,'Удалить измерение'))}
 
 function recommendationsSection(id){
-  const list=confirmedRecommendations(id);
-  return (list.map(r=>'<div class="note"><p class="preserve-lines">'+esc(r.text)+'</p>'+
-    (r.source?act('file','Оригинал',r.source,'chip-link','clip'):'')+'</div>').join('')||
+  const sources=recommendationSources(current(),id);
+  const checklist=recommendationChecklist(sources).map(group=>
+    `<fieldset class="recommendation-group"><legend>${esc(group.title)}</legend>${group.items.map(item=>
+      `<label class="recommendation-item"><input type="checkbox" data-recommendation-check="${esc(JSON.stringify([id,item.collection,item.source,item.id]))}"${item.done?' checked':''}${readOnly?' disabled':''}><span>${esc(item.text)}</span></label>`
+    ).join('')}</fieldset>`).join('');
+  return (checklist||
     '<p class="hint">Сюда можно записать указания врача или приложить отдельный лист.</p>')+
+    sources.map(source=>`<div class="recommendation-source"><details><summary>${source.file?'Текст из бланка':'Исходный текст'}</summary><p class="preserve-lines">${esc(source.text)}</p></details>${source.file?act('file','Оригинал',source.file,'chip-link','clip'):''}</div>`).join('')+
     (readOnly?'':'<div class="actions left">'+act('recommendVisit','Записать вручную',id,'text-button','edit')+
       act('upload','Загрузить рекомендации','rec:'+id,'text-button','clip')+'</div>');
+}
+function saveRecommendationCheck(input){
+  const [visit,collection,id,key]=JSON.parse(input.dataset.recommendationCheck);
+  if(!['recommendations','files'].includes(collection))return;
+  const source=recommendationSources(latestProfile(),visit).find(row=>row.collection===collection&&row.id===id);
+  const row=current()[collection].find(entry=>entry.id===id&&entry.visit===visit);
+  const before=row?.recommendationChecks;
+  if(!row||!source||!recommendationTasks(source.text).some(item=>item.id===key)){
+    input.checked=before?.[key]===true;
+    announce('Рекомендация изменилась. Откройте актуальную карточку.');return;
+  }
+  row.recommendationChecks={...before};
+  if(input.checked)row.recommendationChecks[key]=true;
+  else delete row.recommendationChecks[key];
+  if(!saveState()){
+    if(before)row.recommendationChecks=before;else delete row.recommendationChecks;
+    input.checked=before?.[key]===true;
+    announce('Не удалось сохранить отметку.');
+  }
 }
 function recommendationEditor(id){
   if(readOnly||!visitById(id))return;
@@ -155,7 +178,7 @@ function saveVisitRecommendation(form){
   const visit=form.dataset.id,text=form.elements.text.value.trim();
   if(readOnly||!visitById(visit)||!text)return;
   const old=current().recommendations.find(r=>r.visit===visit),before=current().recommendations;
-  current().recommendations=[...before.filter(r=>r!==old),{id:old?.id||uid(),visit,text}];
+  current().recommendations=[...before.filter(r=>r!==old),{...old,id:old?.id||uid(),visit,text}];
   if(!saveState()){current().recommendations=before;form.querySelector('.error').textContent='Не удалось сохранить изменения.';return}
   goBack();
 }

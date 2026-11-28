@@ -532,6 +532,7 @@ struct NativeMedicine: Identifiable {
     }
 }
 struct NativeVisitDraft {
+    var sourcePosition=NativeSourcePosition()
     var title="",episode="",specialty="",doctor="",clinic="",note="",recommendation=""
     var recognizedDate=false
     var checked=false;var episodeID:String?, date=Date(),medicines:[NativeMedicine]=[],files:[NativeUpload]=[]

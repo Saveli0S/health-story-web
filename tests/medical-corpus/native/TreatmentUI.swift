@@ -4,22 +4,28 @@ final class TreatmentUI:XCTestCase {
     func testPeriodsAndEpisodeBrief() throws {
         continueAfterFailure=false
         let app=XCUIApplication();app.launch()
-        func tap(_ e:XCUIElement,file:StaticString=#filePath,line:UInt=#line){
+        func reveal(_ e:XCUIElement)->Bool {
             for attempt in 0..<12 {
                 if e.waitForExistence(timeout:1),e.wait(for:\.isHittable,toEqual:true,timeout:1),app.frame.intersects(e.frame){
-                    e.tap();return
+                    return true
                 }
                 if attempt<4 {app.swipeUp()} else {app.swipeDown()}
             }
-            XCTFail("Control unavailable: "+e.description+" "+app.debugDescription,file:file,line:line)
+            return false
+        }
+        func tap(_ e:XCUIElement,file:StaticString=#filePath,line:UInt=#line){
+            XCTAssertTrue(reveal(e),"Control unavailable: "+e.description+" "+app.debugDescription,file:file,line:line)
+            if e.exists && e.isHittable {e.tap()}
         }
         let key=app.secureTextFields.firstMatch;XCTAssertTrue(key.waitForExistence(timeout:12));key.tap()
         key.typeText("QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI")
-        tap(app.buttons["Открыть архив"]);tap(app.buttons["Мая Макетова"])
+        tap(app.buttons["Открыть архив"])
+        XCTAssertTrue(app.navigationBars["Профиль"].waitForExistence(timeout:10),app.debugDescription)
         let manual=app.buttons["course-period-rx-manual"],pdf=app.buttons["course-period-rx-paper"]
-        XCTAssertTrue(manual.waitForExistence(timeout:6))
+        XCTAssertTrue(reveal(manual))
         XCTAssertFalse(app.buttons["course-period-rx-pending"].exists)
         XCTAssertFalse(app.buttons["course-period-rx-stopped"].exists)
+        XCTAssertFalse(app.buttons["course-period-rx-history"].exists)
         tap(pdf)
         let note=app.textFields["Пометка при прерывании"];tap(note);note.typeText("Course timing confirmed")
         tap(app.buttons["Сохранить даты"])
@@ -44,8 +50,21 @@ final class TreatmentUI:XCTestCase {
         for _ in 0..<5 where !paperMedicine.exists {app.swipeUp()}
         XCTAssertTrue(paperMedicine.exists,app.debugDescription)
         XCTAssertFalse(app.staticTexts["Непроверенный · 2 мг"].exists)
+        let historicStatus=app.staticTexts["Приём не подтверждён"]
+        for _ in 0..<5 where !historicStatus.exists {app.swipeUp()}
+        XCTAssertTrue(historicStatus.exists)
         tap(app.buttons["Добавить пометку"]);let message=app.textFields["Текст пометки"];tap(message);message.typeText("Shared QA note");tap(app.buttons["Сохранить пометку"])
         XCTAssertTrue(app.staticTexts["Shared QA note"].waitForExistence(timeout:6))
+        let blood=app.buttons["Сдать общий анализ крови."]
+        tap(blood)
+        XCTAssertEqual(blood.value as? String,"Выполнено")
+        XCTAssertTrue(app.staticTexts["Анализы"].exists)
+        let exam=app.buttons["Выполнить ЭКГ через 6 месяцев."]
+        tap(exam)
+        XCTAssertEqual(exam.value as? String,"Выполнено")
+        tap(exam)
+        XCTAssertEqual(exam.value as? String,"К выполнению")
+        XCTAssertTrue(reveal(app.staticTexts["Физическая активность"]))
         app.swipeDown();tap(app.buttons["Сводка по этому эпизоду"])
         XCTAssertTrue(app.navigationBars["Сводка к приёму"].waitForExistence(timeout:5))
         XCTAssertTrue(app.buttons.matching(NSPredicate(format:"label CONTAINS 'Повторный осмотр QA'")).firstMatch.exists)

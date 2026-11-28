@@ -19,15 +19,19 @@ function recordsListing(){
     if(analysisMode==='prevention')content=preventionListing(sectionQuery);
     else if(analysisMode==='reports'){
       const rows=filterRows(searchIndex().filter(r=>r.type==='lab'&&(labFilter==='Все'||labCategory(r.id)===labFilter)),sectionQuery);
-      content=labDraftListing(sectionQuery,labFilter)+rows.map(r=>resultRow('lab',r.id,r.title,r.meta,'lab')).join('');
-    }else content=indicatorGroups().filter(g=>norm(g.name+' '+g.specimen+' '+g.points.map(p=>p.raw.name+' '+reportInfo(labs().find(l=>l.id===p.source)).name+' '+tagLabels('lab',p.source)).join(' ')).includes(norm(sectionQuery)))
-      .map(g=>resultRow('trend',g.key,g.name,seriesDescription(g)+' · результатов '+g.points.length,'trend')).join('');
+      const indicators=sectionQuery.trim()?indicatorListing(sectionQuery):'';
+      content=(indicators?'<section class="search-group"><h3>Показатели</h3>'+indicators+'</section>':'')+
+        labDraftListing(sectionQuery,labFilter)+rows.map(r=>resultRow('lab',r.id,r.title,r.meta,'lab')).join('');
+    }else content=indicatorListing(sectionQuery);
   }
   if(section==='files')content=filterRows(searchIndex().filter(r=>r.type==='file'&&(documentFilter==='Все'||allFiles().find(f=>f.id===r.id)?.category===documentFilter)),sectionQuery)
     .map(r=>{const row=resultRow('file',r.id,r.title,r.meta,'clip');return prototypeState.sync?
       '<div class="sync-document">'+deviceSync.thumb(current().files.find(f=>f.id===r.id))+row+
       act('pinFile','Сохранить без сети',r.id,'inline-action')+'</div>':row}).join('');
   return content||'<p class="empty">'+(sectionQuery?'По запросу ничего не найдено.':'Пока нет записей.')+'</p>';
+}
+function indicatorListing(query){
+  return filterRows(indicatorSearchRows(),query).map(r=>resultRow(r.type,r.id,r.title,r.meta,r.icon)).join('');
 }
 function recordsPage(){
   if(section==='exams')return '<section class="section-page"><div class="section-head"><h2>Результаты обследований</h2>'+(readOnly?'':act('newExam','Добавить обследование','','button primary','plus'))+'</div><label class="searchbox section-filter">'+icon('search')+'<input id="section-filter" type="search" aria-label="Поиск обследований" placeholder="Вид, область, параметр или тег" value="'+esc(sectionQuery)+'"></label><div id="listing">'+recordsListing()+'</div></section>';

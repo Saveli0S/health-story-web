@@ -6,7 +6,7 @@ final class CloudArchiveKeyUI: XCTestCase {
         let app = XCUIApplication()
         let input = app.secureTextFields["Семейный ключ восстановления"]
         let openFromCloud = app.buttons["Открыть ключом из iCloud"]
-        let profile = app.buttons["Мая Макетова"]
+        let profile = app.navigationBars["Профиль"]
         let settings = app.buttons["Ключ восстановления в iCloud"]
         let close = app.buttons["Закрыть архив"]
         let remove = app.buttons["Удалить сохранённые ключи из iCloud"]
@@ -43,6 +43,7 @@ final class CloudArchiveKeyUI: XCTestCase {
         XCTAssertFalse(app.buttons["Открыть через Face ID или код iPhone"].exists)
         openFromCloud.tap()
         XCTAssertTrue(profile.waitForExistence(timeout: 10))
+        app.buttons["Моя семья"].tap()
         reveal(settings)
         settings.tap()
         reveal(remove)

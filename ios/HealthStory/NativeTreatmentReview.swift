@@ -455,8 +455,8 @@ struct NativePharmacy:View {
     @State private var error=""
     @State private var busy=false
     @State private var results=[JournalObject]()
-    @State private var regionUsed=""
-    @State private var checked=""
+    @State private var marketRows=[JournalObject]()
+    @State private var lastSearch:JournalObject?
     @State private var disclosed=Set<String>()
     @State private var generation=UUID()
     @State private var criteriaValidation=JournalFormValidation()
@@ -503,7 +503,7 @@ struct NativePharmacy:View {
             }
             Section("Поиск в аптеках"){
                 Text("В каталог передаются название или МНН и регион.").font(.caption)
-                if let region {Button("Проверить цены · "+city){Task{await search(region)}}}
+                if let region {Button(lastSearch==nil ? "Проверить цены · "+city : "Повторить поиск · "+city){Task{await search(region)}}}
                 Button("Искать по всей Беларуси"){Task{await search("0")}}
                 if let url=directLink(region ?? "0") {Link("Искать на tabletka.by",destination:url)}
                 if let url=directLink(region ?? "0",alternative:true) {Link("Искать отдельный вариант врача",destination:url)}
@@ -529,26 +529,65 @@ struct NativePharmacy:View {
                         VStack(alignment:.leading,spacing:4){
                             Text(caption(r,"name")).bold();Text([caption(r,"form"),caption(r,"substance"),caption(r,"manufacturer")].filter{!$0.isEmpty}.joined(separator:" · "))
                             Text(caption(r,"why")).font(.caption)
-                            if ["exact","analogue","otherPack"].contains(group) || disclosed.contains(id) {
-                                Text(String(format:"%.2f – %.2f BYN",r["min"] as? Double ?? 0,r["max"] as? Double ?? 0))
-                            }else if group=="unverified", (r["pharmacyCount"] as? Int ?? 0)>0,let facts=r["facts"] as? JournalObject, ["strength","form","pack"].allSatisfy({!caption(facts,$0).isEmpty}){
+                            let automaticPrice=["exact","analogue","otherPack"].contains(group)
+                            if !automaticPrice && !disclosed.contains(id),group=="unverified",
+                               (r["pharmacyCount"] as? Int ?? 0)>0,let facts=r["facts"] as? JournalObject,
+                               ["strength","form","pack"].allSatisfy({!caption(facts,$0).isEmpty}) {
                                 Button("Посмотреть цену этой упаковки"){disclosed.insert(id)}
                             }
-                            if let u=Self.link("/result/","ls",id,region:regionUsed){Link("Наличие на tabletka.by",destination:u)}
+                            let offers=entries(r,"offers")
+                            ForEach(offers.indices,id:\.self){index in
+                                let offer=offers[index],region=caption(offer,"region")
+                                if automaticPrice || disclosed.contains(id) {
+                                    Text(String(format:"%.2f – %.2f BYN",offer["min"] as? Double ?? 0,offer["max"] as? Double ?? 0))
+                                }
+                                Text(marketPlace(region)+" · "+caption(offer,"checked")).font(.caption)
+                                if let u=Self.link("/result/","ls",id,region:region){Link("Наличие на tabletka.by",destination:u)}
+                            }
                         }
                     }
                 }
             }
         }
     }
-    func clear(){generation=UUID();busy=false;results=[];disclosed=[];status="";error=""}
+    func clear(){generation=UUID();busy=false;disclosed=[];status="";error=""}
+    private func marketPlace(_ region:String)->String {
+        region=="0" ? "Вся Беларусь" : Self.regions.first{$0.value==region}?.key ?? "Регион поиска"
+    }
+    private func decoded(_ value:Any?)->JournalObject? {
+        guard let text=value as? String else{return nil}
+        return try? jsonObject(Data(text.utf8))
+    }
+    private func marketID(_ rules:TreatmentRules)throws->(String,String) {
+        (Self.key(visit,med),try rules.call("marketPrescriptionKey",[med]).toString())
+    }
+    private func refreshResults(_ rules:TreatmentRules)throws {
+        let observations=marketRows.compactMap{decoded($0["observation"])}.filter{
+            !$0.isEmpty && (try? rules.call("validCatalogPackage",[$0]).toBool())==true
+        }
+        results=try Dictionary(grouping:observations){caption($0,"id")}.values.compactMap { rows in
+            let offers=rows.sorted{caption($0,"checked")>caption($1,"checked")}
+            guard var first=offers.first else{return nil}
+            let match=try rules.call("packageAssessment",[first,med,criteria]).toDictionary() as? JournalObject ?? [:]
+            first.merge(match){_,new in new};first["offers"]=offers
+            return first
+        }.sorted{caption($0,"id")<caption($1,"id")}
+    }
     func load()throws {
         let p=journal.profile(owner),rules=try TreatmentRules.make(p,members:journal.members)
         let facts=try rules.call("marketDescription",[caption(med,"form")]).toDictionary() as? JournalObject ?? [:]
-        let key=Self.key(visit,med),sig=try rules.call("marketPrescriptionKey",[med]).toString()
+        let (key,sig)=try marketID(rules)
         let stored=entries(p,"marketCriteria").first{caption($0,"id")==key && caption($0,"prescription")==sig}
         criteria=["trade":caption(med,"name"),"form":caption(med,"form"),"pack":caption(med,"pack"),"route":caption(facts,"route"),"release":caption(facts,"release")]
         if let stored {for (key,_) in Self.labels {criteria[key]=caption(stored,key)}}
+        lastSearch=decoded(stored?["lastSearch"])
+        marketRows=entries(p,"marketFindings").filter{caption($0,"criteriaId")==key && caption($0,"prescription")==sig}
+        if let lastSearch {
+            let earlier=try rules.call("marketFindingRows",[lastSearch,key,visit,sig]).toArray() as? [JournalObject] ?? []
+            marketRows=try rules.call("mergeMarketFindings",[marketRows,earlier]).toArray() as? [JournalObject] ?? marketRows
+            status=marketPlace(caption(lastSearch,"region"))+" · "+caption(lastSearch,"checked")
+        }
+        try refreshResults(rules)
     }
     private func criteriaIssues(_ rules:TreatmentRules,forSearch:Bool=false)throws->[JournalFieldIssue] {
         let c=criteria.mapValues{$0.trim}
@@ -593,10 +632,21 @@ struct NativePharmacy:View {
     }
     func save()throws {
         let rules=try TreatmentRules.make(journal.profile(owner),members:journal.members)
-        var c=try verified(rules);let key=Self.key(visit,med)
-        c["prescription"]=try rules.call("marketPrescriptionKey",[med]).toString();c["visit"]=visit;c["id"]=key
-        try journal.changeProfile(owner){p in p["marketCriteria"]=entries(p,"marketCriteria").filter{caption($0,"id") != key}+[c]}
+        try store(rules, criteria: verified(rules), search:lastSearch)
+        try refreshResults(rules)
         status="Параметры поиска сохранены."
+    }
+    private func store(_ rules:TreatmentRules, criteria values:[String:String], search:JournalObject?, newRows:[JournalObject]=[])throws {
+        let (key,sig)=try marketID(rules)
+        var c=values
+        c["prescription"]=sig;c["visit"]=visit;c["id"]=key
+        if let search {c["lastSearch"]=try String(decoding:jsonBytes(search),as:UTF8.self)}
+        try journal.changeProfile(owner){p in
+            p["marketCriteria"]=entries(p,"marketCriteria").filter{caption($0,"id") != key}+[c]
+            if !newRows.isEmpty {
+                p["marketFindings"]=try rules.call("mergeMarketFindings",[entries(p,"marketFindings"),newRows]).toArray() as? [JournalObject] ?? entries(p,"marketFindings")
+            }
+        }
     }
     @MainActor func search(_ region:String)async {
         clear();let token=generation;busy=true
@@ -605,7 +655,7 @@ struct NativePharmacy:View {
             let rules=try TreatmentRules.make(journal.profile(owner),members:journal.members)
             checkingSearch=true
             guard criteriaValidation.submit(try criteriaIssues(rules,forSearch:true)) else{return}
-            let c=criteria.mapValues{$0.trim}
+            var c=criteria.mapValues{$0.trim}
             let names=Set([c["trade"]?.isEmpty==false ? c["trade"]! : caption(med,"name"),c["substance"] ?? ""].filter{!$0.isEmpty})
             let session=DeviceExchange().session;defer{session.finishTasksAndInvalidate()}
             var skus=[String:JournalObject](),times=[String](),partial=false
@@ -616,17 +666,24 @@ struct NativePharmacy:View {
                     let (bytes,response)=try await session.data(for:req)
                     guard (response as? HTTPURLResponse)?.statusCode==200 else {throw JournalError("Каталог временно недоступен.")}
                     let ans=try Self.parse(bytes,region:region,rules:rules);times.append(caption(ans,"checked"));partial=partial || ans["partial"] as? Bool==true
-                    for var r in entries(ans,"packages"){
-                        let match=try rules.call("packageAssessment",[r,med,c]).toDictionary() as? JournalObject ?? [:]
-                        r.merge(match){_,new in new};skus[caption(r,"id")]=r
-                    }
+                    for package in entries(ans,"packages"){skus[caption(package,"id")]=package}
                 } catch {partial=true}
                 if token != generation {return}
             }
             guard let first=times.sorted().first else {throw JournalError("Сейчас подтвердить цены не удалось. Доступен поиск на tabletka.by.")}
-            let place=region=="0" ? "Вся Беларусь":city
-            regionUsed=region;checked=first;status=place+" · "+first+(partial ? "\nКаталог вернул неполные сведения.":"")+(skus.isEmpty ? "\nПодтверждённых предложений нет.":"")
-            results=skus.values.sorted{caption($0,"id")<caption($1,"id")}
+            let packages=Array(skus.values.sorted{caption($0,"id")<caption($1,"id")}.prefix(80))
+            if (c["substance"] ?? "").isEmpty,let substance=try rules.call("catalogSubstance",[packages,med,c]).toString(),!substance.isEmpty {
+                c["substance"]=substance;criteria["substance"]=substance
+            }
+            let search:JournalObject=["region":region,"checked":first,"packages":packages,
+                                      "packageCount":skus.count,"partial":partial,"limited":skus.count>packages.count]
+            let (key,sig)=try marketID(rules)
+            let rows=try rules.call("marketFindingRows",[search,key,visit,sig]).toArray() as? [JournalObject] ?? []
+            if journal.editable {try store(rules,criteria:c,search:search,newRows:rows)}
+            marketRows=try rules.call("mergeMarketFindings",[marketRows,rows]).toArray() as? [JournalObject] ?? marketRows
+            lastSearch=search
+            try refreshResults(rules)
+            status=marketPlace(region)+" · "+first+(partial ? "\nКаталог вернул неполные сведения.":"")+(skus.isEmpty ? "\nПодтверждённых предложений нет.":"")
         }catch {if token==generation{self.error=error.localizedDescription}}
     }
 }

@@ -8,6 +8,22 @@ vm.runInContext(readFileSync(path.join(__dirname,'../../../assets/app/clinical-p
 const header=text=>engine.parseVisitHeader(text);
 const rx=(text,issues)=>Array.from(engine.proposedMedicines(text,issues));
 
+test('recommendations split by instruction without dropping frequencies or splitting wrapped clinical details',()=>{
+  const raw='Питание: Гипохолестериновая диета.\nРежим и уход:\nРежим труда и отдыха.\nДругое:\nПовторный визит.\n'+
+    'Упражнения:\n- Аэробная нагрузка (ходьба 30 мин. ежедневно,\nплавание).\n'+
+    'Анализы: БАК (глюкоза, АЛТ,\nлипидограмма) через 6 месяцев.\nОбследования: УЗИ БЦА 1 раз в год.';
+  const tasks=Array.from(engine.recommendationTasks(raw));
+  assert.deepEqual(tasks.map(row=>[row.section,row.text]),[
+    ['food','Гипохолестериновая диета.'],['routine','Режим труда и отдыха.'],['other','Повторный визит.'],
+    ['exercise','Аэробная нагрузка (ходьба 30 мин. ежедневно, плавание).'],
+    ['labs','БАК (глюкоза, АЛТ, липидограмма) через 6 месяцев.'],['exams','УЗИ БЦА 1 раз в год.']
+  ]);
+  const folded=engine.recommendationTasks('Повторный осмотр. Контроль АД.  \n- контроль ад');
+  assert.equal(folded.length,2);
+  assert.equal(folded[1].id,'item:контроль ад');
+  assert.notEqual(tasks[4].id,engine.recommendationTasks('БАК (глюкоза, АЛТ, липидограмма) через 3 месяца.')[0].id);
+});
+
 test('visit date binds to the visit, future plans and reprint dates cannot become the visit',()=>{
   assert.equal(header('Дата рождения:\n12.03.1988').date,'');
   assert.equal(header('Дата печати дубликата: 01.04.2026').date,'');

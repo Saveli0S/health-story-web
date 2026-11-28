@@ -69,9 +69,9 @@ struct ClinicalImport {
         }
         return try redact(masked,names:names)
     }
-    func seriesPoint(_ row:JournalObject, title:String, source:String) -> JournalObject? {
+    func seriesPoint(_ row:JournalObject, title:String) -> JournalObject? {
         guard let fn=js.objectForKeyedSubscript("labSeriesPoint"), !fn.isUndefined else {return nil}
-        return fn.call(withArguments:[row,title,source])?.toDictionary() as? JournalObject
+        return fn.call(withArguments:[row,title])?.toDictionary() as? JournalObject
     }
     func parseLab(text:String,name:String,issues:[JournalObject]) -> LabResult {
         let info=js.objectForKeyedSubscript("parseLabText")?.call(withArguments:[text,name,issues])?.toDictionary() as? JournalObject ?? [:]

@@ -43,8 +43,8 @@ struct LabIntake:View {
                         VStack(alignment:.leading){Text(caption(row,"name"));Text(row["lab"]==nil || row["labDraft"] != nil ? "Открыть для сверки":"Результаты сохранены").font(.caption)}
                     }
                 }
-            }}
-            if importing {ProgressView("Сохранение оригиналов…")}
+            }.disabled(importing)}
+            if importing {ProgressView("Сохраняем и распознаём бланки…")}
             if !error.isEmpty {Text(error).foregroundStyle(.red)}
         }.navigationTitle("Новые бланки")
         .fileImporter(isPresented:$picker,allowedContentTypes:[.pdf,.image,.plainText],allowsMultipleSelection:true){result in
@@ -55,7 +55,7 @@ struct LabIntake:View {
             acceptFiles(urls)
         }
         .sheet(isPresented:$camera){NativeCamera{data in
-            do {try save([NativeUpload(name:"Фото бланка.jpg",mime:"image/jpeg",bytes:data)])}catch{self.error=error.localizedDescription}
+            importOriginals { [NativeUpload(name:"Фото бланка.jpg",mime:"image/jpeg",bytes:data)] }
         }}
         .onChange(of:photos){_,items in
             guard !items.isEmpty else{return}
@@ -68,20 +68,52 @@ struct LabIntake:View {
                         let type=item.supportedContentTypes.first
                         uploads.append(NativeUpload(name:"Фото бланка."+(type?.preferredFilenameExtension ?? "jpg"),mime:type?.preferredMIMEType ?? "image/jpeg",bytes:data))
                     }
-                    try save(uploads)
+                    try await save(uploads)
                 } catch {self.error=error.localizedDescription}
             }
         }
     }
     private func acceptFiles(_ urls:[URL]) {
-        do {try save(urls.map {url in
+        importOriginals {try urls.map {url in
             NativeUpload(name:url.lastPathComponent,mime:UTType(filenameExtension:url.pathExtension)?.preferredMIMEType ?? "application/octet-stream",bytes:try readNativeFile(url))
-        })}catch {self.error=error.localizedDescription}
+        }}
     }
-    private func save(_ uploads:[NativeUpload]) throws {
+    private func importOriginals(_ load:() throws -> [NativeUpload]) {
+        do {
+            let uploads=try load()
+            importing=true
+            Task {
+                defer{importing=false}
+                do {try await save(uploads)} catch {self.error=error.localizedDescription}
+            }
+        } catch {self.error=error.localizedDescription}
+    }
+    private func save(_ uploads:[NativeUpload]) async throws {
         let selected=try journal.addLabOriginals(owner:owner,uploads:uploads)
         for id in selected where !ids.contains(id){ids.append(id)}
         error=""
+        let added=uploads.filter{selected.contains($0.id)}
+        guard !added.isEmpty else {return}
+        let scanned=await Task.detached {
+            added.compactMap {file in
+                (try? ClinicalOCR.read(file.bytes,mime:file.mime,pdfRows:true)).map{(file.id,file.name,$0)}
+            }
+        }.value
+        if scanned.count<added.count {error="Часть бланков не распознана. Откройте их для сверки с оригиналом."}
+        guard !scanned.isEmpty else {return}
+        let parser=try ClinicalImport()
+        let drafts=Dictionary(uniqueKeysWithValues:scanned.map { id,name,result -> (String,JournalObject) in
+            let draft=parser.parseLab(text:result.text,name:name,issues:result.uncertainLines)
+            return (id,["labDraft":draft.json,"labRaw":result.text,"issues":result.uncertainLines+result.warnings.map{["text":$0]}])
+        })
+        // The first commit saves originals and may trigger automatic exchange while Vision is running.
+        for _ in 0..<40 where journal.busy {try await Task.sleep(for:.milliseconds(250))}
+        try journal.changeProfile(owner){profile in
+            profile["files"]=entries(profile,"files").map {file in
+                guard file["lab"]==nil,file["labDraft"]==nil,let draft=drafts[caption(file,"id")] else {return file}
+                return file.merging(draft){_,new in new}
+            }
+        }
     }
 }
 
@@ -96,6 +128,7 @@ struct LabReview:View {
     @State private var duplicate:DuplicateClinicalCard?
     @State private var lab:LabResult
     @State private var baseline:JournalObject
+    @State private var sourcePosition:NativeSourcePosition
     @State private var reviewed=false
     @State private var reading=false
     @State private var notice=""
@@ -105,11 +138,14 @@ struct LabReview:View {
     init(journal:DeviceJournal,owner:String,file:JournalObject){
         self.journal=journal;self.owner=owner;id=caption(file,"id");fileName=caption(file,"name")
         _baseline=State(initialValue:file)
+        _sourcePosition=State(initialValue:NativeSourcePosition(file["labPosition"] as? JournalObject ?? [:]))
         _lab=State(initialValue:LabResult.from((file["labDraft"] ?? file["lab"]) as? JournalObject ?? [:]))
     }
     var body:some View {
         let issues=lab.validationIssues+(reviewed ? [] : [JournalFieldIssue(field:"lab-review",message:"Подтвердите сверку с оригиналом.")])
         let visible=validation.visible(issues)
+        NativeSourceReview(sources:[NativeSourceItem(id:id,name:fileName)],position:$sourcePosition,
+                           load:{try await journal.attachment(owner:owner,id:$0)}) {
         Form {
             Section("Оригинал"){
                 NavigationLink(fileName){DeviceAttachment(journal:journal,owner:owner,id:id,name:fileName)}
@@ -130,7 +166,8 @@ struct LabReview:View {
             if !match.isEmpty,entries(journal.profile(owner),"files").contains(where:{caption($0,"id")==match && $0["lab"] != nil}){
                 NavigationLink("Открыть существующий анализ"){LabReport(journal:journal,owner:owner,id:match)}
             }
-        }.journalValidation(validation).navigationTitle("Сверка бланка")
+        }.journalValidation(validation)
+        }.navigationTitle("Сверка бланка")
         .onChange(of:lab){_,new in
             reviewed=false
             let saved=(baseline["labDraft"] ?? baseline["lab"]) as? JournalObject ?? [:]
@@ -164,6 +201,7 @@ struct LabReview:View {
                     guard NSDictionary(dictionary:before).isEqual(to:now) else {throw JournalError("Бланк изменился. Откройте актуальную версию перед сохранением.")}
                 }
                 if let raw {files[i]["labRaw"]=raw;files[i]["issues"]=issues}
+                if !sourcePosition.sourceID.isEmpty {files[i]["labPosition"]=sourcePosition.json}
                 if final {
                     let key=ClinicalDuplicates.lab(lab.json)
                     if (files[i]["lab"] as? JournalObject).map(ClinicalDuplicates.lab) != key,
@@ -184,23 +222,40 @@ struct LabReport:View {
     @ObservedObject var journal:DeviceJournal
     let owner:String,id:String
     var body:some View {
-        let file=entries(journal.profile(owner),"files").first{caption($0,"id")==id} ?? [:]
+        let profile=journal.profile(owner)
+        let files=entries(profile,"files")
+        let file=files.first{caption($0,"id")==id} ?? [:]
+        let linkedIDs=Set(entries(profile,"docLinks").compactMap { link -> String? in
+            let source=caption(link,"id"), target=caption(link,"other")
+            if source==id && target != id {return target}
+            if target==id && source != id {return source}
+            return nil
+        })
+        let related=files.filter{linkedIDs.contains(caption($0,"id"))}
         let lab=file["lab"] as? JournalObject ?? [:]
+        let parser=try? ClinicalImport()
         List {
             Section("Бланк"){
                 LabeledContent("Дата взятия",value:caption(lab,"date"))
                 if !caption(lab,"laboratory").isEmpty {LabeledContent("Лаборатория",value:caption(lab,"laboratory"))}
                 NavigationLink("Исходный бланк"){DeviceAttachment(journal:journal,owner:owner,id:id,name:caption(file,"name"))}
             }
+            if !related.isEmpty {
+                Section("Связанные документы") {NativeFiles(journal:journal,owner:owner,items:related)}
+            }
             NativeRecordTags(journal:journal,owner:owner,kind:.lab,id:id)
             Section("Показатели"){
                 let rows=entries(lab,"rows")
                 ForEach(rows.indices,id:\.self){i in
                     let row=rows[i]
-                    VStack(alignment:.leading){
-                        Text(caption(row,"name"));Text([caption(row,"value"),caption(row,"unit")].filter{!$0.isEmpty}.joined(separator:" ")).bold()
-                        if !caption(row,"range").isEmpty{Text("Диапазон по бланку · "+caption(row,"range")).font(.caption)}
-                        if !caption(row,"specimen").isEmpty{Text(caption(row,"specimen")).font(.caption)}
+                    let key=parser?.seriesPoint(row,title:caption(lab,"name"))?["key"] as? String ?? id+"-"+String(i)
+                    NavigationLink {TrendDetail(journal:journal,owner:owner,key:key)} label:{
+                        VStack(alignment:.leading){
+                            Text(caption(row,"name"));Text([caption(row,"value"),caption(row,"unit")].filter{!$0.isEmpty}.joined(separator:" ")).bold()
+                            if !caption(row,"range").isEmpty{Text("Диапазон по бланку · "+caption(row,"range")).font(.caption)}
+                            if !caption(row,"specimen").isEmpty{Text(caption(row,"specimen")).font(.caption)}
+                            Text("Динамика").font(.caption).foregroundStyle(JournalTheme.green)
+                        }
                     }
                 }
             }

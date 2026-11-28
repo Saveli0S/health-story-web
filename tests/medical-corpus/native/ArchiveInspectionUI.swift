@@ -16,7 +16,8 @@ final class ArchiveInspectionUI: XCTestCase {
         tap(input)
         input.typeText(key)
         tap(app.buttons["Открыть архив"])
-        XCTAssertTrue(app.buttons["Мая Макетова"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.navigationBars["Профиль"].waitForExistence(timeout: 8))
+        tap(app.buttons["Моя семья"])
         tap(app.buttons["Проверить файл копии"])
         XCTAssertTrue(app.navigationBars["Проверка копии"].waitForExistence(timeout: 8))
         XCTAssertTrue(input.waitForExistence(timeout: 8))
@@ -44,6 +45,6 @@ final class ArchiveInspectionUI: XCTestCase {
         tap(input)
         input.typeText(key)
         tap(app.buttons["Открыть архив"])
-        XCTAssertTrue(app.buttons["Мая Макетова"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.navigationBars["Профиль"].waitForExistence(timeout: 8))
     }
 }

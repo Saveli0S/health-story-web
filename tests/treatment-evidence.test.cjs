@@ -11,7 +11,7 @@ const fallback='Недостаточно данных для оценки';
 
 test('URL alone, wrong drug or age, wrong disease and ambiguity cannot promote a clinical rating',()=>{
   for(const r of [{...row,разделИсточника:''},{...row,источник:'javascript:alert(1)'},{...row,возрастнаяГруппа:'взрослые'},{...row,возрастнаяГруппа:'взрослые',возрастОт:0,возрастДо:100},
-      {...row,заболевание:'Другое заболевание'},{...row,дозировка:'13 мг'},{...row,категория:'Вылечит'}]){
+      {...row,заболевание:'Другое заболевание'},{...row,дозировка:'13 мг'},{...row,дозировка:''},{...row,категория:'Вылечит'}]){
     const [item]=assess([r]);assert.equal(item.label,fallback);assert(!item.canVerify);
   }
   assert(!assess([row,row])[0].canVerify);

@@ -122,6 +122,45 @@ function pdfDocumentText(items){
   if(line.trim())lines.push(line.trim());
   return lines.filter(Boolean).join('\n');
 }
+function removeTableRules(canvas){
+  const {width,height}=canvas,context=canvas.getContext('2d');
+  const image=context.getImageData(0,0,width,height),pixels=image.data;
+  const bands=[];
+  for(let y=0;y<height;y++){
+    const strokes=[];
+    let start=0;
+    for(let x=0;x<=width;x++){
+      if(x<width&&pixels[(y*width+x)*4]<210)continue;
+      if(x-start>=width*.085)strokes.push([y,start,x]);
+      start=x+1;
+    }
+    if(!strokes.length)continue;
+    const band=bands.at(-1);
+    if(band?.end===y-1){band.end=y;band.strokes.push(...strokes)}
+    else bands.push({start:y,end:y,strokes});
+  }
+  // Remove separators and thin boxes only when the image has ruled rows.
+  const thin=bands.filter(b=>b.end-b.start<Math.max(4,height*.006));
+  if(thin.filter(b=>b.strokes.some(([,a,z])=>z-a>=width*.5)).length<3)return false;
+  const horizontal=thin.flatMap(b=>b.strokes),boxColumns=new Set();
+  const tolerance=Math.ceil(width*.004);
+  for(const [,a,b] of horizontal.filter(([,a,b])=>b-a<width*.5)){
+    for(const edge of [a,b-1])for(let x=Math.max(0,edge-tolerance);x<Math.min(width,edge+tolerance+1);x++)boxColumns.add(x);
+  }
+  for(const x of boxColumns){
+    let start=0;
+    for(let y=0;y<=height;y++){
+      if(y<height&&pixels[(y*width+x)*4]<200)continue;
+      if(y-start>=Math.max(34,height*.027)){
+        for(let at=start;at<y;at++)pixels.fill(255,(at*width+x)*4,(at*width+x)*4+3);
+      }
+      start=y+1;
+    }
+  }
+  for(const [y,a,b] of horizontal)pixels.fill(255,(y*width+a)*4,(y*width+b)*4);
+  context.putImageData(image,0,0);
+  return true;
+}
 async function recognizeDocument(blob,pdf,progress,issues=[],{pdfRows=false}={}){
   if(isTextFile(blob))return (await blob.text()).trim();
   let worker,documentPdf,stage='',pageNumber=1;
@@ -136,7 +175,8 @@ async function recognizeDocument(blob,pdf,progress,issues=[],{pdfRows=false}={})
         errorHandler:()=>{}
       });
     }
-    const {data}=await worker.recognize(image,{},{text:true,tsv:true});
+    const ruled=pdfRows&&removeTableRules(image);
+    const {data}=await worker.recognize(image,{preserve_interword_spaces:ruled?'1':'0'},{text:true,tsv:true});
     issues.push(...uncertainLines(data.tsv,pageNumber));
     return data.text.trim();
   }

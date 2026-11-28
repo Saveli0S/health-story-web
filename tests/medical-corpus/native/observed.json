@@ -1,0 +1,403 @@
+[
+  {
+    "file": "V01-visit.pdf",
+    "header": {
+      "clinic": "Клиника «Тестовый клевер»",
+      "date": "2026-03-12",
+      "doctorName": "Веточкина Ульяна Львовна",
+      "episodeName": "Острый фарингит",
+      "note": "Першение в горле, утомляемость.",
+      "specialty": "Терапевт",
+      "title": "Первичный приём терапевта"
+    },
+    "medicines": [
+      {
+        "form": "таблетки",
+        "id": "",
+        "instructions": "По 1 таблетке в день, 3 дня.",
+        "name": "Клеверин",
+        "strength": "5 мг"
+      }
+    ],
+    "recognizedCharacters": 421,
+    "recommendations": "Принести дневник наблюдений на контрольный осмотр.",
+    "uncertainLineCount": 0,
+    "warnings": []
+  },
+  {
+    "file": "V02-two-page-visit.pdf",
+    "header": {
+      "clinic": "Бюро «Янтарный макет»",
+      "date": "2026-03-19",
+      "doctorName": "Полевой Ян Ильич",
+      "episodeName": "Острый фарингит",
+      "note": "При глотании остаётся небольшая боль.",
+      "specialty": "Оториноларинголог",
+      "title": "Выписка о повторной консультации"
+    },
+    "medicines": [
+      {
+        "form": "спрей",
+        "id": "",
+        "instructions": "По 1 дозе 2 раза в день, 2 дня.",
+        "name": "Макетол",
+        "strength": "0,05 %"
+      }
+    ],
+    "recognizedCharacters": 681,
+    "recommendations": "Записать дату окончания курса.\nНа повторный приём взять первый лист выписки.\nЛист 2 из 2",
+    "uncertainLineCount": 0,
+    "warnings": []
+  },
+  {
+    "file": "V03-handwriting.png",
+    "header": {
+      "clinic": "Клиника Листопад",
+      "date": "2026-04-21",
+      "doctorName": "Лаврова М. П.",
+      "episodeName": "сухость кожи.",
+      "note": "сухость кожи.",
+      "specialty": "",
+      "title": ""
+    },
+    "medicines": [
+      {
+        "form": "",
+        "id": "",
+        "instructions": "",
+        "name": "Дермотест",
+        "strength": ""
+      }
+    ],
+    "recognizedCharacters": 170,
+    "recommendations": "повторный осмотр.",
+    "uncertainLineCount": 7,
+    "warnings": []
+  },
+  {
+    "file": "V04-a-front.jpg",
+    "header": {
+      "clinic": "Кабинет «Учебный берег»",
+      "date": "2026-04-04",
+      "doctorName": "Тестова Нина Львовна",
+      "episodeName": "Синдром сухого глаза",
+      "note": "Сухость глаз к вечеру.",
+      "specialty": "Офтальмолог",
+      "title": "Первичный осмотр"
+    },
+    "medicines": [
+      {
+        "form": "капли",
+        "id": "",
+        "instructions": "По 1 капле в день, 2 дня.",
+        "name": "Образцол",
+        "strength": ""
+      }
+    ],
+    "recognizedCharacters": 328,
+    "recommendations": "",
+    "uncertainLineCount": 9,
+    "warnings": []
+  },
+  {
+    "file": "V04-b-advice.jpg",
+    "header": {
+      "clinic": "Кабинет «Учебный берег»",
+      "date": "",
+      "doctorName": "",
+      "episodeName": "",
+      "note": "",
+      "specialty": "",
+      "title": ""
+    },
+    "medicines": [],
+    "recognizedCharacters": 155,
+    "recommendations": "Взять список капель на следующий приём.",
+    "uncertainLineCount": 5,
+    "warnings": []
+  },
+  {
+    "draft": {
+      "category": "Другое",
+      "date": "2025-01-08",
+      "laboratory": "Лаборатория Северный макет",
+      "name": "Общий анализ крови и биохимия",
+      "rows": [
+        {
+          "name": "Гемоглобин",
+          "range": "120–150",
+          "specimen": "Цельная кровь",
+          "unit": "г/л",
+          "value": "132"
+        },
+        {
+          "name": "Глюкоза",
+          "range": "3,9–5,5",
+          "specimen": "Плазма",
+          "unit": "ммоль/л",
+          "value": "4,8"
+        },
+        {
+          "name": "С-реактивный белок",
+          "range": "0–5",
+          "specimen": "Плазма",
+          "unit": "мг/л",
+          "value": "<1"
+        }
+      ]
+    },
+    "file": "01-baseline.pdf",
+    "recognizedCharacters": 352,
+    "series": [
+      {
+        "key": "гемоглобин|г/л",
+        "name": "Гемоглобин",
+        "specimen": "Цельная кровь",
+        "unit": "г/л",
+        "value": "132"
+      },
+      {
+        "key": "глюкоза|ммоль/л|плазма",
+        "name": "Глюкоза",
+        "specimen": "Плазма",
+        "unit": "ммоль/л",
+        "value": "4,8"
+      },
+      {
+        "key": "с-реактивный белок|мг/л|плазма",
+        "name": "С-реактивный белок",
+        "specimen": "Плазма",
+        "unit": "мг/л",
+        "value": "<1"
+      }
+    ],
+    "uncertainLineCount": 0,
+    "warnings": []
+  },
+  {
+    "draft": {
+      "category": "Другое",
+      "date": "2025-02-12",
+      "laboratory": "North Mock Lab",
+      "name": "Haematology and chemistry",
+      "rows": [
+        {
+          "name": "Haemoglobin (HGB)",
+          "range": "12.0–15.0",
+          "specimen": "Цельная кровь",
+          "unit": "g/dL",
+          "value": "13.8"
+        },
+        {
+          "name": "Glucose",
+          "range": "3.9–5.5",
+          "specimen": "Плазма",
+          "unit": "mmol/L",
+          "value": "5.1"
+        },
+        {
+          "name": "C-reactive protein",
+          "range": "",
+          "specimen": "Плазма",
+          "unit": "mg/L",
+          "value": "1.4"
+        }
+      ]
+    },
+    "file": "02-followup-en.pdf",
+    "recognizedCharacters": 543,
+    "series": [
+      {
+        "key": "гемоглобин|г/л",
+        "name": "Гемоглобин",
+        "specimen": "Цельная кровь",
+        "unit": "г/л",
+        "value": "138"
+      },
+      {
+        "key": "глюкоза|ммоль/л|плазма",
+        "name": "Глюкоза",
+        "specimen": "Плазма",
+        "unit": "ммоль/л",
+        "value": "5.1"
+      },
+      {
+        "key": "с-реактивный белок|мг/л|плазма",
+        "name": "С-реактивный белок",
+        "specimen": "Плазма",
+        "unit": "мг/л",
+        "value": "1.4"
+      }
+    ],
+    "uncertainLineCount": 0,
+    "warnings": []
+  },
+  {
+    "draft": {
+      "category": "Другое",
+      "date": "2025-03-13",
+      "laboratory": "Лаборатория Контур макет",
+      "name": "Анализ крови",
+      "rows": [
+        {
+          "name": "Hb",
+          "range": "12,0–15,0",
+          "specimen": "Цельная кровь",
+          "unit": "г/дл",
+          "value": "14,0"
+        },
+        {
+          "name": "Глюкоза плазмы",
+          "range": "",
+          "specimen": "Плазма",
+          "unit": "ммоль/л",
+          "value": "5,0"
+        }
+      ]
+    },
+    "file": "03-followup-scan.pdf",
+    "recognizedCharacters": 242,
+    "series": [
+      {
+        "key": "гемоглобин|г/л",
+        "name": "Гемоглобин",
+        "specimen": "Цельная кровь",
+        "unit": "г/л",
+        "value": "140"
+      },
+      {
+        "key": "глюкоза|ммоль/л|плазма",
+        "name": "Глюкоза",
+        "specimen": "Плазма",
+        "unit": "ммоль/л",
+        "value": "5,0"
+      }
+    ],
+    "uncertainLineCount": 7,
+    "warnings": []
+  },
+  {
+    "draft": {
+      "category": "Другое",
+      "date": "2025-04-15",
+      "laboratory": "Лаборатория Восток макет",
+      "name": "Анализ мочи",
+      "rows": [
+        {
+          "name": "Глюкоза",
+          "range": "",
+          "specimen": "Моча",
+          "unit": "ммоль/л",
+          "value": "0,3"
+        },
+        {
+          "name": "Нитриты",
+          "range": "",
+          "specimen": "Моча",
+          "unit": "",
+          "value": "отрицательно"
+        }
+      ]
+    },
+    "file": "04-urine-scan.jpg",
+    "recognizedCharacters": 213,
+    "series": [
+      {
+        "key": "глюкоза|ммоль/л|моча",
+        "name": "Глюкоза",
+        "specimen": "Моча",
+        "unit": "ммоль/л",
+        "value": "0,3"
+      },
+      {
+        "key": "нитриты||моча",
+        "name": "Нитриты",
+        "specimen": "Моча",
+        "unit": "",
+        "value": "отрицательно"
+      }
+    ],
+    "uncertainLineCount": 6,
+    "warnings": []
+  },
+  {
+    "draft": {
+      "category": "Другое",
+      "date": "2025-05-12",
+      "laboratory": "Лаборатория Восток макет",
+      "name": "Анализ мочи на белок",
+      "rows": [
+        {
+          "name": "Белок",
+          "range": "0–100",
+          "specimen": "Моча",
+          "unit": "мг/л",
+          "value": "?"
+        }
+      ]
+    },
+    "file": "05-unclear.png",
+    "recognizedCharacters": 210,
+    "series": [
+      {
+        "key": "белок|мг/л|моча",
+        "name": "Белок",
+        "specimen": "Моча",
+        "unit": "мг/л",
+        "value": "?"
+      }
+    ],
+    "uncertainLineCount": 5,
+    "warnings": []
+  },
+  {
+    "file": "история-лечения.txt",
+    "header": {
+      "clinic": "Клиника «Учебная поляна»",
+      "date": "2026-09-13",
+      "doctorName": "Условный Лист",
+      "episodeName": "Наблюдение в динамике",
+      "note": "Быстрая утомляемость при обычной нагрузке.",
+      "specialty": "Терапевт",
+      "title": "Повторный контроль"
+    },
+    "medicines": [
+      {
+        "form": "таблетки",
+        "id": "",
+        "instructions": "По 1 таблетке по ранее согласованной схеме.",
+        "name": "Листин",
+        "strength": "5 мг"
+      }
+    ],
+    "recognizedCharacters": 550,
+    "recommendations": "Принести дневник самочувствия на контроль.",
+    "uncertainLineCount": 0,
+    "warnings": []
+  },
+  {
+    "file": "смешанный-слой.pdf",
+    "header": {
+      "clinic": "Кабинет «Учебный берег»",
+      "date": "2026-04-04",
+      "doctorName": "Тестова Нина Львовна",
+      "episodeName": "Синдром сухого глаза",
+      "note": "Сухость глаз к вечеру.",
+      "specialty": "Офтальмолог",
+      "title": "Первичный осмотр"
+    },
+    "medicines": [
+      {
+        "form": "капли",
+        "id": "",
+        "instructions": "По 1 капле в день, 2 дня.",
+        "name": "Образцол",
+        "strength": ""
+      }
+    ],
+    "recognizedCharacters": 374,
+    "recommendations": "",
+    "uncertainLineCount": 12,
+    "warnings": []
+  }
+]

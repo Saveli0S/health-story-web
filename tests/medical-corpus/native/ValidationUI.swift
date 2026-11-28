@@ -12,7 +12,7 @@ final class ValidationUI: XCTestCase {
             key.typeText("QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI")
             app.buttons["Открыть архив"].tap()
         }
-        app.buttons["Мая Макетова"].tap()
+        XCTAssertTrue(app.navigationBars["Профиль"].waitForExistence(timeout:10),app.debugDescription)
     }
 
     private func reach(_ element: XCUIElement) {

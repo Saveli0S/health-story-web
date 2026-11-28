@@ -1,0 +1,148 @@
+[
+  {
+    "id": "empty-upload",
+    "status": "PASS",
+    "observed": "Выберите непустые фото, PDF или TXT."
+  },
+  {
+    "id": "visit-header",
+    "status": "PASS",
+    "observed": [
+      "2026-09-13",
+      "Повторный контроль",
+      "Условный Лист",
+      "Терапевт",
+      "Наблюдение в динамике",
+      "Быстрая утомляемость при обычной нагрузке."
+    ]
+  },
+  {
+    "id": "only-current-prescription",
+    "status": "PASS",
+    "observed": [
+      "Листин"
+    ]
+  },
+  {
+    "id": "recommendation",
+    "status": "PASS",
+    "observed": "Принести дневник самочувствия на контроль."
+  },
+  {
+    "id": "pharmacy-search-link",
+    "status": "PASS",
+    "observed": "https://tabletka.by/search/?request=%D0%9B%D0%B8%D1%81%D1%82%D0%B8%D0%BD+5+%D0%BC%D0%B3+%D1%82%D0%B0%D0%B1%D0%BB%D0%B5%D1%82%D0%BA%D0%B8&region=1001"
+  },
+  {
+    "id": "pharmacy-min-max-fallback",
+    "status": "PASS",
+    "observed": {
+      "interceptedRequests": [
+        {
+          "name": "Листин",
+          "region": "1001"
+        },
+        {
+          "name": "Листин",
+          "region": "0"
+        }
+      ]
+    }
+  },
+  {
+    "id": "completed-removed-from-overview",
+    "status": "PASS",
+    "observed": {
+      "visible": 0
+    }
+  },
+  {
+    "id": "unknown-end-history",
+    "status": "PASS",
+    "observed": "Назначения врача\nЛистин · 5 мг\nтаблетки\n\nПо 1 таблетке по ранее согласованной схеме.\n\nначало не указано — дата неизвестна · завершён\nИзменить даты\nОжидает разбора\nНайти аналоги"
+  },
+  {
+    "id": "home-chart",
+    "status": "PASS",
+    "observed": {
+      "points": 2
+    }
+  },
+  {
+    "id": "episode-links-both-measurements",
+    "status": "PASS",
+    "observed": {
+      "links": 2
+    }
+  },
+  {
+    "id": "invalid-prevention-date",
+    "status": "PASS",
+    "observed": "Проверьте даты выполнения и следующего обследования."
+  },
+  {
+    "id": "vaccine-linked",
+    "status": "PASS",
+    "observed": {
+      "tag": "Прививка",
+      "linked": 1
+    }
+  },
+  {
+    "id": "only-selected-prevention",
+    "status": "PASS",
+    "observed": "selected vaccine was present: true"
+  },
+  {
+    "id": "identifier-redaction",
+    "status": "PASS",
+    "observed": {
+      "visibleInPreview": []
+    }
+  },
+  {
+    "id": "hybrid-pdf-body",
+    "status": "PASS",
+    "observed": [
+      "2026-04-04",
+      "Синдром сухого глаза",
+      "Сухость глаз к вечеру."
+    ]
+  },
+  {
+    "id": "truncated-pdf-manual-recovery",
+    "status": "PASS",
+    "observed": {
+      "fields": [
+        "",
+        "",
+        "",
+        ""
+      ],
+      "warning": [
+        "Уточните по оригиналуКакую дату визита указал врач?Как называется визит?Какой эпизод или диагноз указан?Как зовут врача?"
+      ]
+    }
+  },
+  {
+    "id": "original-filename-stays-local",
+    "status": "PASS",
+    "observed": {
+      "originalTitle": "CASE456_Фамилия",
+      "neutralTitle": true,
+      "containsReading": true
+    }
+  },
+  {
+    "id": "local-preview-no-external-request",
+    "status": "PASS",
+    "observed": {
+      "blockedExternalOrigins": []
+    }
+  },
+  {
+    "id": "no-page-errors",
+    "status": "PASS",
+    "observed": []
+  }
+]

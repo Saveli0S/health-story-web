@@ -1,0 +1,5 @@
+node tests/sync-ui.cjs
+PASS Chrome ↔ iPhone WebKit: real encrypted relay, role checks, lazy original, offline merge, conflict resolution, revocation
+
+node tests/device-vault-ui.cjs --mixed
+PASS Chrome → iPhone WebKit legacy encryption, cold open, per-device originals, role isolation, updates, revocation and corruption

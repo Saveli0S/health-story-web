@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  printf 'Usage: %s DEVICE_UDID APPLE_TEAM_ID [--build-only | --install-only]\n' "$0"
+  printf 'Usage: %s DEVICE_UDID APPLE_TEAM_ID [--build-only | --install-only | --verify-only]\n' "$0"
 }
 
 if [[ "${1:-}" == "--help" ]]; then
@@ -18,14 +18,44 @@ device_id=$1
 team_id=$2
 mode=${3:-}
 case "$mode" in
-  ''|--build-only|--install-only) ;;
+  ''|--build-only|--install-only|--verify-only) ;;
   *) usage >&2; exit 2 ;;
 esac
 bundle_id=by.healthstory.familyjournal
 ios_dir=$(cd "$(dirname "$0")" && pwd)
 build_dir="$HOME/Library/Caches/HealthStory/FamilyBuild"
 
-if [[ "$mode" != "--install-only" ]]; then
+check_installed() {
+  xcrun devicectl device info apps --device "$device_id" --timeout 15 --include-all-apps --quiet --json-output - | python3 -c '
+import json, sys
+
+bundle, expected_build = sys.argv[1:]
+apps = json.load(sys.stdin)["result"]["apps"]
+installed = [app for app in apps if app.get("bundleIdentifier") == bundle]
+if len(installed) != 1:
+    sys.exit("Не удалось подтвердить установку «Листа здоровья» на iPhone.")
+app = installed[0]
+build = str(app.get("bundleVersion", ""))
+if expected_build and build != expected_build:
+    sys.exit(f"На iPhone установлена сборка {build}, ожидалась {expected_build}.")
+print(f"Лист здоровья — сборка {build}")
+
+copies = [row for row in apps if row.get("bundleIdentifier") != bundle and (
+    str(row.get("bundleIdentifier", "")).lower().startswith("by.healthstory.")
+    or str(row.get("name", "")).casefold().startswith(("лист здоровья", "health story"))
+)]
+if copies:
+    print("Отдельные копии дневника на iPhone:")
+    for row in copies:
+        name = row.get("name", "")
+        identifier = row.get("bundleIdentifier", "")
+        print(f"  {name} ({identifier})")
+else:
+    print("На iPhone одна копия «Листа здоровья».")
+' "$bundle_id" "${1:-}"
+}
+
+if [[ "$mode" != "--install-only" && "$mode" != "--verify-only" ]]; then
   destination="platform=iOS,id=$device_id"
   if [[ "$mode" == "--build-only" ]]; then
     destination="generic/platform=iOS"
@@ -65,10 +95,12 @@ if expires <= datetime.datetime.now(datetime.timezone.utc):
     sys.exit("The signing profile expired. Renew it in Xcode.")
 print("Signing profile valid through " + expires.strftime("%Y-%m-%d %H:%M UTC"))
 ' "$device_id" "$team_id" "$bundle_id"
-if [[ "$mode" == "--build-only" ]]; then
+if [[ "$mode" == "--build-only" || "$mode" == "--verify-only" ]]; then
   printf '%s\n' "$app"
+  if [[ "$mode" == "--verify-only" ]]; then check_installed; fi
   exit 0
 fi
 
+expected_build=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$app/Info.plist")
 xcrun devicectl device install app --device "$device_id" "$app"
-xcrun devicectl device info apps --device "$device_id" --filter "bundleIdentifier == '$bundle_id'"
+check_installed "$expected_build"

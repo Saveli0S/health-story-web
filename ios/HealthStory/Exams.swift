@@ -48,7 +48,7 @@ struct NativeExams:View {
         .navigationDestination(isPresented:$new){NativeExamEditor(journal:journal,owner:owner)}
     }
 }
-private struct NativeExamDetail:View {
+struct NativeExamDetail:View {
     @ObservedObject var journal:DeviceJournal
     let owner:String,id:String
     var body:some View {
@@ -84,6 +84,7 @@ private struct NativeExamEditor:View {
     @State private var fields:[String:String]
     @State private var draftID:String
     @State private var dateDefault:Bool
+    @State private var sourcePosition:NativeSourcePosition
     @State private var rows:[ExamMeasurement]
     @State private var sources:[JournalObject]
     @State private var reviewed:Bool
@@ -108,6 +109,7 @@ private struct NativeExamEditor:View {
         var initialFields=Dictionary(uniqueKeysWithValues:keys.map{($0,caption(input,$0))})
         initialFields["date"]=date.isEmpty ? dayString():date
         _fields=State(initialValue:initialFields)
+        _sourcePosition=State(initialValue:NativeSourcePosition(draft["position"] as? JournalObject ?? [:]))
         _dateDefault=State(initialValue:date.isEmpty || draft["dateDefault"] as? Bool==true)
         _rows=State(initialValue:(draft.isEmpty ? entries(base,"parameters"):entries(draft,"parameters")).map(ExamMeasurement.init))
         _sources=State(initialValue:entries(draft,"sources"));_reviewed=State(initialValue:draft["reviewed"] as? Bool ?? false)
@@ -146,6 +148,12 @@ private struct NativeExamEditor:View {
     var body:some View {
         let visits=(journal.profile(owner)["addedVisits"] as? [[Any]] ?? []).filter{$0.count>=8}
         let visible=validation.visible(validationIssues)
+        let profile=journal.profile(owner)
+        let current=entries(profile,"exams").first{caption($0,"id")==recordID} ?? [:]
+        let savedIDs=Set(entries(current,"attachments").map{caption($0,"id")})
+        let saved=entries(profile,"files").filter{savedIDs.contains(caption($0,"id"))}
+        let preview=(saved+sources).map{NativeSourceItem(id:caption($0,"id"),name:caption($0,"name"))}
+        NativeSourceReview(sources:preview,position:$sourcePosition,load:{try await journal.attachment(owner:owner,id:$0)}) {
         Form {
             Section("Оригиналы"){
                 Picker("Что добавить",selection:$protocolMode){Text("Протокол").tag(true);Text("Снимок").tag(false)}.pickerStyle(.segmented)
@@ -188,7 +196,8 @@ private struct NativeExamEditor:View {
             if let duplicate {NavigationLink("Открыть существующее обследование"){NativeExamDetail(journal:journal,owner:owner,id:duplicate.id)}}
             Button("Сохранить обследование"){save(final:true)}.disabled(reading||journal.busy)
             Button("Отложить сверку"){if save(){dismiss()}}.disabled(reading||journal.busy)
-        }.journalValidation(validation).journalBackground().navigationTitle("Сверка обследования")
+        }.journalValidation(validation)
+        }.journalBackground().navigationTitle("Сверка обследования")
         .fileImporter(isPresented:$picking,allowedContentTypes:protocolMode ? [.image,.pdf,.plainText]:[.image,.pdf,.zip],allowsMultipleSelection:true){result in
             Task{do{for url in try result.get(){let data=try readNativeFile(url);try await add(data,url.lastPathComponent,UTType(filenameExtension:url.pathExtension)?.preferredMIMEType ?? "application/octet-stream")}}catch{notice=error.localizedDescription}}
         }
@@ -209,6 +218,12 @@ private struct NativeExamEditor:View {
         .sheet(isPresented:$showCamera){NativeCamera{data in Task{do{try await add(data,"Фото.jpg","image/jpeg")}catch{notice=error.localizedDescription}}}}
         .onChange(of:photos){_,items in Task{do{for item in items{if let data=try await item.loadTransferable(type:Data.self){let type=item.supportedContentTypes.first;try await add(data,"Фото."+(type?.preferredFilenameExtension ?? "jpg"),type?.preferredMIMEType ?? "image/jpeg")}}}catch{notice=error.localizedDescription}}}
         .onChange(of:fields){_,_ in save()}.onChange(of:rows){_,_ in save()}.onChange(of:reviewed){_,_ in save()}
+        .task(id:sourcePosition){
+            guard !sourcePosition.sourceID.isEmpty else {return}
+            do {try await Task.sleep(for:.milliseconds(300))}catch{return}
+            let saved=entries(journal.profile(owner),"examDrafts").first{caption($0,"id")==draftID}?["position"] as? JournalObject
+            if saved==nil || NativeSourcePosition(saved ?? [:]) != sourcePosition {_=save()}
+        }
     }
     @discardableResult private func save(final:Bool=false,newFile:NativeUpload?=nil)->Bool {
         if finished{return true}
@@ -256,7 +271,7 @@ private struct NativeExamEditor:View {
                         }
                         if caption(files[i],"examId")==newID {files[i]["visit"]=args["visit"];files[i]["date"]=args["date"]}
                     }
-                }else{drafts.append(["id":draftID,"exam":recordID,"fields":args,"dateDefault":dateDefault,"parameters":parameters,"sources":sources,"reviewed":reviewed,"needsReview":hasProtocol])}
+                }else{drafts.append(["id":draftID,"exam":recordID,"fields":args,"dateDefault":dateDefault,"parameters":parameters,"sources":sources,"reviewed":reviewed,"needsReview":hasProtocol,"position":sourcePosition.json])}
                 p["files"]=files;p["examDrafts"]=drafts
             }
             if final{finished=true;duplicate=nil;dismiss()}

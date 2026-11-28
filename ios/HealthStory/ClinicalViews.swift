@@ -36,6 +36,7 @@ struct NativeClinicalSearch:View {
     let owner:String,query:String,tags:RecordTags
     var body:some View {
         let profile=journal.profile(owner)
+        let indicators=trendCards(profile).filter{$0.isLab && $0.matches(query,tags:tags)}
         let reports=entries(profile,"files").compactMap { file -> (file:JournalObject, lab:JournalObject, match:String?)? in
             guard let lab=file["lab"] as? JournalObject else {return nil}
             let fields=[caption(lab,"name"),caption(file,"name"),caption(lab,"laboratory"),caption(lab,"date")]
@@ -50,6 +51,11 @@ struct NativeClinicalSearch:View {
             return tags.matches(query,key:"exam:"+caption(exam,"id"),fields:fields+entries(exam,"parameters").map{caption($0,"name")})
         }
         let measurements=entries(profile,"measurements").filter{row in tags.matches(query,key:"",fields:[caption(row,"name")])}
+        if !indicators.isEmpty {
+            Section("Показатели анализов") {
+                ForEach(indicators){card in TrendCardLink(journal:journal,owner:owner,card:card)}
+            }
+        }
         if !reports.isEmpty {
             Section("Найденные анализы") {
                 ForEach(reports.indices,id:\.self){index in
@@ -119,13 +125,57 @@ struct PatientFields:View {
 }
 struct TrendPoint:Identifiable {
     let id:String,name:String,unit:String,date:String,value:String,source:String?
-    var key="", material="", rawName="", rawValue="", rawUnit="", range=""
-    var series:String { [name,unit,material].filter{!$0.isEmpty}.joined(separator:" · ") }
+    var key="", marker="", material="", rawName="", rawValue="", rawUnit="", range="", search="", report="", laboratory=""
+    var dateSource=""
     var numeric:Double? {
         guard let number=Double(value.replacingOccurrences(of:",",with:".")),number.isFinite else {return nil}
         return number
     }
 }
+
+struct TrendSeries:Identifiable {
+    let id:String,points:[TrendPoint]
+    var name:String {points[0].name}
+    var unit:String {points[0].unit}
+    var isLab:Bool {points[0].source != nil}
+    var material:String {points[0].material}
+    var details:String {[material,unit,"Результатов: \(points.count)"].filter{!$0.isEmpty}.joined(separator:" · ")}
+
+    func matches(_ query:String,tags:RecordTags) -> Bool {
+        points.contains {point in
+            let key=point.source.map{"lab:"+$0} ?? ""
+            return tags.matches(query,key:key,fields:[name,material,unit,point.search,point.rawName,point.report,point.laboratory])
+        }
+    }
+}
+
+func trendSeries(_ profile:JournalObject) -> [TrendSeries] {
+    Dictionary(grouping:trendPoints(profile),by:\.key)
+        .map{TrendSeries(id:$0.key,points:$0.value)}
+        .sorted{a,b in a.name==b.name ? a.id<b.id : a.name.localizedStandardCompare(b.name) == .orderedAscending}
+}
+
+struct TrendCard:Identifiable {
+    let id:String,series:[TrendSeries]
+    var name:String {series[0].name}
+    var isLab:Bool {series[0].isLab}
+    var details:String {
+        if series.count==1 {return series[0].details}
+        return "Разные биоматериалы или единицы · Результатов: \(series.reduce(0){$0+$1.points.count})"
+    }
+    func matches(_ query:String,tags:RecordTags) -> Bool {
+        series.contains{$0.matches(query,tags:tags)}
+    }
+}
+
+func trendCards(_ profile:JournalObject) -> [TrendCard] {
+    Dictionary(grouping:trendSeries(profile)){series in
+        let marker=series.points[0].marker
+        return marker.isEmpty ? series.id : "indicator:"+marker
+    }.map{TrendCard(id:$0.key,series:$0.value)}
+        .sorted{a,b in a.name==b.name ? a.id<b.id : a.name.localizedStandardCompare(b.name) == .orderedAscending}
+}
+
 func trendPoints(_ profile:JournalObject)->[TrendPoint] {
     var out=entries(profile,"measurements").map{r in
         let name=caption(r,"name"),unit=caption(r,"unit")
@@ -134,20 +184,195 @@ func trendPoints(_ profile:JournalObject)->[TrendPoint] {
     let parser=try? ClinicalImport()
     for file in entries(profile,"files") {
         guard let lab=file["lab"] as? JournalObject else {continue}
-        let source=caption(file,"id"),title=caption(lab,"name")
+        let source=caption(file,"id"),title=caption(lab,"name"),sampleDate=caption(lab,"date"),documentDate=caption(lab,"documentDate")
+        let date=sampleDate.isEmpty ? documentDate : sampleDate
+        let dateSource=sampleDate.isEmpty ? (documentDate.isEmpty ? "" : "Дата по бланку") : (lab["dateEstimated"] as? Bool == true ? "Дата подставлена" : "")
         for (i,r) in entries(lab,"rows").enumerated() {
             // Keep a per-row fallback if the normalization module ever fails; do not merge ambiguous samples.
             let fallbackKey=source+"-"+String(i)
-            let n=parser?.seriesPoint(r,title:title,source:source) ?? r
+            let n=parser?.seriesPoint(r,title:title) ?? r
             let material=caption(n,"specimen")
-            out.append(.init(id:fallbackKey,name:caption(n,"name"),unit:caption(n,"unit"),date:caption(lab,"date"),value:caption(n,"value"),source:source,key:n["key"] as? String ?? fallbackKey,material:material.isEmpty ? "Материал не уточнён · "+caption(lab,"date") : material,rawName:caption(r,"name"),rawValue:caption(r,"value"),rawUnit:caption(r,"unit"),range:caption(r,"range")))
+            let label=material.isEmpty ? "Биоматериал не уточнён" : material
+            out.append(.init(id:fallbackKey,name:caption(n,"name"),unit:caption(n,"unit"),date:date,value:caption(n,"value"),source:source,
+                key:n["key"] as? String ?? fallbackKey,marker:caption(n,"marker"),material:label,rawName:caption(r,"name"),rawValue:caption(r,"value"),rawUnit:caption(r,"unit"),
+                range:caption(r,"range"),search:caption(n,"search"),report:title,laboratory:caption(lab,"laboratory"),dateSource:dateSource))
         }
     }
     return out.sorted{$0.date<$1.date}
 }
+
+struct TrendCardLink:View {
+    @ObservedObject var journal:DeviceJournal
+    let owner:String,card:TrendCard
+    var body:some View {
+        NavigationLink {TrendDetail(journal:journal,owner:owner,key:card.id)} label:{
+            JournalRowLabel(title:card.name,symbol:"chart.xyaxis.line",subtitle:card.details)
+        }
+    }
+}
+
+struct TrendDetail:View {
+    @ObservedObject var journal:DeviceJournal
+    let owner:String,key:String
+
+    var body:some View {
+        if let card=trendCards(journal.profile(owner)).first(where:{$0.id==key || $0.series.contains{$0.id==key}}) {
+            List {
+                ForEach(card.series){series in seriesContent(series)}
+            }.journalBackground().navigationTitle(card.name)
+        }else {ContentUnavailableView("Нет результатов",systemImage:"chart.xyaxis.line")}
+    }
+
+    @ViewBuilder private func seriesContent(_ series:TrendSeries) -> some View {
+        let values=chartValues(series.points)
+        Section {
+            if !series.material.isEmpty || !series.unit.isEmpty {
+                Text([series.material,series.unit].filter{!$0.isEmpty}.joined(separator:" · "))
+            }
+            if values.isEmpty {
+                Text("Для графика нужны числовые результаты с датой.").foregroundStyle(.secondary)
+            }else {
+                PointChart(values:values,unit:series.unit)
+            }
+            if journal.editable { NativeConsultationLink(journal:journal,owner:owner,source:"indicator:"+series.id) }
+            Text("Результаты за всё время").font(.headline)
+            ForEach(series.points){point in
+                if let id=point.source {
+                    NavigationLink {DeviceAttachment(journal:journal,owner:owner,id:id,name:point.report)} label:{resultLabel(point)}
+                } else {LabeledContent(point.date,value:point.value+" "+point.unit)}
+            }
+        }
+    }
+
+    private func resultLabel(_ point:TrendPoint) -> some View {
+        let comparison=point.unit != point.rawUnit && point.value != point.rawValue ?
+            "Для сравнения "+point.value.replacingOccurrences(of:".",with:",")+" "+point.unit : ""
+        return VStack(alignment:.leading,spacing:4){
+            Text([point.date,[point.rawValue,point.rawUnit].filter{!$0.isEmpty}.joined(separator:" ")].filter{!$0.isEmpty}.joined(separator:" · "))
+            Text([point.rawName,comparison,point.dateSource,point.laboratory,point.range.isEmpty ? "" : "Диапазон по бланку: "+point.range]
+                .filter{!$0.isEmpty}.joined(separator:" · "))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private struct ChartPoint:Identifiable {let id:String,date:Date,value:Double,reading:String,dateCaption:String}
+
+    private struct PointChart:View {
+        let values:[ChartPoint],unit:String
+        @State private var overflowRows=0
+        private let captionHeight:CGFloat=34, gap:CGFloat=6
+
+        var body:some View {
+            Chart(values){point in
+                LineMark(x:.value("Дата",point.date),y:.value(unit,point.value))
+                PointMark(x:.value("Дата",point.date),y:.value(unit,point.value))
+            }.chartXAxis{AxisMarks(values:.automatic(desiredCount:4)) {AxisGridLine();AxisTick();AxisValueLabel(format:.dateTime.month(.abbreviated).year())}}
+            .chartYAxisLabel(unit)
+            .chartOverlay {proxy in
+                GeometryReader {geometry in
+                    if let plot=proxy.plotFrame {
+                        let (captions,rows)=placements(proxy,frame:geometry[plot])
+                        ZStack(alignment:.topLeading) {
+                            Path {line in
+                                for caption in captions {
+                                    let rect=caption.rect,dot=caption.dot
+                                    let x=min(rect.maxX-5,max(rect.minX+5,dot.x))
+                                    let y=min(rect.maxY,max(rect.minY,dot.y))
+                                    line.move(to:CGPoint(x:x,y:y))
+                                    line.addLine(to:dot)
+                                }
+                            }.stroke(JournalTheme.secondary.opacity(0.58),lineWidth:0.75)
+                            ForEach(captions){caption in
+                                VStack(spacing:1){
+                                    Text(caption.point.reading).font(.system(size:14,weight:.semibold))
+                                    Text(caption.point.dateCaption).font(.system(size:11)).foregroundStyle(JournalTheme.secondary)
+                                }
+                                .lineLimit(1).minimumScaleFactor(0.75)
+                                .padding(.horizontal,4)
+                                .frame(width:caption.rect.width,height:captionHeight)
+                                .background(JournalTheme.leaf,in:.rect(cornerRadius:6))
+                                .position(x:caption.rect.midX,y:caption.rect.midY)
+                            }
+                        }.allowsHitTesting(false).accessibilityHidden(true)
+                            .onChange(of:rows,initial:true){_,newRows in overflowRows=newRows}
+                    }
+                }
+            }.frame(height:230).padding(.top,CGFloat(overflowRows)*(captionHeight+gap)).accessibilityLabel("График по датам")
+        }
+
+        private struct Caption:Identifiable {
+            let point:ChartPoint,dot:CGPoint,rect:CGRect
+            var id:String {point.id}
+        }
+
+        private func placements(_ proxy:ChartProxy,frame:CGRect) -> ([Caption],Int) {
+            guard frame.width>20 else {return ([],0)}
+            let dots=values.compactMap {point -> (point:ChartPoint,position:CGPoint)? in
+                guard let x=proxy.position(forX:point.date),let y=proxy.position(forY:point.value) else {return nil}
+                return (point,CGPoint(x:frame.minX+x,y:frame.minY+y))
+            }
+            let segments=Array(zip(dots.map(\.position),dots.dropFirst().map(\.position)))
+            let bounds=frame.insetBy(dx:3,dy:3)
+            var result=[Caption](),overflowRows=0,nextOverflowX=bounds.maxX
+            for (point,dot) in dots {
+                let width=min(bounds.width,max(70,CGFloat(max(point.reading.count*9,point.dateCaption.count*6)+12)))
+                let side:CGFloat=dot.y>bounds.midY ? 1 : -1
+                let offsets:[(CGFloat,CGFloat)]=[(0,side),(0,-side),(-1,0),(1,0),(-1,side),(1,side),(-1,-side),(1,-side)]
+                let candidates=([12,24,36] as [CGFloat]).flatMap { distance in
+                    offsets.map{dx,dy in
+                        let x=dot.x-width/2+dx*(width/2+distance)
+                        let y=dot.y-captionHeight/2+dy*(captionHeight/2+distance)
+                        return CGRect(x:min(bounds.maxX-width,max(bounds.minX,x)),y:y,width:width,height:captionHeight)
+                    }
+                }.filter {rect in
+                    let clearance=rect.insetBy(dx:-gap,dy:-gap)
+                    return bounds.contains(rect) && !dots.contains{clearance.contains($0.position)} && !result.contains{clearance.intersects($0.rect)}
+                }
+                let rect:CGRect
+                if let near=candidates.first(where:{box in !segments.contains{crosses(box,from:$0.0,to:$0.1)}}) ?? candidates.first {
+                    rect=near
+                }else{
+                    if nextOverflowX+width>bounds.maxX {overflowRows+=1;nextOverflowX=bounds.minX}
+                    let x=min(bounds.maxX-width,max(nextOverflowX,dot.x-width/2))
+                    rect=CGRect(x:x,y:-(CGFloat(overflowRows)*(captionHeight+gap))+3,width:width,height:captionHeight)
+                    nextOverflowX=rect.maxX+gap
+                }
+                result.append(Caption(point:point,dot:dot,rect:rect))
+            }
+            return (result,overflowRows)
+        }
+
+        private func crosses(_ box:CGRect,from a:CGPoint,to b:CGPoint) -> Bool {
+            let left=max(a.x,box.minX),right=min(b.x,box.maxX)
+            guard left<=right else {return false}
+            if a.x==b.x {return min(a.y,b.y)<box.maxY && max(a.y,b.y)>box.minY}
+            let start=a.y+(b.y-a.y)*(left-a.x)/(b.x-a.x)
+            let end=a.y+(b.y-a.y)*(right-a.x)/(b.x-a.x)
+            return min(start,end)<box.maxY && max(start,end)>box.minY
+        }
+    }
+
+    private func chartValues(_ points:[TrendPoint]) -> [ChartPoint] {
+        let localTime=DateFormatter()
+        localTime.locale=Locale(identifier:"en_US_POSIX")
+        localTime.calendar=Calendar(identifier:.gregorian)
+        localTime.dateFormat="yyyy-MM-dd'T'HH:mm"
+        return points.compactMap {point in
+            let date=point.source==nil ? localTime.date(from:point.date) : CoursePeriod.date(point.date)
+            guard let date,let value=point.numeric else {return nil}
+            let day=point.date.prefix(10).split(separator:"-").reversed().joined(separator:".")
+            let time=point.date.dropFirst(11).prefix(5)
+            let caption=time.isEmpty ? day : day+" "+time
+            return ChartPoint(id:point.id,date:date,value:value,reading:point.value.replacingOccurrences(of:".",with:","),dateCaption:caption)
+        }
+    }
+}
 struct Trends:View {
     @ObservedObject var journal:DeviceJournal;let owner:String
+    private enum Mode: String, CaseIterable { case all = "Все", reports = "Бланки", indicators = "Показатели", prevention = "Профилактика" }
     @State private var query:String
+    @State private var mode = Mode.all
+    @State private var category = ""
     @State private var adding=false
     @State private var name=""
     @State private var unit=""
@@ -160,8 +385,9 @@ struct Trends:View {
         self.journal=journal;self.owner=owner;_query=State(initialValue:initialQuery)
     }
     var body:some View {
-        let p=journal.profile(owner), points=trendPoints(p)
+        let p=journal.profile(owner)
         let tags=RecordTags(profile:p,library:entries(journal.data,"tags"))
+        let results=trendCards(p).filter{$0.matches(query,tags:tags)}
         let numeric=Double(value.trim.replacingOccurrences(of:",",with:"."))?.isFinite == true
         let issues=[
             JournalFieldIssue.required("measurement-name",name,"Введите название показателя."),
@@ -174,31 +400,27 @@ struct Trends:View {
                 NavigationLink("Добавить лабораторный бланк"){LabIntake(journal:journal,owner:owner)}
                 Button("Добавить измерение"){validation=JournalFormValidation();error=nil;adding=true}
             }
-            let groups=Dictionary(grouping:points,by:\.key)
-            ForEach(groups.keys.sorted(),id:\.self){key in
-                let rows=groups[key] ?? [],series=rows.first?.series ?? ""
-                if query.isEmpty || rows.contains(where:{ tags.matches(query,key:"lab:"+($0.source ?? ""),fields:[$0.series,$0.rawName]) }) {
-                    NavigationLink(series){List {
-                        let numericRows=rows.filter{$0.numeric != nil}
-                        if !numericRows.isEmpty {
-                            Chart(numericRows){r in
-                                if let v=r.numeric {LineMark(x:.value("Дата",r.date),y:.value(series,v));PointMark(x:.value("Дата",r.date),y:.value(series,v))}
-                            }.frame(height:200)
-                        }
-                        ForEach(rows){r in
-                            if let id=r.source {
-                                NavigationLink {DeviceAttachment(journal:journal,owner:owner,id:id,name:"Исходный бланк")}
-                                    label:{VStack(alignment:.leading){
-                                        Text(r.date+" · "+r.value+" "+r.unit)
-                                        Text("В бланке · "+[r.rawName,r.rawValue,r.rawUnit,r.range].filter{!$0.isEmpty}.joined(separator:" · ")).font(.caption)
-                                    }}
-                            } else {LabeledContent(r.date,value:r.value+" "+r.unit)}
-                        }
-                    }.navigationTitle(series)}
+            Picker("Раздел анализов", selection: $mode) {
+                ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            if mode == .prevention {
+                NavigationLink("Профилактика") { Prevention(journal:journal,owner:owner) }
+            }
+            if mode == .all || mode == .indicators {
+                trendSection("Показатели анализов",results.filter(\.isLab))
+                trendSection("Домашние измерения",results.filter{!$0.isLab})
+            }
+            if mode == .all || mode == .reports {
+            if mode == .reports {
+                Picker("Категория бланка", selection: $category) {
+                    Text("Все").tag("")
+                    ForEach(["Гематология","Биохимия","Другое"],id:\.self) { Text($0).tag($0) }
                 }
             }
             let reports=entries(p,"files").filter{
-                ($0["category"] as? String=="Лаборатория" || $0["lab"] != nil) && tags.matches(query,key:"lab:"+caption($0,"id"),fields:[caption($0,"name"),caption(($0["labDraft"] ?? $0["lab"]) as? JournalObject ?? [:],"name")])
+                let lab=($0["labDraft"] ?? $0["lab"]) as? JournalObject ?? [:]
+                if mode == .reports && !category.isEmpty && caption(lab,"category") != category { return false }
+                return ($0["category"] as? String=="Лаборатория" || $0["lab"] != nil) && tags.matches(query,key:"lab:"+caption($0,"id"),fields:[caption($0,"name"),caption(($0["labDraft"] ?? $0["lab"]) as? JournalObject ?? [:],"name")])
             }
             if journal.editable {
                 let pending=reports.filter{$0["labDraft"] != nil || $0["lab"] == nil}
@@ -220,6 +442,7 @@ struct Trends:View {
                     }
                 }
             }
+            }
         }.journalBackground().navigationTitle("Анализы и измерения").navigationBarTitleDisplayMode(.inline)
             .searchable(text:$query,placement:.navigationBarDrawer(displayMode:.always),prompt:"Анализ, показатель или тег")
         .sheet(isPresented:$adding){NavigationStack {Form {
@@ -237,6 +460,12 @@ struct Trends:View {
                 adding=false;value=""
             }catch{self.error=error.localizedDescription}}.disabled(journal.busy || !journal.editable)
         }.journalValidation(validation).navigationTitle("Домашнее измерение")}}
+    }
+
+    @ViewBuilder private func trendSection(_ title:String,_ cards:[TrendCard]) -> some View {
+        if !cards.isEmpty {
+            Section(title){ForEach(cards){card in TrendCardLink(journal:journal,owner:owner,card:card)}}
+        }
     }
 }
 struct Prevention:View {

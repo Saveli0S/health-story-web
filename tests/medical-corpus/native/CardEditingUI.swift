@@ -10,7 +10,7 @@ final class CardEditingUI: XCTestCase {
         key.tap()
         key.typeText("QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI")
         app.buttons["Открыть архив"].tap()
-        app.buttons["Мая Макетова"].tap()
+        XCTAssertTrue(app.navigationBars["Профиль"].waitForExistence(timeout:10),app.debugDescription)
         func enterVisit() {
             app.buttons["Новый визит"].tap()
             for (label,text) in [("Название эпизода","QA episode"),

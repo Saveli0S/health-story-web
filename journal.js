@@ -1,13 +1,13 @@
 'use strict';
 
 const sectionNames={overview:'Обзор',visits:'История',labs:'Анализы',exams:'Результаты обследований',files:'Документы',consults:'ИИ-консультация',settings:'Настройки'};
-const groups={visit:'Визиты',lab:'Анализы',exam:'Обследования',file:'Вложения',med:'Препараты',note:'Пометки',prevent:'Профилактика'};
+const groups={visit:'Визиты',trend:'Показатели анализов',lab:'Анализы',exam:'Обследования',file:'Вложения',med:'Препараты',note:'Пометки',prevent:'Профилактика'};
 function resultRow(action,id,title,meta,mark='folder'){
   return `<button class="result-row" data-action="${action}" data-id="${esc(id)}">${icon(mark)}<span><strong>${esc(title)}</strong><small>${esc(meta)}</small></span>${icon('right',true)}</button>`;
 }
 function searchIndex(){
   const rows=person.visits.map(v=>({type:'visit',id:v[0],title:v[2],meta:dateLabel(v[1])+' · '+doctorLabel(v[3]),terms:v[4]+' '+v[5]+' '+v[1],icon:'calendar'}));
-  for(const l of labs()){const report=reportInfo(l);rows.push({type:'lab',id:l.id,title:report.name,meta:[labCategory(l.id),dateLabel(report.date),report.laboratory].filter(Boolean).join(' · '),terms:report.rows.map(r=>r.name).join(' ')+' '+report.date,icon:'lab'})}
+  for(const l of labs()){const report=reportInfo(l);rows.push({type:'lab',id:l.id,title:report.name,meta:[labCategory(l.id),labDateLabel(report.date),report.laboratory].filter(Boolean).join(' · '),terms:report.rows.map(r=>r.name).join(' ')+' '+report.date,icon:'lab'})}
   for(const exam of current().exams)rows.push(examSearchRow(exam));
   for(const f of allFiles()) rows.push({type:'file',id:f.id,title:f.name,meta:f.category+' · '+dateLabel(f.date)+(f.syncLocalOnly?' · Оригинал на устройстве добавления':''),terms:[f.file,f.type,f.date].join(' '),icon:'clip'});
   for(const c of allCourses())for(const m of c.meds)rows.push({type:'med',id:c.visit,title:m.name,meta:[m.strength,m.form].filter(Boolean).join(' · '),terms:m.instructions,icon:'pill'});
@@ -23,7 +23,9 @@ function searchIndex(){
 function norm(q){return q.toLocaleLowerCase('ru').replaceAll('ё','е').trim()}
 function filterRows(rows,q){const words=norm(q).replace(/(^|\s)#/g,'$1').split(/\s+/);return rows.filter(r=>words.every(w=>norm([r.title,r.meta,r.terms].join(' ')).includes(w)))}
 function searchResults(query, scope) {
-  const rows=filterRows(searchIndex(),query).filter(r=>scope==='any'||r.type===scope);
+  const index=scope==='trend'?indicatorSearchRows():searchIndex();
+  if(scope==='any'&&query.trim())index.push(...indicatorSearchRows());
+  const rows=filterRows(index,query).filter(r=>scope==='any'||r.type===scope);
   return rows.length?Object.entries(groups).map(([type,title])=>{
     const group=rows.filter(r=>r.type===type);if(!group.length)return '';
     return '<section class="search-group"><h3>'+title+'</h3>'+group.map(r=>resultRow(['med','note'].includes(type)?'visit':type,r.id,r.title,r.meta,r.icon)).join('')+'</section>';
@@ -200,6 +202,11 @@ async function saveUpload(form){
     if(existing)announce('Повторный файл уже есть в дневнике.');
     replaceRoute(first.intake?'intake':first.category==='Лаборатория'?'verifyLab':'file',first.intake?visit:first.id);
   }
+  const reports=staged.filter(row=>row.category==='Лаборатория');
+  const archive=stateKey,generation=prototypeState.generation;
+  for(const report of reports)workQueue=workQueue.then(async()=>{
+    if(stateKey===archive&&prototypeState.generation===generation)await readLabDraft(patient,report.id);
+  });
 }
 function showSettings(){
   const canAuto=mayChangeConsent();

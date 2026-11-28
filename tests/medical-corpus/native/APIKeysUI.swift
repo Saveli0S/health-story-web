@@ -20,7 +20,7 @@ final class APIKeysUI: XCTestCase {
             recovery.typeText("QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI")
             unlock.tap()
         }
-        XCTAssertTrue(app.buttons["Мая Макетова"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.navigationBars["Профиль"].waitForExistence(timeout: 10), app.debugDescription)
     }
 
     func testConnectContinueAndReuseKeys() {
@@ -28,6 +28,7 @@ final class APIKeysUI: XCTestCase {
         let app = XCUIApplication()
         app.launch()
         openJournal(app)
+        tap(app.buttons["Моя семья"], in: app)
         tap(app.buttons["ИИ-провайдеры"], in: app)
         for (label, key) in [("DeepSeek", "synthetic-deepseek-key"), ("Claude (Anthropic)", "synthetic-anthropic-key")] {
             let disconnect = app.buttons["Отключить " + label]
@@ -42,7 +43,7 @@ final class APIKeysUI: XCTestCase {
         tap(defaultPicker, in: app)
         tap(app.buttons["Claude (Anthropic)"], in: app)
         app.navigationBars.buttons.firstMatch.tap()
-        tap(app.buttons["Мая Макетова"], in: app)
+        tap(app.buttons["Закрыть"], in: app)
         tap(app.buttons["ИИ-консультация"], in: app)
         let record = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'QA API keys'")).firstMatch
         tap(record, in: app)
@@ -68,6 +69,7 @@ final class APIKeysUI: XCTestCase {
         app.terminate()
         app.launch()
         openJournal(app)
+        tap(app.buttons["Моя семья"], in: app)
         tap(app.buttons["ИИ-провайдеры"], in: app)
         XCTAssertTrue(defaultPicker.label.contains("Claude (Anthropic)"))
         tap(app.buttons["Отключить DeepSeek"], in: app)

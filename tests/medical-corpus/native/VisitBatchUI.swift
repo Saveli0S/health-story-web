@@ -6,7 +6,7 @@ final class VisitBatchUI:XCTestCase {
         app.launch()
         let key=app.secureTextFields.firstMatch
         if key.waitForExistence(timeout:4){key.tap();key.typeText("QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI");app.buttons["Открыть архив"].tap()}
-        app.buttons["Мая Макетова"].tap()
+        XCTAssertTrue(app.navigationBars["Профиль"].waitForExistence(timeout:10),app.debugDescription)
     }
     func show(_ control:XCUIElement){
         for _ in 0..<12{if control.exists && control.isHittable{return};app.swipeUp()}
