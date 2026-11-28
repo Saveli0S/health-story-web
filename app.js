@@ -38,7 +38,7 @@ function transferHistory(record){
   const labels={provider:'Отправлено провайдеру',copy:'Скопировано для ручной передачи',answer:'Ответ добавлен'};
   return (record.transfers||[]).map(t=>'<p class="hint">'+esc(t.automatic&&t.kind==='provider'?'Отправлено автоматически':labels[t.kind]||'Передача')+' · '+esc(t.actorName)+(t.role==='admin'?' (администратор)':'')+' · '+esc(stamp(t.time))+'</p>').join('');
 }
-function mayChangeConsent(){return !readOnly&&(person.id===viewerPerson.id||(viewer==='admin'&&person.role==='Ребёнок'))}
+function mayChangeConsent(profile=person){return !readOnly&&(profile.id===viewerPerson.id||(viewer==='admin'&&profile.role==='Ребёнок'))}
 let person=accessibleProfiles().find(p=>p.id===params.get('profile'))||viewerPerson;
 function sectionFrom(params){const key=params.get('section');return Object.hasOwn(sectionNames,key)?key:'overview'}
 let section=sectionFrom(params);

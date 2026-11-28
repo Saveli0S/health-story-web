@@ -69,13 +69,13 @@ function saveRecordTags(form){
   render();goBack();
 }
 function tagLibrary(){
-  const admin=viewer==='admin';
+  const admin=viewer==='admin'&&!previous?.access;
   openPanel('Настройки','Справочник тегов','<p class="hint">Эти теги общие для семьи. Название и ключевые слова используются для автоматической разметки на устройстве.</p>'+
     prototypeState.tags.map(t=>admin?resultRow('tagDefinition',t.id,t.name,t.keywords.join(' · '),'folder'):'<p class="note">'+esc(t.name)+'</p>').join('')+
     (admin?act('tagDefinition','Создать тег','','button primary','plus'):''));
 }
 function tagDefinition(id){
-  if(viewer!=='admin')return;
+  if(viewer!=='admin'||previous?.access)return;
   const t=prototypeState.tags.find(t=>t.id===id);
   openPanel('Семейный справочник',t?'Редактировать тег':'Новый тег','<form id="tag-definition" class="edit-form" data-id="'+esc(id)+'"><label>Название<input required maxlength="48" name="title" value="'+esc(t?.name)+'"></label>'+
     '<label>Ключевые слова через запятую<textarea maxlength="400" name="keywords">'+esc(t?.keywords.join(', '))+'</textarea></label><p class="error" role="alert"></p><button class="button primary">Сохранить тег</button>'+

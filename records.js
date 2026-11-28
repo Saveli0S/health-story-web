@@ -49,9 +49,10 @@ function validateFamily(data,allowDevice=false){
   const grant=data.access;
   if(grant){
     const self=family.members.find(m=>m.id===grant.member);
-    if(!allowDevice||!self||family.adminId!==null||!['adult','child'].includes(grant.role)||
-      self.role!==(grant.role==='child'?'Ребёнок':'Взрослый')||
-      family.members.some(m=>m!==self&&(grant.role==='child'||m.role!=='Ребёнок')))throw Error('device scope');
+    if(!allowDevice||!self||!['admin','adult','child'].includes(grant.role)||
+      self.role!==(grant.role==='child'?'Ребёнок':'Взрослый'))throw Error('device scope');
+    if(grant.role==='admin' ? family.adminId!==grant.member :
+      family.adminId!==null||family.members.some(m=>m!==self&&(grant.role==='child'||m.role!=='Ребёнок')))throw Error('device scope');
   }else if(!family.members.some(m=>m.id===family.adminId&&m.role==='Взрослый'))throw Error('admin');
   return family;
 }
@@ -238,7 +239,7 @@ function saveState() {
       if(grant&&['deviceId','role','member','revision'].some(k=>grant[k]!==localGrant[k]))return false;
       if(latest.access){
         for(const k of ['family','templates','tags','city'])if(JSON.stringify(latest[k])!==JSON.stringify(prototypeState[k]))return false;
-        for(const p of latest.family.members)if(p.id!==latest.access.member){
+        for(const p of latest.family.members)if(p.id!==latest.access.member&&!(grant.role==='admin'&&p.role==='Ребёнок')){
           for(const k of ['auto','directAuto','chatGPTAuto'])if((latest.profiles[p.id][k]===true)!==(prototypeState.profiles[p.id][k]===true))return false;
         }
       }

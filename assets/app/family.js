@@ -2,6 +2,7 @@
 
 function familyActions(){
   if(viewer!=='admin')return '';
+  if(previous?.access)return '';
   if(workingFamily)return '<div class="actions left">'+act('newMember','Добавить профиль','','button primary','plus')+
     act('switchSpace','Открыть демо','demo','text-button')+'</div>';
   const exists=Boolean(readJson(familyStateKey));
@@ -15,7 +16,7 @@ function enterSpace(space,profileId=''){
   location.assign(url.href);
 }
 function familyForm(creating){
-  if(viewer!=='admin')return;
+  if(viewer!=='admin'||previous?.access)return;
   if(creating&&!crypto.subtle){openPanel('Семейный архив','Нужно защищённое соединение','<p>Откройте дневник по HTTPS или на localhost, чтобы создать ключ устройства.</p>');return}
   if(creating&&(workingFamily||readJson(familyStateKey))){showFamily();return}
   if(!creating&&!workingFamily)return;
@@ -28,7 +29,7 @@ function familyForm(creating){
     '<p role="alert" class="error"></p><button class="button primary">'+(creating?'Создать семейный архив':'Сохранить профиль')+'</button></form>');
 }
 async function saveFamilyForm(form){
-  if(viewer!=='admin'||form.dataset.busy)return;
+  if(viewer!=='admin'||previous?.access||form.dataset.busy)return;
   const creating=form.dataset.creating==='true',name=form.elements.memberName.value.trim(),role=creating?'Взрослый':form.elements.role.value;
   const error=form.querySelector('.error'),title=form.elements.familyName?.value.trim();
   if(!['Взрослый','Ребёнок'].includes(role))return;

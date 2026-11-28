@@ -13,6 +13,7 @@ function deviceAuthority(familyId){
 }
 function deviceMenu(){
   if(!workingFamily)return '<p class="hint">Подключение доступно для рабочего семейного архива.</p>';
+  if(previous.access?.role==='admin')return '<p class="hint">У этого браузера есть доступ ко всем профилям. Выдача и отзыв доступа доступны в основном браузере семьи.</p>'+act('joinDevice','Получить обновление','','button secondary');
   if(viewer!=='admin')return '<p class="hint">Права назначил администратор семьи. Для получения новой копии используйте файл и код от него.</p>'+act('joinDevice','Получить обновление','','button secondary');
   const devices=deviceAuthority(family.id).devices;
   return '<section class="panel-section"><h3>Подключённые устройства</h3>'+
@@ -48,11 +49,11 @@ async function joinDevicePanel(){
   try{
     const ident=await pairingIdentity();if(!out.isConnected)return;
     out.innerHTML='<p>Передайте запрос администратору и сверьте отпечаток устройства.</p><p><strong>'+shortDeviceId(ident.id)+'</strong></p>'+
-      fileLink({format:'HS-request-1',spki:ident.spki,revision:workingFamily?previous.access.revision:0},'device.health-request','Скачать запрос подключения');
+      fileLink({format:'HS-request-1',spki:ident.spki,revision:workingFamily?previous.access.revision:0,client:'web'},'device.health-request','Скачать запрос подключения');
   }catch{out.textContent='Не удалось подготовить ключ устройства. Проверьте доступ браузера к хранилищу.'}
 }
 function grantDevicePanel(){
-  if(!workingFamily||viewer!=='admin')return;
+  if(!workingFamily||viewer!=='admin'||previous.access)return;
   const adminEnabled=Boolean(readJson(familyStateKey)?.sync);
   const members=family.members.filter(m=>m.id!==family.adminId||adminEnabled);
   if(!members.length){openPanel('Семья и устройства','Выдать доступ','<p>Сначала добавьте профиль взрослого или ребёнка.</p>'+act('newMember','Добавить профиль','','button primary'));return}
@@ -60,7 +61,7 @@ function grantDevicePanel(){
     '<label>Запрос с нового устройства<input type="file" required name="request" accept=".health-request"></label>'+
     '<label>Отпечаток с экрана получателя<input name="fingerprint" required autocomplete="off" spellcheck="false" placeholder="4 группы по 4 символа"></label>'+
     '<label>Название устройства<input required name="label" maxlength="80" placeholder="Например, iPhone"></label>'+
-    '<label>Владелец устройства<select required name="member">'+members.map(m=>'<option value="'+esc(m.id)+'">'+esc(m.name)+' · '+(m.id===family.adminId?'администратор на iPhone, все профили':m.role==='Ребёнок'?'только своя карта, просмотр':'своя карта и все дети, редактирование')+'</option>').join('')+'</select></label>'+
+    '<label>Владелец устройства<select required name="member">'+members.map(m=>'<option value="'+esc(m.id)+'">'+esc(m.name)+' · '+(m.id===family.adminId?'администратор, все профили':m.role==='Ребёнок'?'только своя карта, просмотр':'своя карта и все дети, редактирование')+'</option>').join('')+'</select></label>'+
     '<button class="button primary">Создать файл доступа</button><div role="status"></div></form>');
   const form=document.querySelector('#device-issue');
   if(adminEnabled && members.some(m=>m.id!==family.adminId))form.elements.member.value=members.find(m=>m.id!==family.adminId).id;
@@ -117,8 +118,8 @@ async function issueDeviceFile(f){
     const {raw,id,label,member}=request;
     const snapshot=localStorage.getItem(familyStateKey),data=JSON.parse(localVault.open(snapshot));
     if(data.family.id!==family.id||data.access)throw Error();
-    if(member===data.family.adminId&&(!data.sync||(!f.dataset.device&&request.client!=='ios'))){
-      msg.textContent='Для доступа администратора включите обмен и выберите запрос из нативного приложения iPhone.';return;
+    if(member===data.family.adminId&&(!data.sync||(!f.dataset.device&&!['web','ios'].includes(request.client)))){
+      msg.textContent='Для доступа администратора включите обмен и скачайте новый запрос подключения в браузере или приложении iPhone.';return;
     }
     const old=deviceAuthority(family.id).devices.find(d=>d.id===id);
     if(old&&(old.revoked||old.member!==member)){msg.textContent='Это устройство отозвано или закреплено за другим профилем.';return}

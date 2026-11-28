@@ -8,8 +8,9 @@ function familyDevices(){
 }
 function archivePanel(){
   const canCrypt=Boolean(globalThis.crypto?.subtle);
+  const canBackup=viewer==='admin'&&!previous?.access&&canCrypt;
   const offline=window.isSecureContext&&'serviceWorker' in navigator;
-  const backupNote=viewer!=='admin'?'Семейный архив доступен администратору.':canCrypt
+  const backupNote=previous?.access?'Резервные копии семьи доступны в основном браузере.':viewer!=='admin'?'Семейный архив доступен администратору.':canCrypt
     ?'Семейная копия включает записи всех профилей и оригиналы. Ключ восстановления храните отдельно от файла.'
     :'Создание и восстановление зашифрованной копии доступны по HTTPS или на localhost.';
   const utilities=(driveAllowed()?act('drive','Google Диск','','button secondary','folder'):'')+
@@ -22,11 +23,11 @@ function archivePanel(){
     <div class="summary-sheet archive-sync"><strong>Сохранено в этом браузере</strong><div id="sync-view"></div></div>
     <div class="archive-backup">
       ${demoNote || '<p>'+backupNote+'</p>'}
-      ${viewer==='admin'&&canCrypt?`<div class="actions archive-actions">
+      ${canBackup?`<div class="actions archive-actions">
         ${act('exportBackup','Создать зашифрованный бэкап','','button primary')}
         ${act('importBackup','Проверить или восстановить копию','','button secondary')}
       </div>`:''}
-      ${workingFamily&&viewer==='admin'&&canCrypt?'<details id="family-recovery-key" class="panel-section"><summary>Ключ восстановления семьи</summary>'+
+      ${workingFamily&&canBackup?'<details id="family-recovery-key" class="panel-section"><summary>Ключ восстановления семьи</summary>'+
         '<p>Используйте этот ключ для копий, созданных дневником с ключом семьи. Если при выгрузке указали другой ключ, понадобится тот ключ.</p>'+
         '<code></code></details>':''}
     </div>
@@ -46,14 +47,14 @@ function toBase64(data){
 }
 function fromBase64(text){return localVault.decode64(text)}
 function exportForm(){
-  if(viewer!=='admin')return;
+  if(viewer!=='admin'||previous?.access)return;
   const key=workingFamily?deviceAuthority(family.id).recovery:base64url(crypto.getRandomValues(new Uint8Array(32)));
   openPanel('Семейный архив','Сохранить резервную копию',`<form class="edit-form" id="backup-export"><p class="hint">Сохраните ключ отдельно от файла. Если хотите использовать ранее записанный семейный ключ, вставьте его в поле.</p><label>Ключ восстановления семьи<input required spellcheck="false" autocomplete="off" name="key" value="${key}"></label>
     <label class="source-choice"><input required type="checkbox">Ключ записан отдельно</label><button class="button primary">Подготовить файл</button><p role="status"></p></form>`);
   document.querySelector('#backup-export').localFieldRules=[archiveKeyFieldRules];
 }
 function importForm(cloudFile){
-  if(viewer!=='admin')return;
+  if(viewer!=='admin'||previous?.access)return;
   openPanel('Семейный архив','Проверить резервную копию',`<form id="backup-import" class="edit-form">
     <label>Зашифрованный архив<input required type="file" name="archive" accept=".health"></label>
     <label>Ключ восстановления<input required name="key" type="password" autocomplete="off"></label>

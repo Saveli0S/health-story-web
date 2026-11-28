@@ -1,7 +1,7 @@
 'use strict';
 
 // Only packaged application resources are cached here. Originals live in the owner's IndexedDB.
-const version='health-story-shell-2026-11-parity-1-lab-history-2-refresh-1-recommendation-checklist-1';
+const version='health-story-shell-2026-11-parity-1-lab-history-2-refresh-1-recommendation-checklist-1-browser-pairing-1';
 const shell=['index.html','styles.css','demo-data.js','records.js','journal.js','treatment.js','recognition.js','visit-import.js','intake.js','app.js',
   ...['validation','privacy','record-removal','record-removal-ui','clinical-parser','visit-drafts','source-view','laboratory','exams','episodes','prompt-defaults','consult','consult-sources','tags','prevention','chatgpt','providers','archive','workspace','family'].map(n=>'assets/app/'+n+'.js'),
   'assets/crypto/nacl-fast-1.0.3.min.js','assets/app/vault.js','assets/app/boot.js','assets/app/devices.js','assets/app/sync-merge.js','assets/app/sync.js','assets/app/drive-session.js','assets/app/drive.js','assets/app/visit-links.js','assets/inter.ttf','assets/pt-serif.ttf','assets/ginkgo.png'];
