@@ -22,10 +22,12 @@ function indicatorGroups(){
   const groups=new Map();
   for(const file of labs()){
     const info=reportInfo(file);
+    const date=info.date||info.documentDate||'';
+    const dateSource=info.date?(info.dateEstimated?'Дата подставлена':''):(info.documentDate?'Дата по бланку':'');
     for(const row of info.rows){
       const series=labSeriesPoint(row,info.name);
       if(!groups.has(series.key))groups.set(series.key,{key:series.key,marker:series.marker,name:series.name,specimen:series.specimen,unit:series.unit,points:[]});
-      groups.get(series.key).points.push({...series,raw:row,date:info.date,dateEstimated:info.dateEstimated,source:file.id,lab:info.laboratory,report:info.name});
+      groups.get(series.key).points.push({...series,raw:row,date,dateSource,source:file.id,lab:info.laboratory,report:info.name});
     }
   }
   return [...groups.values()].sort((a,b)=>a.name.localeCompare(b.name,'ru'));
@@ -180,7 +182,7 @@ function pointChart(points,action){
     labels.push(xy.at(-1));
   }
   const dates=labels.map(p=>'<text text-anchor="middle" x="'+p.x+'" y="151">'+esc(p.date.slice(0,10))+'</text>').join('');
-  const pointLabel=p=>[p.date,p.dateEstimated?'Дата подставлена':'',p.value+' '+(p.unit||''),p.raw?['По бланку',p.raw.name,p.raw.value,p.raw.unit,p.raw.range?'(референс '+p.raw.range+')':''].filter(Boolean).join(' '):p.range?'Диапазон '+p.range:'',p.lab,action==='file'?'Открыть оригинал':'Открыть измерение'].filter(Boolean).join(' · ');
+  const pointLabel=p=>[p.date,p.value+' '+(p.unit||''),p.dateSource,p.raw?['По бланку',p.raw.name,p.raw.value,p.raw.unit,p.raw.range?'(референс '+p.raw.range+')':''].filter(Boolean).join(' '):p.range?'Диапазон '+p.range:'',p.lab,action==='file'?'Открыть оригинал':'Открыть измерение'].filter(Boolean).join(' · ');
   return `<svg class="trend-chart" viewBox="0 0 480 158" role="group" aria-label="График по датам"><path d="M62 135H440" stroke="#b9cbbc"/><text class="chart-axis" x="55" y="${xy.find(p=>p.n===hi).y+4}" text-anchor="end">${esc(hi.toLocaleString('ru'))}</text>${hi!==lo?'<text class="chart-axis" x="55" y="124" text-anchor="end">'+esc(lo.toLocaleString('ru'))+'</text>':''}<polyline fill="none" stroke="#337256" stroke-width="3" points="${xy.map(p=>p.x+','+p.y).join(' ')}"/>
     ${xy.map(p=>'<g role="button" tabindex="0" data-action="'+action+'" data-id="'+esc(p.source)+'" aria-label="'+esc(pointLabel(p))+'"><title>'+esc(pointLabel(p))+'</title><circle cx="'+p.x+'" cy="'+p.y+'" r="12" fill="transparent"/><circle cx="'+p.x+'" cy="'+p.y+'" r="5" fill="#246044"/></g>').join('')}
     ${dates}</svg>`;
@@ -196,7 +198,7 @@ function indicatorSeriesView(group){
   return '<section class="panel-section"><p class="detail-meta">'+esc(group.unit)+'</p><p class="hint">'+esc(group.specimen||'Биоматериал не уточнён')+'</p>'+pointChart(points,'file')+
     '<h3>Результаты за всё время</h3>'+points.map(p=>{
       const comparison=p.unit!==p.raw.unit&&p.value!==p.raw.value?'Для сравнения '+p.value.replace('.',',')+' '+p.unit:'';
-      const details=[p.raw.name,comparison,p.dateEstimated?'Дата подставлена':'',p.lab,p.raw.range?'Диапазон '+p.raw.range:'Диапазон не указан'];
+      const details=[p.raw.name,comparison,p.dateSource,p.lab,p.raw.range?'Диапазон '+p.raw.range:'Диапазон не указан'];
       return resultRow('file',p.source,labDateLabel(p.date)+' · '+[p.raw.value,p.raw.unit].filter(Boolean).join(' '),details.filter(Boolean).join(' · '),'lab');
     }).join('')+
     (readOnly?'':act('consult','Обсудить с ИИ','indicator:'+group.key,'button primary','spark'))+'</section>';
