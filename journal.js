@@ -42,8 +42,25 @@ function filterSearch(){
   s.query=document.querySelector('#global-search').value;s.filter=document.querySelector('#search-kind').value;
   hits.innerHTML=searchResults(s.query,s.filter);hits.scrollTop=0;
 }
+const medicalFieldUnits=new Map([['height','см'],['weight','кг']]);
+const isMedicalDate=id=>['birthday','measured'].includes(id);
+
+function medicalDate(value){
+  const iso=value.trim().replace(/^(\d\d)\.(\d\d)\.(\d{4})$/,'$3-$2-$1');
+  if(!/^\d{4}-\d\d-\d\d$/.test(iso)||iso.startsWith('0000'))return '';
+  const date=new Date(iso+'T12:00:00Z');
+  return Number.isFinite(date.getTime())&&date.toISOString().slice(0,10)===iso?iso:'';
+}
+function medicalNumber(value,id){
+  const suffix=id==='height'?/\s*(?:см|cm)$/iu:/\s*(?:кг|kg)$/iu;
+  const number=value.trim().replace(suffix,'').replace(',','.');
+  return /^(?:\d+(?:\.\d+)?|\.\d+)$/.test(number)&&Number.isFinite(Number(number))&&Number(number)>0?number:'';
+}
 function medicalFieldValue(f) {
-  return ['birthday','measured'].includes(f.id) && /^\d{4}-\d\d-\d\d$/.test(f.value)?dateLabel(f.value,{day:'numeric',month:'long',year:'numeric'}):f.value;
+  const date=isMedicalDate(f.id)?medicalDate(f.value):'';
+  if(date)return dateLabel(date,{day:'numeric',month:'long',year:'numeric'});
+  const unit=medicalFieldUnits.get(f.id),number=unit&&medicalNumber(f.value,f.id);
+  return number?number.replace('.',',')+' '+unit:f.value;
 }
 function showMedical(){
   openPanel('Медкарта',person.name,`<div class="field-list">${current().fields.map(f=>`<div class="field-line"><div><small>${esc(f.label)}</small><strong>${esc(medicalFieldValue(f))}</strong></div>
@@ -53,31 +70,64 @@ function showMedical(){
     <div class="panel-section"><h3>Текущее лечение</h3>${allCourses().filter(c=>c.meds.some(isActiveMed)).map(c=>act('visit',c.meds.filter(isActiveMed).map(m=>m.name).join(', '),c.visit,'text-button')).join('')||'<p>Активных курсов нет.</p>'}</div>`);
 }
 function showField(id){
-  const f=current().fields.find(f=>f.id===id),isDate=['birthday','measured'].includes(id);
+  const f=current().fields.find(f=>f.id===id);
   openPanel('Медкарта',f?'Изменить поле':'Новое поле',`<form id="field-form" class="edit-form" data-id="${esc(id)}">
     <label>Название поля<input required name="label" maxlength="64" value="${esc(f?.label)}" placeholder="Например, группа крови"></label>
-    <label>Значение<input required name="value" type="${isDate?'date':'text'}" ${isDate?'max="'+todayLocal()+'"':''} maxlength="280" value="${esc(f?.value)}"></label>
+    <label><span id="field-value-label">Значение</span><input required name="value" maxlength="280"></label>
+    <p class="hint" id="previous-field-value" hidden></p>
     <p class="error" role="alert"></p><div class="actions">${f?act('removeField','Удалить поле',id,'button danger'):''}<button class="button primary">Сохранить поле</button></div></form>`);
+  const form=document.querySelector('#field-form'),input=form.elements.value;
+  input.value=f?.value??'';
+  function updateInput(){
+    const key=medicalFieldID(form),unit=medicalFieldUnits.get(key),date=isMedicalDate(key);
+    const type=date?'date':unit?'number':'text';
+    form.querySelector('#field-value-label').textContent=unit?`Значение, ${unit}`:date?form.elements.label.value.trim():'Значение';
+    if(input.type===type&&input.dataset.fieldKind===key)return;
+    const previous=input.value;
+    input.type=type;
+    input.dataset.fieldKind=key;
+    input.max=date?todayLocal():'';
+    input.min=unit?'0':'';
+    input.step=unit?'any':'';
+    input.inputMode=unit?'decimal':'';
+    input.value=date?medicalDate(previous):unit?medicalNumber(previous,key):previous;
+    const hint=form.querySelector('#previous-field-value');
+    hint.hidden=!previous||Boolean(input.value);
+    hint.textContent=hint.hidden?'':'Сохранённое значение: '+previous;
+  }
+  updateInput();
+  form.elements.label.addEventListener('input',updateInput);
 }
 function availableFieldSpec(label){
   return fieldSpecs.find(([key,name])=>norm(name)===norm(label)&&!current().fields.some(f=>f.id===key));
 }
+function medicalFieldID(form){
+  return form.dataset.id||availableFieldSpec(form.elements.label.value)?.[0]||'';
+}
 registerFieldRules('field-form',(form,add)=>{
   const label=form.elements.label.value.trim(),id=form.dataset.id;
   if(label&&current().fields.some(f=>f.id!==id&&norm(f.label)===norm(label)))add('label','Поле с таким названием уже есть.');
-  if(current().fields.some(f=>f.id===id)||!['birthday','measured'].includes(availableFieldSpec(label)?.[0]))return;
-  const value=form.elements.value.value.trim(),parsed=new Date(value+'T12:00:00Z');
-  if(!/^\d{4}-\d\d-\d\d$/.test(value)||Number.isNaN(parsed.getTime())||parsed.toISOString().slice(0,10)!==value||value>todayLocal())
-    add('value','Введите действительную дату в формате ГГГГ-ММ-ДД, не позже сегодняшней.');
+  const key=medicalFieldID(form),value=form.elements.value.value.trim();
+  if(isMedicalDate(key)){
+    const date=medicalDate(value);
+    if(!date||date>todayLocal())add('value','Введите действительную дату, не позже сегодняшней.');
+  }
+  const unit=medicalFieldUnits.get(key);
+  if(unit&&!medicalNumber(value,key))add('value','Введите число больше нуля в '+unit+'.');
 });
 function saveField(form){
-  const data=new FormData(form), label=data.get('label').trim(), value=data.get('value').trim(), id=form.dataset.id;
-  const f=current().fields.find(f=>f.id===id);
-  if(f)Object.assign(f,{label,value});else {
-    const standard=availableFieldSpec(label);
-    current().fields.push({id:standard?.[0]||uid(),label,value});
+  const data=new FormData(form),label=data.get('label').trim(),raw=data.get('value').trim(),id=form.dataset.id;
+  const key=medicalFieldID(form),unit=medicalFieldUnits.get(key);
+  const value=isMedicalDate(key)?medicalDate(raw):unit?medicalNumber(raw,key)+' '+unit:raw;
+  const fields=current().fields;
+  const updated={id:key||uid(),label,value};
+  current().fields=id?fields.map(f=>f.id===id?{...f,...updated}:f):[...fields,updated];
+  if(!saveState()){
+    current().fields=fields;
+    form.querySelector('.error').textContent='Не удалось сохранить поле. Попробуйте ещё раз.';
+    return;
   }
-  saveState();render();goBack();
+  render();goBack();
 }
 function showDelete(id){
   const f=current().fields.find(f=>f.id===id);
