@@ -306,6 +306,7 @@ document.addEventListener('change',e=>{
   const el=e.target;
   if(el.id==='search-kind'){filterSearch();return}
   if(readOnly)return;
+  if(el.dataset.recommendationCheck){saveRecommendationCheck(el);return}
   appExtrasChange(el);
   if(el.closest('#manual-form')){
     const f=el.form,saved=current().prompts[f.dataset.id];

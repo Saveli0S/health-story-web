@@ -202,6 +202,7 @@ function duplicateCard(form,kind,id,caption) {
 let savedView=JSON.stringify(previous?.profiles?previous:prototypeState);
 function mergeLocalChanges(base,local,disk,key){
   if((key==='visitLinks'||key==='marketFindings')&&base===undefined)base=[];
+  if(key==='recommendationChecks'&&local){base??={};disk??={};}
   if(JSON.stringify(base)===JSON.stringify(local))return disk;
   if(base==null||disk==null||typeof local!=='object'||local==null)return local;
   if(Array.isArray(local)){

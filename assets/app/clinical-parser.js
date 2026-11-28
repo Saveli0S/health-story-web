@@ -95,6 +95,80 @@ function recommendationText(raw){
   return block.join('\n').trim();
 }
 
+const recommendationSections=[
+  ['labs','Анализы',/анализ|лаборатор|липидограмм|(?:^|[^\p{L}])(?:оак|оам|бак)(?!\p{L})/iu],
+  ['exams','Обследования',/узи|эхо[\s-]*кг|экг|флюорограф|рентген|скрининг|обследован/iu],
+  ['exercise','Физическая активность',/нагрузк|упражнен|гимнастик|ходьб|плаван|велосипед|физкультур/iu],
+  ['food','Питание',/диет|питан|рацион/iu],
+  ['treatment','Лекарства и процедуры',/омега|пнжк|препарат|лечени|лекарств|полоскан|орошат|таблет|капсул|(?:^|\s)мазь|наружно/iu],
+  ['followup','Наблюдение',/наблюден|контрол|повторн\S*\s+(?:осмотр|при[её]м)|консультац|осмотр/iu],
+  ['routine','Режим и уход',/режим|отдых|уход|гипоаллергенн\S*\s+быт/iu],
+  ['other','Другое',null]
+];
+const recommendationHeadings=new Map([
+  ...recommendationSections.map(([id,label])=>[label.toLowerCase(),id]),
+  ['упражнения','exercise'],['нагрузка','exercise'],['диета','food'],
+  ['лечение','treatment'],['лекарства','treatment'],['уход','routine']
+]);
+
+function recommendationSources(profile,visit){
+  return [
+    ...(profile.recommendations||[]).filter(row=>row.visit===visit&&row.text?.trim()).map(row=>({
+      collection:'recommendations',id:row.id,text:row.text,file:row.source||'',checks:row.recommendationChecks
+    })),
+    ...(profile.files||[]).filter(file=>file.visit===visit&&file.checked&&file.recommendation?.trim()).map(file=>({
+      collection:'files',id:file.id,text:file.recommendation,file:file.id,checks:file.recommendationChecks
+    }))
+  ];
+}
+
+function recommendationTasks(raw){
+  const blocks=[];
+  let previous, section='';
+  const nesting=text=>[...text].reduce((depth,c)=>c==='('?depth+1:c===')'?Math.max(0,depth-1):depth,0);
+  for(const line of clinicalLines(raw)){
+    const text=stripRxBullet(line),bullet=text!==line;
+    const heading=text.match(/^([\p{L}][\p{L} ]{1,45}):(?:\s*(.*))?$/u);
+    const category=heading&&recommendationHeadings.get(heading[1].toLowerCase());
+    if(category){
+      section=category;previous=null;
+      if(heading[2])blocks.push(previous={text:heading[2],section});
+    }else if(!bullet&&previous&&(nesting(previous.text)>0||/[,;:]$/u.test(previous.text)||
+        (previous.text.length>45&&!/[.!?]$/u.test(previous.text)&&/^\p{Ll}/u.test(text)))){
+      previous.text+=' '+text;
+    }else if(text){
+      blocks.push(previous={text,section});
+    }
+  }
+  const tasks=new Map();
+  for(const block of blocks){
+    let start=0;
+    const add=end=>{
+      const text=block.text.slice(start,end).trim();
+      if(!/[\p{L}\d]/u.test(text))return;
+      const id='item:'+text.normalize('NFC').toLowerCase().replace(/\s+/gu,' ').replace(/[.!?]+$/u,'');
+      const section=block.section||recommendationSections.find(([, , pattern])=>pattern?.test(text))?.[0]||'other';
+      if(!tasks.has(id))tasks.set(id,{id,text,section});
+    };
+    for(const match of block.text.matchAll(/[.!?]\s+(?=\p{Lu})/gu)){
+      const end=match.index+1, before=block.text.slice(start,end);
+      if(nesting(before)||/(?:^|[^\p{L}])(?:[А-ЯЁA-Z]|см|ст|мг|мл|табл|капс|мин|сут|г|ул|пр|др)\.$/u.test(before))continue;
+      add(end);start=end;
+    }
+    add(block.text.length);
+  }
+  return [...tasks.values()];
+}
+
+function recommendationChecklist(sources){
+  const groups=new Map(recommendationSections.map(([id,title])=>[id,{id,title,items:[]}]));
+  for(const source of sources)for(const item of recommendationTasks(source.text)){
+    const done=source.checks?.[item.id]===true;
+    groups.get(item.section).items.push({...item,done,source:source.id,collection:source.collection});
+  }
+  return [...groups.values()].filter(group=>group.items.length);
+}
+
 const treatmentRecommendationHeading=/^рекомендации\s+по\s+(?:медикаментозному\s+)?лечению\s*(?=[:.·–—-]|$)/iu;
 const activeRxHeading=/^(?:рекомендации по (?:медикаментозному )?лечению|(?:лекарственные |врачебные |новые |текущие )?назначения(?: врача)?|лист назначений|(?:медикаментозное |назначенное |рекомендованное )?лечение|(?:новая |текущая )схема(?: лечения)?|назначено|назначен[аы]?|принимать)\s*(?=[:.·–—-]|$)[:.·–—-]*\s*/iu;
 const historyRxHeading=/^(?:аллерги[яию]|аллергологический анамнез|аллерг\.\s*анамнез|побочные реакции|нежелательные реакции|лекарственная (?:аллергия|непереносимость)|непереносимость|анамнез|медикаментозный анамнез|история (?:лекарств|лечения|назначений)|отмен(?:а|ить)(?: препаратов)?|предыдущ(?:ая|ее|ие) (?:схема|лечение|назначения)|(?:отмен[её]нные|прежние) (?:лекарства|назначения|препараты)|ранее (?:принимал[аи]?|назначено|применял[аи]?)|принимал[аи]? ранее)(?=[:.\s–—-]|$)/iu;
