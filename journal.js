@@ -46,14 +46,14 @@ const medicalFieldUnits=new Map([['height','см'],['weight','кг']]);
 const isMedicalDate=id=>['birthday','measured'].includes(id);
 
 function medicalDate(value){
-  const iso=value.trim().replace(/^(\d\d)\.(\d\d)\.(\d{4})$/,'$3-$2-$1');
+  const iso=String(value??'').trim().replace(/^(\d\d)\.(\d\d)\.(\d{4})$/,'$3-$2-$1');
   if(!/^\d{4}-\d\d-\d\d$/.test(iso)||iso.startsWith('0000'))return '';
   const date=new Date(iso+'T12:00:00Z');
   return Number.isFinite(date.getTime())&&date.toISOString().slice(0,10)===iso?iso:'';
 }
 function medicalNumber(value,id){
   const suffix=id==='height'?/\s*(?:см|cm)$/iu:/\s*(?:кг|kg)$/iu;
-  const number=value.trim().replace(suffix,'').replace(',','.');
+  const number=String(value??'').trim().replace(suffix,'').replace(',','.');
   return /^(?:\d+(?:\.\d+)?|\.\d+)$/.test(number)&&Number.isFinite(Number(number))&&Number(number)>0?number:'';
 }
 function medicalFieldValue(f) {
