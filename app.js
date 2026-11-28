@@ -39,7 +39,10 @@ function transferHistory(record){
   return (record.transfers||[]).map(t=>'<p class="hint">'+esc(t.automatic&&t.kind==='provider'?'Отправлено автоматически':labels[t.kind]||'Передача')+' · '+esc(t.actorName)+(t.role==='admin'?' (администратор)':'')+' · '+esc(stamp(t.time))+'</p>').join('');
 }
 function mayChangeConsent(profile=person){return !readOnly&&(profile.id===viewerPerson.id||(viewer==='admin'&&profile.role==='Ребёнок'))}
-let person=accessibleProfiles().find(p=>p.id===params.get('profile'))||viewerPerson;
+function addressProfile(address){
+  return address.has('profile')?accessibleProfiles().find(p=>p.id===address.get('profile')):viewerPerson;
+}
+let profileUnavailable=!addressProfile(params),person=addressProfile(params)||viewerPerson;
 function sectionFrom(params){const key=params.get('section');return Object.hasOwn(sectionNames,key)?key:'overview'}
 let section=sectionFrom(params);
 if(section==='labs'&&params.get('view')==='prevention')analysisMode='prevention';
@@ -83,6 +86,18 @@ function pageSection(){
   return recordsPage();
 }
 function render(){
+  if(profileUnavailable){
+    const available=addressProfile(new URLSearchParams(location.search));
+    if(available){person=available;profileUnavailable=false}
+  }
+  const settings=document.querySelector('header [data-action="section"]');
+  if(settings)settings.hidden=profileUnavailable;
+  if(profileUnavailable){
+    main.innerHTML='<section class="plain-card"><h1>Профиль по ссылке недоступен</h1><p>Эта медкарта отсутствует в дневнике, открытом в этом браузере, или у устройства нет доступа к ней.</p><div class="actions left">'+
+      act('family','Выбрать доступный профиль','','button primary')+
+      (!readJson(familyStateKey)&&!readOnly&&crypto.subtle?act('joinDevice','Подключиться к семье','','button secondary'):'')+'</div></section>';
+    return;
+  }
   const stats=[ageText(yearsAt(todayLocal())),field('height')?'Рост '+field('height'):'',field('weight')?'Вес '+field('weight'):''].filter(Boolean);
   main.innerHTML=`<nav class="crumbs${workingFamily?'':' crumbs-demo'}" aria-label="Навигация"><button data-action="family">${esc(family.name)}</button>${icon('right',true)}<span>${esc(person.name)}</span></nav>
   <section class="hero"><img alt="" class="foliage" src="assets/ginkgo.png"><div class="hero-body">
@@ -189,11 +204,12 @@ function addNote(id){
 }
 const pages={manageRecords,removeRecord,resumeExam:id=>editExam(null,'',id),exam:showExam,newExam:visit=>editExam(null,visit),editExam:id=>editExam(id),editVisitClinic:visitClinicEditor,editVisit:visitEditor,editEpisode:showNewEpisode,drive:drivePanel,deviceUpdate:updateDevicePanel,joinDevice:joinDevicePanel,grantDevice:grantDevicePanel,revokeDevice:revokeDevicePanel,newFamily:()=>familyForm(true),newMember:()=>familyForm(false),recommendVisit:recommendationEditor,readDraft:id=>openImportDraft(id,'local'),manualDraft:id=>openImportDraft(id,'manual'),prevent:preventCard,editPrevent:preventionForm,completePrevent,tagLibrary,tagDefinition,removeTag:tagRemoval,recordTags:tagEditor,family:showFamily,medical:showMedical,visit:showVisit,doctor:showDoctor,episode:episodeCard,field:showField,removeField:showDelete,
   search:showSearch,lab:labCard,trend:indicatorView,file:showFile,upload:selectUpload,period:showPeriod,editMedicine:showMedicineEdit,finish:showFinish,consent:showConsent,visitLinksEditor,linkedVisitMedicine,visitPrescriptions,
-  review:showReview,manual:showManual,directTreatment:directTreatmentForm,therapy:therapyEditor,brief:visitBrief,measure:measureForm,measureChart,measurePoint,consult:newConsult,consultRecord,
+  review:showReview,manual:showManual,directTreatment:directTreatmentForm,therapy:therapyEditor,brief:visitBrief,measure:measureForm,repeatMeasure:id=>measureForm(id,true),measureChart,measurePoint,consult:newConsult,consultRecord,
   providers,prompts:promptManager,template:templateForm,resetTemplate:id=>changeTemplate(id,true,false),deleteTemplate:id=>changeTemplate(id,false,false),
   devices:familyDevices,archive:archivePanel,exportBackup:exportForm,importBackup:importForm,linkDocument,verifyLab,resumeVisit,analogs:showAnalogs,addNote,newEpisode:showNewEpisode,newVisit:showNewVisit,photoVisit:showPhotoVisit,intake:showIntake,verifyFile:showVerification};
 const restricted=new Set(['manageRecords','removeRecord','resumeExam','newExam','editExam','applyVisitTranscript','refreshRxDraft','editVisitClinic','editVisit','visitLinksEditor','visitPrescriptions','editEpisode','recommendVisit','readDraft','manualDraft','queueTreatment','editPrevent','completePrevent','tagDefinition','removeTag','recordTags','confirmTagRemoval','resumeVisit','directTreatment','therapy','verifyLab','linkDocument','measure','consult','providers','prompts','template','resetTemplate','deleteTemplate','exportBackup','importBackup','field','removeField','confirmDelete','finish','period','editMedicine','upload','analyze','consent','run','addNote','manual','copyPrompt','newEpisode','newVisit','photoVisit','visitMode','sampleVisit','intake','verifyFile','sampleRx','retryRead','appendMed','dropMed','deferVerify','intakeAnalyze']);
 function displayRoute(){clearFileURL();const r=routes.at(-1);pages[r.name](r.id)}
+restricted.add('repeatMeasure');
 function actionTarget(control,root=control?.closest('main,header')){
   if(!root?.contains(control)||!control.hasAttribute('data-action'))return ()=>control?.isConnected?control:null;
   const {action,id}=control.dataset;
@@ -218,7 +234,7 @@ function goBack(){
   view.focus()?.focus({preventScroll:true});
 }
 panel.addEventListener('close',()=>{
-  if(['newExam','editExam','resumeExam'].includes(routes.at(-1)?.name))render();
+  if(['newExam','editExam','resumeExam','newVisit','photoVisit'].includes(routes.at(-1)?.name))render();
   clearFileURL();routes=[];
   const target=returnFocus?.()||main;returnFocus=null;target.focus({preventScroll:true});
 });
@@ -232,9 +248,11 @@ function sectionAddress(id,profileId){
 }
 window.addEventListener('popstate',()=>{
   const address=new URLSearchParams(location.search);
-  const profile=accessibleProfiles().find(p=>p.id===address.get('profile'))||viewerPerson;
+  const requested=addressProfile(address),profile=requested||viewerPerson;
+  const changedAccess=profileUnavailable!==!requested;
+  profileUnavailable=!requested;
   const next=sectionFrom(address),prevention=next==='labs'&&address.get('view')==='prevention';
-  if(profile===person&&next===section&&(!prevention||analysisMode==='prevention'))return;
+  if(!changedAccess&&profile===person&&next===section&&(!prevention||analysisMode==='prevention'))return;
   if(profile!==person){person=profile;labFilter='Все'}
   section=next;sectionQuery='';
   if(prevention)analysisMode='prevention';
@@ -248,6 +266,7 @@ panel.addEventListener('click',e=>{
 document.addEventListener('click',e=>{
   const button=e.target.closest('[data-action]');if(!button)return;
   const {action,id=''}=button.dataset;
+  if(profileUnavailable&&!['family','select','joinDevice','newFamily','switchSpace','back','close'].includes(action))return;
   if(readOnly&&restricted.has(action))return;
   if(Object.hasOwn(pages,action)){go(action,id|| (action==='search'?'any':''),button);return}
   appExtrasClick(action,id,button);
@@ -259,7 +278,7 @@ document.addEventListener('click',e=>{
     case 'sampleVisit':exampleForVisit(button);break;
     case 'deferVisit':{
       const draft=routes.at(-1)?.photo;
-      if(!readOnly&&draft){keepVisitFields(button.form,draft);section='overview';history.replaceState(null,'',sectionAddress(section));render();panel.close()}break;
+      if(!readOnly&&keepVisitFields(button.form,draft)){section='overview';history.replaceState(null,'',sectionAddress(section));render();panel.close()}break;
     }
     case 'visitMode':switchVisitMode(button.dataset.mode,id);break;
     case 'retryRead':retryRecognition(id);break;
@@ -268,9 +287,15 @@ document.addEventListener('click',e=>{
     case 'appendMed':{
       document.querySelector('#rx-rows').insertAdjacentHTML('beforeend',medicineInputs({},button.form?.id==='visit-rx-form'));
       const none=document.querySelector('#verify-form [name=none]');if(none)none.checked=false;
-      document.querySelector('#rx-rows fieldset:last-child input').focus();break;
+      document.querySelector('#rx-rows fieldset:last-child input').focus();
+      if(button.form?.id==='visit-form')keepVisitFields(button.form,routes.at(-1)?.photo);
+      break;
     }
-    case 'dropMed':button.closest('fieldset').remove();break;
+    case 'dropMed':{
+      const form=button.form;button.closest('fieldset').remove();
+      if(form?.id==='visit-form')keepVisitFields(form,routes.at(-1)?.photo);
+      break;
+    }
     case 'deferVerify':storeVerification(button.form,true);break;
     case 'intakeAnalyze':if(reviewReady(id)){routes=[{name:'visit',id}];startReview(id)}break;
     case 'back':goBack();break;
@@ -288,7 +313,7 @@ document.addEventListener('click',e=>{
     case 'select':{
       const next=accessibleProfiles().find(p=>p.id===id);if(!next)return;
       history.replaceState(null,'',sectionAddress('overview',next.id));
-      person=next;labFilter='Все';section='overview';sectionQuery='';render();panel.close();break;
+      profileUnavailable=false;person=next;labFilter='Все';section='overview';sectionQuery='';render();if(panel.open)panel.close();break;
     }
     case 'confirmDelete':current().fields=current().fields.filter(f=>f.id!==id);saveState();render();routes=routes.filter(r=>r.name!=='field'&&r.name!=='removeField');displayRoute();break;
     case 'analyze':startReview(id);break;
@@ -297,7 +322,7 @@ document.addEventListener('click',e=>{
   }
 });
 document.addEventListener('input',e=>{
-  if(!readOnly&&e.target.closest('#visit-form')&&routes.at(-1)?.photo)keepVisitFields(e.target.form,routes.at(-1).photo);
+  if(!readOnly&&e.target.form?.id==='visit-form'&&e.target.name!=='doctorSearch')keepVisitFields(e.target.form,routes.at(-1)?.photo);
   if(e.target.id==='consult-source-search')filterConsultSources(e.target.form);
   if(e.target.id==='global-search')filterSearch();
   if(e.target.id==='section-filter'){sectionQuery=e.target.value;document.querySelector('#listing').innerHTML=recordsListing()}
@@ -369,7 +394,8 @@ chatGPT.refresh().then(()=>{
   if(!panel.open && section==='consults')render();
   if(routes.at(-1)?.name==='consultRecord' && !document.querySelector('#consult-answer :focus, #chatgpt-followup :focus'))consultRecord(routes.at(-1).id);
 });
-if(!readOnly&&(params.get('connect')==='chatgpt'||returningFromChatGPT))go('providers');
+if(profileUnavailable)main.focus({preventScroll:true});
+else if(!readOnly&&(params.get('connect')==='chatgpt'||returningFromChatGPT))go('providers');
 else if(driveSession.returned&&driveAllowed())go('drive');
 else if(params.get('new')==='family'&&viewer==='admin')go('newFamily');
 else if(params.get('visit')&&visitById(params.get('visit')))go('visit',params.get('visit'));

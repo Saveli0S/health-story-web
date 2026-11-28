@@ -1,15 +1,38 @@
 'use strict';
 
 const importingDrafts=new Map();
+const visitDraftFields=['episode','episodeName','date','title','note','doctor','doctorName','specialty','clinic','recommendation'];
 function keepVisitFields(form,photo){
-  const draft=current().visitDrafts.find(d=>d.id===photo?.draftId);if(!draft)return;
-  const inputs={};
-  for(const k of ['episode','episodeName','date','title','note','doctor','doctorName','specialty','clinic','recommendation'])inputs[k]=form.elements[k].value;
+  const route=routes.at(-1),profile=current(),before=profile.visitDrafts;
+  const id=photo?.draftId||route.manualId||uid(),previous=before.find(d=>d.id===id);
+  if((photo||route.manualId)&&(!previous||!latestProfile().visitDrafts.some(d=>d.id===id)))return false;
+  const fields=Object.fromEntries(visitDraftFields.map(k=>[k,form.elements[k].value]));
+  const draft=previous?{...previous}:{id,manualOnly:true,state:'manual',type:'text/plain',date:todayLocal()};
+  if(draft.manualOnly){
+    draft.name=fields.title.trim()||'Черновик визита';
+    draft.episode=fields.episode==='new'?'':fields.episode;
+  }
+  draft.fields=fields;
   if(form.querySelector('#rx-rows'))draft.manualMeds=medicineValues(form);
-  draft.fields=inputs;draft.position=form.sourcePosition?.();saveState();
+  if(form.sourcePosition)draft.position=form.sourcePosition();
+  if(previous&&JSON.stringify(previous)===JSON.stringify(draft))return true;
+  profile.visitDrafts=previous?before.map(d=>d===previous?draft:d):[...before,draft];
+  if(!saveState()){
+    profile.visitDrafts=before;
+    form.querySelector('.error').textContent='Не удалось сохранить черновик. Повторите попытку.';
+    return false;
+  }
+  if(draft.manualOnly)route.manualId=id;
+  const status=form.querySelector('[data-visit-draft-status]');
+  if(status)status.textContent='Черновик сохранён';
+  return true;
 }
 function resumeVisit(id){
   const draft=current().visitDrafts.find(d=>d.id===id);if(!draft||readOnly)return;
+  if(draft.manualOnly){
+    const route=routes.at(-1);route.name='newVisit';route.id=draft.episode;route.manualId=id;
+    showNewVisit(draft.episode);return;
+  }
   const docs=draftGroup(draft);
   if(!docs.some(d=>d.state==='queued')&&!importingDrafts.has(id))return openImportDraft(id,'resume');
   openPanel(person.name,'Визит в очереди','<p>Оригиналы сохранены на этом устройстве. '+esc(providerStatus())+'.</p>'+
@@ -84,8 +107,8 @@ async function openImportDraft(id,mode){
     showNewVisit(route.id,route.photo);
   }catch{if(status.isConnected)status.textContent='Не удалось открыть комплект. Оригиналы можно повторно открыть из очереди профиля.'}
 }
-function restoreVisitFields(form,photo){
-  const draft=current().visitDrafts.find(d=>d.id===photo?.draftId);if(!draft?.fields)return;
+function restoreVisitFields(form,id){
+  const draft=current().visitDrafts.find(d=>d.id===id);if(!draft?.fields)return;
   for(const [key,value] of Object.entries(draft.fields))if(form.elements[key])form.elements[key].value=value;
   const rows=form.querySelector('#rx-rows');if(rows&&draft.manualMeds)rows.innerHTML=draft.manualMeds.map(m=>medicineInputs(m)).join('');
   toggleVisitInputs();refreshPreviousFields(form);

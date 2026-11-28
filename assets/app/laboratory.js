@@ -69,12 +69,21 @@ function labDraftListing(query,category){
     resultRow('verifyLab',file.id,file.name,'Сверить данные','edit')
   ).join('')+'</section>';
 }
+const labNumericReading=/^[+−-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)$/;
+const labQualitativeReadings=['Не обнаружено','Обнаружено','Отрицательно','Положительно','Следы'];
 function labInput(row={}){
+  const value=row.value||'',kind=!value||labNumericReading.test(value.trim())?'number':labQualitativeReadings.some(item=>norm(item)===norm(value))?'quality':'other';
   return `<fieldset class="rx-inputs lab-input"><legend>Показатель</legend><label>Название<input name="marker" value="${esc(row.name)}" required></label>
-    <div class="intake-pair"><label>Результат<input name="reading" required value="${esc(row.value)}"></label>
+    <label>Тип результата<select name="readingKind">${[['number','Число'],['quality','Качественный'],['other','Порог или текст']].map(([id,label])=>'<option value="'+id+'" '+(id===kind?'selected':'')+'>'+label+'</option>').join('')}</select></label>
+    <div class="intake-pair"><label>Результат<input name="reading" required value="${esc(value)}" ${kind==='number'?'inputmode="decimal"':kind==='quality'?'list="lab-qualitative"':''}></label>
     <label>Единица <small>для числового результата</small><input name="unit" value="${esc(row.unit)}"></label></div>
     <label>Биоматериал <small>из бланка</small><input name="specimen" list="specimen-options" value="${esc(row.specimen)}"></label>
     <label>Референсный диапазон из бланка<input name="range" value="${esc(row.range)}"></label>${act('dropLab','Убрать показатель','','inline-action')}</fieldset>`;
+}
+function updateLabReadingKind(select){
+  const reading=select.closest('.lab-input').querySelector('[name=reading]');
+  reading.inputMode=select.value==='number'?'decimal':'';
+  if(select.value==='quality')reading.setAttribute('list','lab-qualitative');else reading.removeAttribute('list');
 }
 const labReads=new Map();
 function readLabDraft(patient,id,progress=()=>{}){
@@ -107,24 +116,23 @@ async function verifyLab(id){
     draft=await readLabDraft(patient,id,msg=>{if(routes.at(-1)===route){const el=document.querySelector('#lab-progress');if(el)el.textContent=msg}});
     if(!draft||!panel.open||routes.at(-1)!==route||person.id!==patient)return;
   }
-  const today=todayLocal(),date=draft.date||today;
-  const estimatedDate=!draft.date||draft.dateEstimated===true?date:'';
-  openPanel(person.name,'Сверить лабораторный бланк',`<form id="lab-form" data-id="${esc(id)}" data-estimated-date="${esc(estimatedDate)}" class="edit-form">
+  const today=todayLocal(),date=draft.dateEstimated?'':draft.date||'';
+  openPanel(person.name,'Сверить лабораторный бланк',`<form id="lab-form" data-id="${esc(id)}" data-document-date="${esc(draft.documentDate)}" class="edit-form">
     ${f.duplicateLab&&current().files.some(other=>other.id===f.duplicateLab&&other.lab)?'<p class="hint">Такие результаты уже сохранены в другом бланке этого профиля.</p>'+act('lab','Открыть существующий анализ',f.duplicateLab,'text-button'):''}
     <label>Название исследования<input name="title" required value="${esc(draft.name)}"></label>
-    <div class="intake-pair"><div><label>Дата взятия образца<input type="date" name="date" required max="${today}" value="${esc(date)}" ${estimatedDate?'aria-describedby="lab-date-estimate"':''}></label>
-    ${estimatedDate?'<p id="lab-date-estimate" class="hint">Подставлена дата ввода. При необходимости исправьте её по бланку.</p>':''}</div>
+    <div class="intake-pair"><div><label>Дата взятия образца<input type="date" name="date" max="${today}" value="${esc(date)}" aria-describedby="lab-date-hint"></label>
+    <p id="lab-date-hint" class="hint">Если дата неизвестна, оставьте поле пустым.</p></div>
     <label>Лаборатория<input name="laboratory" value="${esc(draft.laboratory)}"></label></div>
     <label>Категория<select name="category">${['Другое','Гематология','Биохимия'].map(c=>'<option '+(draft.category===c?'selected':'')+'>'+c+'</option>').join('')}</select></label>
     <details><summary>Распознанный текст</summary><pre>${esc(f.labRaw||'Введите результаты по оригиналу.')}</pre></details>
     <datalist id="specimen-options">${['Цельная кровь','Плазма','Сыворотка','Моча','Капиллярная кровь','Венозная кровь'].map(s=>'<option>'+s+'</option>').join('')}</datalist>
+    <datalist id="lab-qualitative">${labQualitativeReadings.map(value=>'<option>'+value+'</option>').join('')}</datalist>
     <p class="hint">Для сравнения между бланками нужен биоматериал. Если он неизвестен, результат останется отдельно.</p>
     <div id="lab-rows">${(draft.rows.length?draft.rows:[{}]).map(row=>labInput({...row,specimen:labSpecimenFor(row,draft.name)})).join('')}</div>${act('appendLab','Добавить показатель','','button secondary','plus')}
     <label class="unknown"><input name="verified" type="checkbox" required>Сверено с оригиналом</label>
     <p class="error" role="alert"></p><div class="actions">${act('deferLab','Уточнить позже',id,'button secondary')}<button class="button primary">Сохранить результаты</button></div></form>`);
   const form=document.querySelector('#lab-form');
-  const estimate=form.querySelector('#lab-date-estimate');
-  if(estimate)form.elements.date.addEventListener('input',event=>{estimate.hidden=event.target.value!==estimatedDate});
+  form.addEventListener('change',event=>{if(event.target.name==='readingKind')updateLabReadingKind(event.target)});
   clarifyFields(form,[['date','Когда взяли образец?'],['marker','Как называется показатель?'],['reading','Какое значение в бланке?'],['unit','В каких единицах указан результат?']],draft.rows.length?'':'Какие показатели, значения и единицы указаны в бланке?');
   previewImportTags(form,form.querySelector('details'),()=>[f.name,form.elements.title.value,form.elements.category.value,f.category].join(' '));
   setupSourceView(f,form,null,draft.position);
@@ -148,8 +156,8 @@ function saveLab(form,defer=false){
   const value=(el,name)=>el.querySelector('[name="'+name+'"]').value.trim();
   const data={name:value(form,'title'),date:value(form,'date'),laboratory:value(form,'laboratory'),category:value(form,'category'),
     rows:[...form.querySelectorAll('.lab-input')].map(el=>({name:value(el,'marker'),value:value(el,'reading'),unit:value(el,'unit'),range:value(el,'range'),specimen:value(el,'specimen')}))};
-  if(data.date&&data.date===form.dataset.estimatedDate)data.dateEstimated=true;
-  if(!defer&&(!f.lab||labIdentity(f.lab)!==labIdentity(data))){
+  if(form.dataset.documentDate)data.documentDate=form.dataset.documentDate;
+  if(!defer&&data.date&&(!f.lab||labIdentity(f.lab)!==labIdentity(data))){
     const key=labIdentity(data),match=latestProfile().files.find(other=>other.id!==f.id&&other.lab&&labIdentity(other.lab)===key);
     if(match)return duplicateCard(form,'lab',match.id,'Открыть существующий анализ');
   }
@@ -189,9 +197,16 @@ function pointChart(points,action){
 }
 function indicatorView(id){
   const fixture=/^\d+$/.test(id)?labRows[Number(id)]:null;
-  const card=indicatorCards().find(c=>c.id===id||c.series.some(g=>fixture?
-    g.points.some(p=>p.raw.name===fixture.name&&Object.hasOwn(fixture.values,p.source)):g.key===id));
-  if(card)openPanel('Динамика показателя',card.name,card.series.map(indicatorSeriesView).join(''));
+  const matches=g=>fixture?g.points.some(p=>p.raw.name===fixture.name&&Object.hasOwn(fixture.values,p.source)):g.key===id;
+  const card=indicatorCards().find(c=>c.id===id||c.series.some(matches));
+  if(!card)return;
+  const group=card.series.find(matches)||card.series[0];
+  const selector=card.series.length>1?'<div class="edit-form"><label>Ряд для сравнения<select id="indicator-series">'+
+    card.series.map(series=>'<option value="'+esc(series.key)+'" '+(series===group?'selected':'')+'>'+esc(seriesDescription(series)+' · '+series.points.length+' рез.'+
+      (series.specimen?'':series.points[0].date?' · '+labDateLabel(series.points[0].date):''))+'</option>').join('')+'</select></label></div>':'';
+  openPanel('Динамика показателя',card.name,selector+indicatorSeriesView(group));
+  const select=document.querySelector('#indicator-series');
+  if(select)select.onchange=()=>{replaceRoute('trend',select.value);document.querySelector('#indicator-series')?.focus()};
 }
 function indicatorSeriesView(group){
   const points=group.points.sort((a,b)=>a.date.localeCompare(b.date));

@@ -45,23 +45,31 @@ function showNewVisit(episodeId,photo){
     <label data-new-episode>Название эпизода<input name="episodeName" value="${esc(d.episodeName)}" maxlength="100" placeholder="Например, боль в колене"></label>
     <div class="intake-pair"><label>Название визита<input required name="title" value="${esc(d.title)}" maxlength="100" placeholder="Например, первичная консультация"></label>
     <label>Дата визита<input required type="date" name="date" max="${todayLocal()}" value="${photo?esc(d.date):todayLocal()}"></label></div>
-    <label>Врач<select name="doctor"><option value="new">Добавить врача</option>${doctors.map(([id,doc])=>'<option value="'+esc(id)+'" '+(id===doctorId?'selected':'')+'>'+esc(doctorLabel(id))+'</option>').join('')}</select></label>
+    ${doctors.length?'<label>Найти врача<input type="search" name="doctorSearch" placeholder="Специальность, ФИО или клиника"></label>':''}
+    <label>Врач<select name="doctor"><option value="new">Добавить врача</option><option value="">Врач не указан</option>${doctors.map(([id,doc])=>'<option value="'+esc(id)+'" '+(id===doctorId?'selected':'')+'>'+esc([doc[1],doc[0],doc[2]].filter(Boolean).join(' · '))+'</option>').join('')}</select></label>
     <div class="intake-pair" data-new-doctor><label>Специальность <small>по желанию</small><input name="specialty" maxlength="80" value="${esc(d.specialty)}"></label><label>ФИО врача<input name="doctorName" maxlength="100" value="${esc(d.doctorName)}"></label></div>
     <label>Клиника <small>по желанию</small><input name="clinic" maxlength="160" value="${esc(d.clinic)}"></label>
     <label>Сведения о визите <small>по желанию</small><textarea name="note" maxlength="2000" placeholder="Причина обращения, диагноз или выводы врача">${esc(d.note)}</textarea></label>
     <label>Рекомендации врача <small>по желанию</small><textarea name="recommendation" maxlength="3600" placeholder="Что рекомендовал врач, когда пройти контроль"></textarea></label>
     <div id="previous-therapy"></div>${manual||existingMeds?.length?'<div id="rx-rows"></div>'+act('appendMed','Добавить препарат вручную','','button secondary','plus'):''}
-    <p class="error" role="alert"></p><button class="button primary">${photo?'Создать визит и сверить назначения':'Сохранить визит'}</button>
+    <p class="error" role="alert"></p><p class="hint" data-visit-draft-status role="status">${routes.at(-1)?.manualId?'Черновик сохранён':''}</p><button class="button primary">${photo?'Создать визит и сверить назначения':'Сохранить визит'}</button>
+    ${photo?'':act('deferVisit','Сохранить черновик','','button secondary')}
     ${photo?act('deferVisit','Уточнить позже',photo.draftId,'text-button'):'<button class="text-button" value="attach" name="next">Создать визит и перейти к вложениям</button>'}</form>`);
-  toggleVisitInputs();refreshPreviousFields(document.querySelector('#visit-form'));
+  const visitForm=document.querySelector('#visit-form'),inputs=visitForm.elements;
+  if(inputs.doctorSearch)inputs.doctorSearch.oninput=()=>{
+    const words=norm(inputs.doctorSearch.value).split(/\s+/);
+    for(const option of inputs.doctor.options)
+      option.hidden=Boolean(option.value&&option.value!=='new'&&!option.selected&&!words.every(word=>norm(option.textContent).includes(word)));
+  };
+  toggleVisitInputs();refreshPreviousFields(visitForm);
+  restoreVisitFields(visitForm,photo?.draftId||routes.at(-1)?.manualId);
   if(photo){
-    const form=document.querySelector('#visit-form');restoreVisitFields(form,photo);
+    const form=visitForm;
     setupSourceView(photo.file,form,photo.file,current().visitDrafts.find(d=>d.id===photo.draftId)?.position);
     setupBatchPreview(form,photo,current().visitDrafts.find(d=>d.id===photo.draftId)?.position);
     showUncertainText(form,photo.issues||[]);
     clarifyFields(form,[['date','Какую дату визита указал врач?'],['title','Как называется визит?'],['episodeName','Какой эпизод или диагноз указан?'],['doctorName','Как зовут врача?']]);
   }
-  const visitForm=document.querySelector('#visit-form'),inputs=visitForm.elements;
   previewImportTags(visitForm,visitForm.querySelector('#previous-therapy'),()=>[inputs.title.value,
     inputs.doctor.value==='new'?inputs.specialty.value:person.doctors[inputs.doctor.value]?.[1]].join(' '));
 
@@ -99,12 +107,12 @@ async function submitVisit(f,next){
       return;
     }
   }
-  const archived=photo&&profile.visitDrafts.find(d=>d.id===photo.draftId);
-  if(photo&&!archived){f.querySelector('.error').textContent='Откройте исходный черновик из профиля.';return}
+  const draftId=photo?.draftId||route.manualId,archived=draftId&&profile.visitDrafts.find(d=>d.id===draftId);
+  if(draftId&&!archived){f.querySelector('.error').textContent='Откройте исходный черновик из профиля.';return}
   if(archived&&!readJson(stateKey)?.profiles?.[patient]?.visitDrafts?.some(d=>d.id===archived.id)){
     f.querySelector('.error').textContent='Этот черновик уже изменён в другой вкладке. Обновите профиль.';return;
   }
-  const originals=archived?draftGroup(archived,profile):[];
+  const draftRows=archived?draftGroup(archived,profile):[],originals=draftRows.filter(d=>!d.manualOnly);
   const primary=originals.find(d=>d.id===photo?.main&&d.kind==='Назначения');
   const priorFiles=latestProfile().files;
   const sourceMatch=primary?.sourceDigest&&priorFiles.find(f=>f.visitSource&&f.visit&&f.sourceDigest===primary.sourceDigest);
@@ -118,7 +126,8 @@ async function submitVisit(f,next){
     if(kind==='Лаборатория'&&(d.raw||d.labDraft)){row.labRaw=d.raw||'';row.labDraft=d.labDraft||parseLabText(d.raw,d.name)}
     return row;
   });
-  profile.visitDrafts=profile.visitDrafts.filter(d=>!originals.includes(d));profile.files.push(...rows);
+  const previousDrafts=profile.visitDrafts;
+  profile.visitDrafts=profile.visitDrafts.filter(d=>!draftRows.includes(d));profile.files.push(...rows);
   const recommendation=val('recommendation')&&{id:uid(),visit:visit[0],text:val('recommendation')};
   if(recommendation)profile.recommendations.push(recommendation);
   if(doctor)profile.addedDoctors.push(doctor);
@@ -126,7 +135,7 @@ async function submitVisit(f,next){
   profile.changes.push(...decisions);profile.addedVisits.unshift(visit);
   if(!saveState()){
     profile.changes.splice(profile.changes.length-decisions.length,decisions.length);profile.addedVisits.shift();if(doctor)profile.addedDoctors.pop();if(val('episode')==='new')profile.episodes.pop();
-    profile.files=profile.files.filter(d=>!rows.includes(d));profile.visitDrafts.push(...originals);if(recommendation)profile.recommendations.pop();
+    profile.files=profile.files.filter(d=>!rows.includes(d));profile.visitDrafts=previousDrafts;if(recommendation)profile.recommendations.pop();
     f.querySelector('.error').textContent='Не удалось сохранить визит в браузере.';return;
   }
   if(doctor)person.doctors[doctor.id]=doctor.values;
@@ -377,6 +386,8 @@ for(const id of ['visit-form','visit-rx-form','edit-medicine-form','verify-form'
 registerFieldRules('visit-form',(form,add)=>{
   const episode=form.elements.episode.value;
   if(episode!=='new'&&!current().episodes.some(row=>row.id===episode&&row.name))add('episode','Выберите доступный эпизод.');
+  const doctor=form.elements.doctor.value;
+  if(doctor&&doctor!=='new'&&!Object.hasOwn(person.doctors,doctor))add('doctor','Выберите доступного врача.');
   if(!routes.at(-1)?.photo)return;
   for(const name of ['title','episodeName','doctorName']){
     if(needsClarification(form.elements[name].value))add(name,'Уточните значение по оригиналу.');

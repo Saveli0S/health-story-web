@@ -130,7 +130,7 @@ function archiveItems(data,allowDevice=false){
   for(const {id:owner} of members){
     const profile=data.profiles[owner];
     if(!Array.isArray(profile?.files)||!Array.isArray(profile.visitDrafts??[]))throw Error();
-    for(const item of [...profile.files,...(profile.visitDrafts||[])])items.push({owner,profile,item,sample:false});
+    for(const item of [...profile.files,...(profile.visitDrafts||[]).filter(d=>!d.manualOnly)])items.push({owner,profile,item,sample:false});
     if(isDemo)for(const item of sampleFiles[owner])items.push({owner,profile,item,sample:true});
   }
   return items;
