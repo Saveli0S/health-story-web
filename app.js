@@ -60,9 +60,13 @@ function act(action,text,id='',classes='text-button',mark=''){
 function external(url,title,classes='external'){return '<a class="'+classes+'" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">'+esc(title)+' ↗</a>'}
 function visitById(id){return person.visits.find(v=>v[0]===id)}
 function visitRows(visits){
-  return visits.map(([id,date,title,doctor,episode])=>`<button type="button" class="visit-row" data-action="visit" data-id="${esc(id)}" aria-label="${esc(title)}, ${dateLabel(date)}, ${esc(doctorLabel(doctor))}">
-  <span class="dateflag" aria-hidden="true"><strong>${Number(date.slice(-2))}</strong><small>${dateLabel(date,{month:'short'}).slice(0,3)}</small></span>
-  <span class="row-main"><strong>${esc(title)}</strong><span class="sub">${esc(doctorLabel(doctor))}</span><span class="row-inner">${icon('folder',true)}${esc(episode)}</span></span>${icon('right',true)}</button>`).join('');
+  return visits.map(([id,date,title,doctor,episode])=>{
+    const fullDate=dateLabel(date,{day:'numeric',month:'long',year:'numeric'});
+    const year=fullDate==='Дата неизвестна'?'':date.slice(0,4);
+    return `<button type="button" class="visit-row" data-action="visit" data-id="${esc(id)}" aria-label="${esc(title)}, ${fullDate}, ${esc(doctorLabel(doctor))}">
+    <span class="dateflag" aria-hidden="true"><strong>${year?Number(date.slice(-2)):'··'}</strong>${year?`<small>${dateLabel(date,{month:'short'}).slice(0,3)}</small><small class="dateflag-year">${esc(year)}</small>`:''}</span>
+    <span class="row-main"><strong>${esc(title)}</strong><span class="sub">${esc(doctorLabel(doctor))}</span><span class="row-inner">${icon('folder',true)}${esc(episode)}</span></span>${icon('right',true)}</button>`;
+  }).join('');
 }
 const sectionIcons={overview:'grid',visits:'calendar',labs:'lab',exams:'book',files:'clip',consults:'spark',settings:'settings'};
 function sectionNav(){return `<div class="workspace-tools"><nav class="section-nav" aria-label="Разделы профиля">${Object.entries(sectionNames).filter(([key])=>key!=='settings').map(([key,label])=>`<button data-action="section" data-id="${key}" ${section===key?'aria-current="page"':''}>${icon(sectionIcons[key],true)}${label}</button>`).join('')}</nav>

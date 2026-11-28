@@ -183,17 +183,43 @@ function proposedMedicines(raw,issues=[]){
 // Laboratory rows retain the values printed on the source. Values from this table
 // are derived only for plotting and explicitly labelled comparisons.
 const labAnalytes = [
-  {name:'Гемоглобин',aliases:/^(?:гемоглобин|ha?emoglobin|hb|hgb)(?:\s*\((?:hb|hgb)\))?$/i,
+  {name:'Гемоглобин',aliases:/^(?:гемоглобин|ha?emoglobin|hb|hgb)(?:\s*\((?:hb|hgb|нсв)\))?$/i,search:'Hb HGB hemoglobin haemoglobin',
     unit:'г/л',scales:{'г/л':1,'г/дл':10}},
-  {name:'Глюкоза',aliases:/^(?:глюкоза|glucose|glu)(?:\s+(?:плазмы|крови|мочи|сыворотки))?$/i,
-    unit:'ммоль/л',scales:{'ммоль/л':1,'мкмоль/л':0.001}},
+  {name:'Глюкоза',aliases:/^(?:глюкоза|glucose|glu)(?:\s+(?:плазмы|крови|мочи|сыворотки))?$/i,search:'glucose GLU',
+    unit:'ммоль/л',scales:{'ммоль/л':1,'мкмоль/л':0.001,'мг/дл':0.05551}},
+  {name:'Холестерин общий',aliases:/^(?:(?:(?:общий|суммарный)\s+)?холестер(?:ин|ол)|холестер(?:ин|ол)\s+(?:общий|суммарный)|total\s+cholesterol|cholesterol(?:,?\s+total)?|chol|tc|охс)(?:\s*\((?:общий|охс|chol|tc)\))?$/i,
+    search:'общий холестерин холестерол total cholesterol CHOL TC ОХС холлестирин холестирин',unit:'ммоль/л',scales:{'ммоль/л':1,'мкмоль/л':0.001,'мг/дл':0.02586}},
+  {name:'Холестерин ЛПВП',aliases:/^(?:(?:(?:холестерин|хс)[\s-]+)?лпвп|(?:холестерин|хс)\s*\(лпвп\)|лпвп\s+холестерин|hdl(?:[-\s]+(?:c|cholesterol))?|cholesterol[,]?\s+hdl)$/i,
+    search:'HDL HDL-C ЛПВП холлестирин холестирин',unit:'ммоль/л',scales:{'ммоль/л':1,'мкмоль/л':0.001,'мг/дл':0.02586}},
+  {name:'Холестерин ЛПНП',aliases:/^(?:(?:(?:холестерин|хс)[\s-]+)?лпнп|(?:холестерин|хс)\s*\(лпнп\)|лпнп\s+холестерин|ldl(?:[-\s]+(?:c|cholesterol))?|cholesterol[,]?\s+ldl)$/i,
+    search:'LDL LDL-C ЛПНП холлестирин холестирин',unit:'ммоль/л',scales:{'ммоль/л':1,'мкмоль/л':0.001,'мг/дл':0.02586}},
   {name:'С-реактивный белок',aliases:/^(?:[сc][- ]реактивный белок|c[- ]reactive protein|crp|срб)(?:\s*\((?:crp|срб)\))?$/i,
     unit:'мг/л',scales:{'мг/л':1,'мг/дл':10}},
-  {name:'Лейкоциты',aliases:/^(?:лейкоциты|leu[ck]ocytes|wbc|white blood cells)$/i},
+  {name:'Лейкоциты',aliases:/^(?:лейкоциты|leu[ck]ocytes|wbc|white blood cells)(?:\s*\(wbc\))?$/i,search:'WBC'},
   {name:'Нитриты',aliases:/^(?:нитриты|nitrites?)$/i}
 ];
+const labBloodCountNames={
+  RBC:'Эритроциты',HCT:'Гематокрит',MCV:'Средний объём эритроцита',
+  MCH:'Среднее содержание гемоглобина в эритроците',MCHC:'Средняя концентрация гемоглобина в эритроците',
+  'RDW-SD':'Ширина распределения эритроцитов (RDW-SD)','RDW-CV':'Ширина распределения эритроцитов (RDW-CV)',
+  PLT:'Тромбоциты',PCT:'Тромбокрит',MPV:'Средний объём тромбоцитов',PDW:'Ширина распределения тромбоцитов по объёмам',
+  'P-LCR':'Коэффициент больших тромбоцитов',NEUT:'Нейтрофильные гранулоциты','NEUT%':'Нейтрофильные гранулоциты'
+};
+function labBloodCountAnalyte(label){
+  const parts=label.match(/^(.*?)\s*\(([^()]*)\)$/);
+  const name=(parts?.[1]||label).toLowerCase().replaceAll('ё','е');
+  const confusables={А:'A',В:'B',Е:'E',К:'K',М:'M',Н:'H',О:'O',Р:'P',С:'C',Т:'T',У:'Y',Х:'X'};
+  const code=(parts?.[2]||label).toUpperCase().replace(/\s/g,'').replace(/[АВЕКМНОРСТУХ]/g,ch=>confusables[ch]);
+  const recognized=Object.entries(labBloodCountNames).find(([,title])=>title.toLowerCase().replaceAll('ё','е')===name)?.[0];
+  // PCT alone may refer to procalcitonin. A printed "Тромбокрит" disambiguates it.
+  const knownCode=code!=='PCT'&&Object.hasOwn(labBloodCountNames,code);
+  const keyedName=knownCode&&labBloodCountNames[code].toLowerCase().replaceAll('ё','е');
+  const key=recognized||(keyedName&&(!parts||keyedName.startsWith(name+' ('))?code:'');
+  return key?{name:labBloodCountNames[key],search:key}:null;
+}
 function labAnalyte(name){
-  return labAnalytes.find(a=>a.aliases.test(String(name).trim()));
+  const label=String(name).normalize('NFKC').trim().replace(/[–—‑]/g,'-').replace(/\s+/g,' ');
+  return labAnalytes.find(a=>a.aliases.test(label))||labBloodCountAnalyte(label);
 }
 function labUnit(raw){
   const unit=String(raw||'').trim().replace(/\s*\/\s*/g,'/').replace(/[μµ]/g,'µ')
@@ -201,12 +227,14 @@ function labUnit(raw){
   // SI prefix case is significant. Never case-fold a unit or convert an unlisted one.
   const equivalents={'g/L':'г/л','g/l':'г/л','g/dL':'г/дл','g/dl':'г/дл','mg/L':'мг/л','mg/l':'мг/л',
     'mg/dL':'мг/дл','mg/dl':'мг/дл','mmol/L':'ммоль/л','mmol/l':'ммоль/л','µmol/L':'мкмоль/л','µmol/l':'мкмоль/л'};
+  const count=unit.match(/^(?:[×хx]\s*)?10(?:\^(9|12)|(⁹|¹²))\s*(?:клеток\s*)?\/[лLl]$/u);
+  if(count)return (count[1]==='9'||count[2]==='⁹')?'×10⁹/л':'×10¹²/л';
   return Object.hasOwn(equivalents,unit)?equivalents[unit]:unit;
 }
 function labSpecimen(text){
   const patterns=[['Моча',/(?<!\p{L})моч(?:а|и|е|у|ой)(?!\p{L})|\burine\b/iu],['Плазма',/плазм[аыуе]|\bplasma\b/i],
-    ['Сыворотка',/сыворотк[аиеу]|\bserum\b/i],['Цельная кровь',/цельн\S* кров|\bwhole blood\b/i],
-    ['Капиллярная кровь',/капиллярн\S* кров|\bcapillary blood\b/i],['Венозная кровь',/венозн\S* кров|\bvenous blood\b/i]];
+    ['Сыворотка',/сыворотк[аиеу]|\bserum\b/i],['Цельная кровь',/цельн\S* кров|кровь[\s,:]+цельн|\bwhole blood\b/i],
+    ['Капиллярная кровь',/капиллярн\S* кров|кровь[\s,:]+капиллярн|\bcapillary blood\b/i],['Венозная кровь',/венозн\S* кров|кровь[\s,:]+венозн|\bvenous blood\b/i]];
   const matches=patterns.filter(([,regex])=>regex.test(text));
   return matches.length===1?matches[0][0]:'';
 }
@@ -215,13 +243,14 @@ function labSpecimenFor(row,reportTitle){
     const value=String(row.specimen||'').trim();
     const common=['Цельная кровь','Плазма','Сыворотка','Моча','Капиллярная кровь','Венозная кровь'];
     if(/^(?:[?？]+|не указан[ао]?|неизвестн[ао]?|unknown)$/i.test(value))return '';
-    return common.find(s=>s.toLowerCase()===value.toLowerCase())||value;
+    const known=common.find(s=>s.toLowerCase()===value.toLowerCase());
+    return known||(/^(?:whole blood|plasma|serum|urine|capillary blood|venous blood|кровь (?:цельная|капиллярная|венозная))$/i.test(value)?labSpecimen(value):value);
   }
   const named=labSpecimen(row.name);
   if(named)return named;
   const titled=labSpecimen(reportTitle);
   if(titled)return titled;
-  return /^(?:общий|клинический) анализ крови(?:\s*\(оак\))?$/i.test(String(reportTitle).trim())?'Цельная кровь':'';
+  return /^(?:(?:общий|клинический) анализ крови(?:\s*\(оак\))?(?:,?\s+автоматизированный)?[,]?|complete blood count(?:\s*\(cbc\))?)$/i.test(String(reportTitle).trim())?'Цельная кровь':'';
 }
 function labSeriesPoint(row,reportTitle,sourceId){
   const rawName=String(row.name||'').trim(),analyte=labAnalyte(rawName);
@@ -236,7 +265,7 @@ function labSeriesPoint(row,reportTitle,sourceId){
   // document only; equal names and units alone cannot establish comparability.
   let key=name.toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ')+'|'+unit;
   if(specimen!=='Цельная кровь')key+='|'+(specimen?specimen.toLowerCase():'?'+sourceId);
-  return {key,name,specimen,unit,value};
+  return {key,name,specimen,unit,value,search:analyte?.search||''};
 }
 function labSampleDate(raw){
   const found=[];
@@ -262,7 +291,47 @@ const labRangeLabel=/^(?:референс(?:ный\s+(?:диапазон|инт�
 function labPrintRange(text){
   return text.replace(labRangeLabel,'').trim().replace(/(\d)\s*[-–—]\s*(?=\d)/g,'$1–');
 }
+function labWideRow(line,next){
+  const cells=line.split(/\t+| {2,}/).map(cell=>cell.trim().replace(/^[|│]+|[|│]+$/g,'').trim()).filter(Boolean);
+  if(cells.length<3||!/^\p{L}/u.test(cells[0]))return null;
+  let [name,value,unit,...rangeCells]=cells;
+  const numeric=/^[<>≤≥]?\s*[-+]?\d+(?:[.,]\d+)?$/;
+  // Some reports print the unit before the value.
+  if(!numeric.test(value)&&numeric.test(unit)&&/^[\p{L}%µμ/.]+$/u.test(value))[value,unit]=[unit,value];
+  const interval=/^([-+]?\d+(?:[.,]\d+)?)\s*[-–—]\s*([-+]?\d+(?:[.,]\d+)?)$/;
+  if(!rangeCells.length&&interval.test(unit)){rangeCells=[unit];unit='?'}
+  const unitContinuation=/^клеток(?:[\\/]л|іл|\\п)$/iu.test(next);
+  const ordinaryUnit=/[/%]/.test(unit)||/^(?:фл|пг|pg|fL|сек|ммоль|мкмоль|\?)$/i.test(unit);
+  if(!ordinaryUnit&&!unitContinuation&&!rangeCells.length)return null;
+  let range=labPrintRange(rangeCells.join(' '));
+  if(!numeric.test(value)){
+    if(!interval.test(range)||!/[\p{L}%]/u.test(unit))return null;
+    value='?';
+  }
+  let consumed=false;
+  if(/^\([A-ZА-Я% -]+\)$/iu.test(next)||(/(?:^|\s)(?:в|по)$/i.test(name)&&/^\p{L}[\p{L}\s-]*\([A-ZА-Я% -]+\)$/iu.test(next))){
+    name+=' '+next;consumed=true;
+  }
+  if(unitContinuation){
+    // An unclear power must be confirmed rather than guessed from the analyte.
+    if(/^(?:[×хx]\s*)?10(?:\^(?:9|12)|⁹|¹²)$/u.test(unit))unit+=' клеток/л';
+    else unit='?';
+    consumed=true;
+  }
+  if(labAnalyte(name)?.search==='MCH'&&/^(?:nr|пг)$/i.test(unit))unit='пг';
+  else if(!ordinaryUnit&&!unitContinuation)unit='?';
+  const bounds=range.match(interval);
+  if(bounds&&Number(bounds[1].replace(',','.'))>Number(bounds[2].replace(',','.')))range='?';
+  return {row:{name,value,unit,range},consumed};
+}
 function labResultLine(line,previous){
+  const fieldOfView='в\\s+п(?:\\s*\\/\\s*зр|\\.\\s*з)\\.?';
+  const microscopy=line.match(new RegExp('^(.+?)\\s+(\\d+\\s*[-–—]\\s*\\d+)\\s+('+fieldOfView+')$','iu'));
+  if(microscopy){
+    const [,label,value,unit]=microscopy;
+    const name=label.replace(new RegExp('[,\\s]+'+fieldOfView+'$','iu'),'').trim();
+    if(name&&/\p{L}/u.test(name))return {name,value,unit,range:''};
+  }
   const unitToken='(?:[×хx]\\s*)?[\\p{L}%µμ×^0-9⁰¹²³⁴⁵⁶⁷⁸⁹./]+(?:\\s*/\\s*[\\p{L}]+)?';
   const reading='[<>≤≥]?\\s*[-+]?\\d+(?:[.,]\\d+)?|[?？�]+|неразборчиво';
   const unitAllowed=u=>u&&(/[/%]/.test(u)||/^(?:фл|пг|сек|ммоль|мкмоль)$/i.test(u));
@@ -272,7 +341,8 @@ function labResultLine(line,previous){
   if(forward&&unitAllowed(forward[3]))[,name,value,unit,range]=forward;
   else if(reversed&&unitAllowed(reversed[2]))[,name,unit,value,range]=reversed;
   else {
-    const verbal=line.match(/^(.+?)\s*[:|;]?\s+(отрицательно|положительно|не обнаружено|обнаружено|negative|positive|not detected|[?？�]+)\s*$/i);
+    const verbal=line.match(/^(.+?)\s*[:|;]?\s+(отрицательно|положительно|не обнаружено|обнаружено|negative|positive|not detected|[?？�]+)\s*$/i)||
+      line.match(/^(флора)\s+(отс\.?)$/iu);
     if(verbal)[,name,value]=verbal;
     else{
       const missingUnit=line.match(/^(.+?)\s+([<>≤≥]?\s*[-+]?\d+(?:[.,]\d+)?)$/);
@@ -281,7 +351,7 @@ function labResultLine(line,previous){
     }
   }
   name=(name||previous||'').replace(/[:;|]$/,'').trim();
-  if(!name||name.length>100||!/[\p{L}]/u.test(name)||labRangeLabel.test(name))return null;
+  if(!name||name.length>100||!/[\p{L}]/u.test(name)||labRangeLabel.test(name)||/[|│]\s*[<>≤≥]?\s*\d+(?:[.,]\d+)?$/.test(name))return null;
   return {name,value:value.trim(),unit:unit||'',range:labPrintRange(range||'')};
 }
 function labSpecimenSection(line){
@@ -304,11 +374,12 @@ function labSpecimenSection(line){
 }
 function parseLabText(raw,filename){
   const lines=String(raw||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-  const name=lines.find(s=>/^(?:общий |клинический |биохимический )?(?:анализ|гемограмм|биохими|исследование)|^(?:ha?ematology|ha?emogram|clinical chemistry|urinalysis|complete blood count)/i.test(s))||filename.replace(/\.[^.]+$/,'');
+  const name=lines.find(s=>/^(?:общий |клинический |биохимический )?(?:анализ|гемограмм|биохими|исследование)|^(?:мазок\s+на\s|ha?ematology|ha?emogram|clinical chemistry|urinalysis|complete blood count)/i.test(s))||filename.replace(/\.[^.]+$/,'');
   const laboratory=lines.find(s=>/^лаборатори[яи](?:\s|:)|\b(?:laboratory|laboratories|lab)\s*$/i.test(s))||'';
   const rows=[];
   let section={mappings:new Map(),sample:''},previous='',lastResult;
-  for(const line of lines){
+  for(let i=0;i<lines.length;i++){
+    const line=lines[i];
     const normalized=line.replace(/\s+/g,' ');
     if(normalized===laboratory) section={mappings:new Map(),sample:''};
     const sample=labSpecimenSection(normalized);
@@ -317,7 +388,9 @@ function parseLabText(raw,filename){
       if(!lastResult.range)lastResult.range=labPrintRange(normalized);
       lastResult=null;previous='';continue;
     }
-    const row=labResultLine(normalized,previous);
+    const wide=labWideRow(line,lines[i+1]||'');
+    if(wide?.consumed)i++;
+    const row=wide?.row||labResultLine(normalized,previous);
     if(row){
       // Vision may read both letters in "Hb" as Cyrillic. Resolve the glyphs
       // only when the same section explicitly spells Hb and the unit agrees.
