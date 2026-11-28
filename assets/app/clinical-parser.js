@@ -189,9 +189,9 @@ const labAnalytes = [
     unit:'ммоль/л',scales:{'ммоль/л':1,'мкмоль/л':0.001,'мг/дл':0.05551}},
   {name:'Холестерин общий',aliases:/^(?:(?:(?:общий|суммарный)\s+)?холестер(?:ин|ол)|холестер(?:ин|ол)\s+(?:общий|суммарный)|total\s+cholesterol|cholesterol(?:,?\s+total)?|chol|tc|охс)(?:\s*\((?:общий|охс|chol|tc)\))?$/i,
     search:'общий холестерин холестерол total cholesterol CHOL TC ОХС холлестирин холестирин',unit:'ммоль/л',scales:{'ммоль/л':1,'мкмоль/л':0.001,'мг/дл':0.02586}},
-  {name:'Холестерин ЛПВП',aliases:/^(?:(?:(?:холестерин|хс)[\s-]+)?лпвп|(?:холестерин|хс)\s*\(лпвп\)|лпвп\s+холестерин|hdl(?:[-\s]+(?:c|cholesterol))?|cholesterol[,]?\s+hdl)$/i,
+  {name:'Холестерин ЛПВП',aliases:/^(?:(?:(?:холестерин|хс)[\s-]+)?лпвп|(?:холестерин|хс)\s*\(лпвп\)|лпвп[\s-]+холестерин|hdl(?:[-\s]+(?:c|cholesterol))?|cholesterol[,]?\s+hdl)(?:\s*\(hdl(?:-c)?\))?$/i,
     search:'HDL HDL-C ЛПВП холлестирин холестирин',unit:'ммоль/л',scales:{'ммоль/л':1,'мкмоль/л':0.001,'мг/дл':0.02586}},
-  {name:'Холестерин ЛПНП',aliases:/^(?:(?:(?:холестерин|хс)[\s-]+)?лпнп|(?:холестерин|хс)\s*\(лпнп\)|лпнп\s+холестерин|ldl(?:[-\s]+(?:c|cholesterol))?|cholesterol[,]?\s+ldl)$/i,
+  {name:'Холестерин ЛПНП',aliases:/^(?:(?:(?:холестерин|хс)[\s-]+)?лпнп|(?:холестерин|хс)\s*\(лпнп\)|лпнп[\s-]+холестерин|ldl(?:[-\s]+(?:c|cholesterol))?|cholesterol[,]?\s+ldl)(?:\s*\(ldl(?:-c)?\))?$/i,
     search:'LDL LDL-C ЛПНП холлестирин холестирин',unit:'ммоль/л',scales:{'ммоль/л':1,'мкмоль/л':0.001,'мг/дл':0.02586}},
   {name:'С-реактивный белок',aliases:/^(?:[сc][- ]реактивный белок|c[- ]reactive protein|crp|срб)(?:\s*\((?:crp|срб)\))?$/i,
     unit:'мг/л',scales:{'мг/л':1,'мг/дл':10}},
@@ -252,7 +252,7 @@ function labSpecimenFor(row,reportTitle){
   if(titled)return titled;
   return /^(?:(?:общий|клинический) анализ крови(?:\s*\(оак\))?(?:,?\s+автоматизированный)?[,]?|complete blood count(?:\s*\(cbc\))?)$/i.test(String(reportTitle).trim())?'Цельная кровь':'';
 }
-function labSeriesPoint(row,reportTitle,sourceId){
+function labSeriesPoint(row,reportTitle){
   const rawName=String(row.name||'').trim(),analyte=labAnalyte(rawName);
   const name=analyte?.name||rawName,specimen=labSpecimenFor(row,reportTitle);
   const sourceUnit=labUnit(row.unit),scales=analyte?.scales;
@@ -261,11 +261,10 @@ function labSeriesPoint(row,reportTitle,sourceId){
   let value=String(row.value??'');
   const number=value.match(/^([<>≤≥]?\s*)([+-]?\d+(?:[.,]\d+)?)$/);
   if(factor&&factor!==1&&number)value=number[1]+Number((Number(number[2].replace(',','.'))*factor).toPrecision(14));
-  // Preserve the existing whole-blood keys. For unconfirmed specimens use the source
-  // document only; equal names and units alone cannot establish comparability.
-  let key=name.toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ')+'|'+unit;
-  if(specimen!=='Цельная кровь')key+='|'+(specimen?specimen.toLowerCase():'?'+sourceId);
-  return {key,name,specimen,unit,value,search:analyte?.search||''};
+  const marker=name.normalize('NFKC').toLowerCase().replaceAll('ё','е').replace(/[–—‑]/g,'-').replace(/\s+/g,' ');
+  // Keep unspecified specimens together in their own series, without assigning a material to the records.
+  const key=marker+'|'+unit+(specimen==='Цельная кровь'?'':'|'+(specimen.toLowerCase()||'?'));
+  return {key,marker,name,specimen,unit,value,search:analyte?.search||''};
 }
 function labSampleDate(raw){
   const found=[];

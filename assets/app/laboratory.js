@@ -23,23 +23,35 @@ function indicatorGroups(){
   for(const file of labs()){
     const info=reportInfo(file);
     for(const row of info.rows){
-      const series=labSeriesPoint(row,info.name,file.id);
-      if(!groups.has(series.key))groups.set(series.key,{key:series.key,name:series.name,specimen:series.specimen,unit:series.unit,points:[]});
+      const series=labSeriesPoint(row,info.name);
+      if(!groups.has(series.key))groups.set(series.key,{key:series.key,marker:series.marker,name:series.name,specimen:series.specimen,unit:series.unit,points:[]});
       groups.get(series.key).points.push({...series,raw:row,date:info.date,dateEstimated:info.dateEstimated,source:file.id,lab:info.laboratory,report:info.name});
     }
   }
   return [...groups.values()].sort((a,b)=>a.name.localeCompare(b.name,'ru'));
 }
 function seriesDescription(group){
-  return [group.specimen||'Биоматериал не уточнён',group.unit,!group.specimen&&group.points?.[0]?.date?labDateLabel(group.points[0].date):''].filter(Boolean).join(' · ');
+  return [group.specimen||'Биоматериал не уточнён',group.unit].filter(Boolean).join(' · ');
 }
 function labDateLabel(date){
   return dateLabel(date,{day:'numeric',month:'long',year:'numeric'});
 }
+function indicatorCards(){
+  const cards=new Map();
+  for(const group of indicatorGroups()){
+    const id='indicator:'+group.marker;
+    if(!cards.has(id))cards.set(id,{id,name:group.name,series:[]});
+    cards.get(id).series.push(group);
+  }
+  return [...cards.values()];
+}
 function indicatorSearchRows(){
-  return indicatorGroups().map(group=>({type:'trend',id:group.key,title:group.name,icon:'trend',
-    meta:seriesDescription(group)+' · результатов: '+group.points.length,
-    terms:[...new Set(group.points.flatMap(p=>[p.search,p.raw.name,p.report,p.lab,tagLabels('lab',p.source)]))].filter(Boolean).join(' ')}));
+  return indicatorCards().map(card=>{
+    const points=card.series.flatMap(group=>group.points);
+    const description=card.series.length===1?seriesDescription(card.series[0]):'Разные биоматериалы или единицы';
+    return {type:'trend',id:card.id,title:card.name,icon:'trend',meta:description+' · результатов: '+points.length,
+      terms:[...new Set(points.flatMap(p=>[p.search,p.raw.name,p.report,p.lab,tagLabels('lab',p.source)]))].filter(Boolean).join(' ')};
+  });
 }
 function labDraftListing(query,category){
   if(readOnly)return '';
@@ -150,7 +162,7 @@ function labCard(id){
   const data=reportInfo(f);
   openPanel('Лабораторный бланк',data.name,'<p class="detail-meta">'+esc([labDateLabel(data.date),data.dateEstimated?'Дата подставлена':'',data.laboratory].filter(Boolean).join(' · '))+'</p>'+
     tagStrip('lab',id)+data.rows.map(r=>{
-      const point=labSeriesPoint(r,data.name,id);
+      const point=labSeriesPoint(r,data.name);
       return '<div class="lab-value"><div><small>'+esc([r.name,point.specimen].filter(Boolean).join(' · '))+'</small><strong>'+esc(r.value)+' '+esc(r.unit)+'</strong><small>'+esc(r.range?'Диапазон по бланку '+r.range:'Диапазон не указан')+'</small></div>'+act('trend','Динамика',point.key,'inline-action','trend')+'</div>';
     }).join('')+
     '<div class="actions">'+(f.visit?act('visit','К визиту',f.visit,'button secondary'):'')+act('file','Исходный бланк',id,'button secondary','clip')+(!readOnly?act('consult','Обсудить с ИИ','lab:'+id,'button primary','spark'):'')+'</div>'+
@@ -175,15 +187,17 @@ function pointChart(points,action){
 }
 function indicatorView(id){
   const fixture=/^\d+$/.test(id)?labRows[Number(id)]:null;
-  const groups=indicatorGroups();
-  const group=fixture?groups.find(g=>g.points.some(p=>p.raw.name===fixture.name&&Object.hasOwn(fixture.values,p.source))):groups.find(g=>g.key===id);
-  if(!group)return;
+  const card=indicatorCards().find(c=>c.id===id||c.series.some(g=>fixture?
+    g.points.some(p=>p.raw.name===fixture.name&&Object.hasOwn(fixture.values,p.source)):g.key===id));
+  if(card)openPanel('Динамика показателя',card.name,card.series.map(indicatorSeriesView).join(''));
+}
+function indicatorSeriesView(group){
   const points=group.points.sort((a,b)=>a.date.localeCompare(b.date));
-  openPanel('Динамика показателя',group.name,'<p class="detail-meta">'+esc(group.unit)+'</p><p class="hint">'+esc(group.specimen||'Биоматериал не уточнён. Показан только этот бланк.')+'</p>'+pointChart(points,'file')+
+  return '<section class="panel-section"><p class="detail-meta">'+esc(group.unit)+'</p><p class="hint">'+esc(group.specimen||'Биоматериал не уточнён')+'</p>'+pointChart(points,'file')+
     '<h3>Результаты за всё время</h3>'+points.map(p=>{
       const comparison=p.unit!==p.raw.unit&&p.value!==p.raw.value?'Для сравнения '+p.value.replace('.',',')+' '+p.unit:'';
       const details=[p.raw.name,comparison,p.dateEstimated?'Дата подставлена':'',p.lab,p.raw.range?'Диапазон '+p.raw.range:'Диапазон не указан'];
       return resultRow('file',p.source,labDateLabel(p.date)+' · '+[p.raw.value,p.raw.unit].filter(Boolean).join(' '),details.filter(Boolean).join(' · '),'lab');
     }).join('')+
-    (readOnly?'':act('consult','Обсудить с ИИ','indicator:'+group.key,'button primary','spark')));
+    (readOnly?'':act('consult','Обсудить с ИИ','indicator:'+group.key,'button primary','spark'))+'</section>';
 }
