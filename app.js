@@ -383,12 +383,29 @@ document.addEventListener('keydown',event=>{
   const target=event.target.closest('.trend-chart [role=button]');
   if(target&&['Enter',' '].includes(event.key)){event.preventDefault();target.dispatchEvent(new MouseEvent('click',{bubbles:true}))}
 });
+const refreshNotice=document.querySelector('#refresh-notice');
 if('serviceWorker' in navigator && window.isSecureContext && location.protocol!=='file:'){
-  navigator.serviceWorker.register('sw.js').catch(()=>{});
+  const workers=navigator.serviceWorker;
+  let controller=workers.controller;
+  workers.addEventListener('controllerchange',()=>{
+    const next=workers.controller;
+    if(controller&&next&&next!==controller){
+      document.querySelector('#refresh-message').textContent='Доступна новая версия дневника.';
+      refreshNotice.hidden=false;
+    }
+    controller=next;
+  });
+  const registration=workers.register('sw.js',{updateViaCache:'none'}).catch(()=>null);
+  function checkForShellUpdate(){
+    if(!document.hidden)registration.then(reg=>reg?.update()).catch(()=>{});
+  }
+  checkForShellUpdate();
+  document.addEventListener('visibilitychange',checkForShellUpdate);
+  window.addEventListener('online',checkForShellUpdate);
 }
 window.addEventListener('storage',event=>{
   if(event.key===stateKey&&event.newValue&&event.newValue!==savedView){
-    document.querySelector('#refresh-notice').hidden=false;
+    refreshNotice.hidden=false;
   }
 });
 document.querySelector('#refresh-local').addEventListener('click',()=>location.reload());
